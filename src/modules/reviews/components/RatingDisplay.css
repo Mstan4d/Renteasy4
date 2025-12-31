@@ -1,0 +1,129 @@
+/* src/modules/reviews/components/RatingDisplay.css */
+.rating-display {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .overall-rating {
+    text-align: center;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 12px;
+  }
+  
+  .rating-number {
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  
+  .rating-stars {
+    display: flex;
+    justify-content: center;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .rating-count {
+    color: #64748b;
+    font-size: 0.875rem;
+  }
+  
+  .rating-breakdown {
+    padding: 1.5rem;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+  }
+  
+  .breakdown-title {
+    margin: 0 0 1rem 0;
+    color: #1e293b;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .breakdown-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .breakdown-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .star-label {
+    min-width: 60px;
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+  
+  .progress-bar {
+    flex: 1;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #fbbf24, #f59e0b);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  
+  .percentage {
+    min-width: 40px;
+    text-align: right;
+    color: #374151;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+  
+  .rating-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+  }
+  
+  .summary-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  
+  .summary-item svg {
+    color: #3b82f6;
+    flex-shrink: 0;
+  }
+  
+  .summary-content {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .summary-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1;
+  }
+  
+  .summary-label {
+    color: #6b7280;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+  }

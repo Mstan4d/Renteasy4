@@ -1,0 +1,190 @@
+/* src/modules/marketplace/pages/ServiceReviews.css */
+.service-reviews {
+    padding: 2rem 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  .service-reviews-loading,
+  .service-not-found {
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  
+  .service-not-found h2 {
+    color: #1e293b;
+    margin-bottom: 1rem;
+  }
+  
+  .service-not-found p {
+    color: #64748b;
+    margin-bottom: 2rem;
+  }
+  
+  .reviews-header {
+    margin-bottom: 2rem;
+  }
+  
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
+  
+  .back-link:hover {
+    background: #f3f4f6;
+  }
+  
+  .service-info h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 1rem;
+  }
+  
+  .service-meta {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #4b5563;
+    font-size: 0.875rem;
+  }
+  
+  .reviews-content {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 2rem;
+  }
+  
+  .reviews-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .rating-card,
+  .filters-card,
+  .cta-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+  
+  .filters-card h3,
+  .cta-card h3 {
+    margin: 0 0 1rem 0;
+    color: #1e293b;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .filter-group {
+    margin-bottom: 1rem;
+  }
+  
+  .filter-group label {
+    display: block;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+  }
+  
+  .filter-group select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+    color: #374151;
+    cursor: pointer;
+  }
+  
+  .cta-card p {
+    color: #6b7280;
+    margin: 0 0 1.5rem 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  
+  .cta-card .btn {
+    width: 100%;
+  }
+  
+  .reviews-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .empty-reviews {
+    text-align: center;
+    padding: 4rem 1rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+  
+  .empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+  
+  .empty-reviews h3 {
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+  
+  .empty-reviews p {
+    color: #64748b;
+    margin-bottom: 1.5rem;
+  }
+  
+  .reviews-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  @media (max-width: 1024px) {
+    .reviews-content {
+      grid-template-columns: 1fr;
+    }
+    
+    .reviews-sidebar {
+      order: -1;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .service-meta {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .service-info h1 {
+      font-size: 1.5rem;
+    }
+  }

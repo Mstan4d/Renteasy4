@@ -1,0 +1,324 @@
+/* src/modules/dashboard/pages/tenant/TenantSavedProperties.css */
+.tenant-saved-properties {
+    padding: 24px;
+    background: #f8fafc;
+    min-height: 100vh;
+  }
+  
+  .saved-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  
+  .saved-header h1 {
+    font-size: 2rem;
+    color: #1f2937;
+    margin: 0;
+  }
+  
+  .header-actions {
+    display: flex;
+    gap: 12px;
+  }
+  
+  .saved-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  
+  .saved-property-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .saved-property-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  }
+  
+  .property-image {
+    position: relative;
+    height: 200px;
+    overflow: hidden;
+  }
+  
+  .property-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .remove-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    background: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s;
+  }
+  
+  .remove-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
+    transform: scale(1.1);
+  }
+  
+  .property-content {
+    padding: 20px;
+  }
+  
+  .property-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  
+  .property-header h3 {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1.2rem;
+    flex: 1;
+  }
+  
+  .property-type {
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-left: 12px;
+  }
+  
+  .property-price {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #059669;
+    margin: 0 0 8px 0;
+  }
+  
+  .property-location {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin: 0 0 16px 0;
+  }
+  
+  .property-features {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+  }
+  
+  .feature {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #4b5563;
+    font-size: 0.9rem;
+  }
+  
+  .feature-icon {
+    font-size: 1.2rem;
+  }
+  
+  .property-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  
+  .tag {
+    background: #f3f4f6;
+    color: #4b5563;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+  }
+  
+  .property-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+  
+  .landlord-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .landlord-name {
+    color: #6b7280;
+    font-size: 0.9rem;
+  }
+  
+  .verified-badge {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  
+  .property-actions {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .comparison-section {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    margin-top: 32px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+  
+  .comparison-section h3 {
+    font-size: 1.5rem;
+    color: #374151;
+    margin: 0 0 24px 0;
+    text-align: center;
+  }
+  
+  .comparison-table {
+    overflow-x: auto;
+  }
+  
+  .comparison-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .comparison-table th,
+  .comparison-table td {
+    padding: 16px;
+    text-align: left;
+    border: 1px solid #e5e7eb;
+  }
+  
+  .comparison-table th {
+    background: #f9fafb;
+    color: #374151;
+    font-weight: 600;
+    position: sticky;
+    left: 0;
+  }
+  
+  .comparison-table td:first-child {
+    background: #f9fafb;
+    font-weight: 500;
+    position: sticky;
+    left: 0;
+  }
+  
+  .comparison-table tr:hover {
+    background: #f8fafc;
+  }
+  
+  .empty-saved {
+    text-align: center;
+    padding: 80px 20px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+  
+  .empty-icon {
+    font-size: 64px;
+    color: #d1d5db;
+    margin-bottom: 20px;
+  }
+  
+  .empty-saved h3 {
+    color: #374151;
+    margin: 0 0 8px 0;
+    font-size: 1.8rem;
+  }
+  
+  .empty-saved p {
+    color: #6b7280;
+    margin: 0 0 32px 0;
+    max-width: 400px;
+    margin: 0 auto 32px;
+    font-size: 1.1rem;
+  }
+  
+  .saved-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+  }
+  
+  @media (max-width: 768px) {
+    .tenant-saved-properties {
+      padding: 12px;
+    }
+    
+    .saved-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    
+    .header-actions {
+      width: 100%;
+      flex-direction: column;
+    }
+    
+    .saved-grid {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    
+    .property-features {
+      justify-content: space-between;
+    }
+    
+    .property-footer {
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    
+    .property-actions {
+      width: 100%;
+      flex-direction: column;
+    }
+    
+    .property-actions .btn {
+      width: 100%;
+    }
+    
+    .comparison-table {
+      font-size: 0.9rem;
+    }
+    
+    .comparison-table th,
+    .comparison-table td {
+      padding: 12px 8px;
+    }
+  }

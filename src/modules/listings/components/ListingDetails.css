@@ -1,0 +1,571 @@
+/* src/modules/listings/components/ListingDetails.css */
+.listing-details {
+    background: white;
+    border-radius: 20px;
+    padding: 32px;
+    margin-top: 24px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+    animation: fadeIn 0.3s ease;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  /* Back Button */
+  .back-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #f8f9fa;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-bottom: 24px;
+  }
+  
+  .back-button:hover {
+    background: #f1f3f5;
+    border-color: #dee2e6;
+    transform: translateX(-4px);
+  }
+  
+  /* Details Header */
+  .details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  
+  .header-left h1 {
+    margin: 0 0 12px 0;
+    color: #2d3748;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  
+  .listing-status {
+    display: flex;
+    gap: 12px;
+  }
+  
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  
+  .status-badge.verified {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+  }
+  
+  .status-badge.pending {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+  }
+  
+  .header-right {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  
+  .header-right .btn {
+    padding: 12px 24px;
+    font-weight: 600;
+  }
+  
+  /* Images Section */
+  .images-section {
+    margin-bottom: 32px;
+  }
+  
+  .images-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px 0;
+    color: #2d3748;
+    font-size: 1.25rem;
+  }
+  
+  .images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+  
+  .image-item {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    height: 150px;
+  }
+  
+  .image-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+  
+  .image-item:hover img {
+    transform: scale(1.05);
+  }
+  
+  .no-images {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px;
+    background: #f8f9ff;
+    border-radius: 12px;
+    border: 2px dashed #e2e8f0;
+    color: #718096;
+  }
+  
+  .no-images svg {
+    margin-bottom: 12px;
+    color: #cbd5e0;
+  }
+  
+  /* Details Grid */
+  .details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  
+  .details-column {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  
+  .detail-card {
+    background: #f8f9ff;
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid #e3e8ff;
+  }
+  
+  .detail-card h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 20px 0;
+    color: #2d3748;
+    font-size: 1.1rem;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e3e8ff;
+  }
+  
+  .detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  
+  .detail-item:last-child {
+    margin-bottom: 0;
+  }
+  
+  .detail-label {
+    color: #718096;
+    font-size: 14px;
+    font-weight: 500;
+    flex: 1;
+  }
+  
+  .detail-value {
+    color: #2d3748;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: right;
+    flex: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  
+  /* Price Card */
+  .price-card {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+  }
+  
+  .price-card h3 {
+    color: white;
+    border-bottom-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  .price-details {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .price-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .price-label {
+    font-size: 15px;
+    opacity: 0.9;
+  }
+  
+  .price-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+  
+  .commission-section {
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    margin: 8px 0;
+  }
+  
+  .commission-section h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    opacity: 0.9;
+  }
+  
+  .commission-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  .commission-item:last-child {
+    border-bottom: none;
+  }
+  
+  .commission-renteasy {
+    color: #93c5fd;
+    font-weight: 600;
+  }
+  
+  .commission-manager {
+    color: #86efac;
+    font-weight: 600;
+  }
+  
+  .commission-referral {
+    color: #fbbf24;
+    font-weight: 600;
+  }
+  
+  .total-price {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 16px;
+    border-top: 2px solid rgba(255, 255, 255, 0.2);
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+  
+  .total-amount {
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+  
+  /* Description Section */
+  .description-section {
+    margin-bottom: 32px;
+  }
+  
+  .description-section h3 {
+    margin: 0 0 16px 0;
+    color: #2d3748;
+    font-size: 1.25rem;
+  }
+  
+  .description-content {
+    background: #f8f9ff;
+    padding: 24px;
+    border-radius: 12px;
+    border: 1px solid #e3e8ff;
+    line-height: 1.6;
+    color: #4a5568;
+    white-space: pre-wrap;
+  }
+  
+  /* Reviews Section */
+  .reviews-section {
+    margin-bottom: 32px;
+  }
+  
+  .reviews-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 20px 0;
+    color: #2d3748;
+    font-size: 1.25rem;
+  }
+  
+  .reviews-list {
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 8px;
+    margin-bottom: 24px;
+  }
+  
+  .review-item {
+    background: #f8f9ff;
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #e3e8ff;
+  }
+  
+  .review-item p {
+    margin: 0 0 8px 0;
+    color: #4a5568;
+    line-height: 1.5;
+  }
+  
+  .review-date {
+    font-size: 12px;
+    color: #a0aec0;
+    display: block;
+    text-align: right;
+  }
+  
+  .no-reviews {
+    text-align: center;
+    padding: 40px;
+    color: #718096;
+    font-style: italic;
+    background: #f8f9ff;
+    border-radius: 12px;
+    border: 2px dashed #e2e8f0;
+  }
+  
+  .add-review {
+    margin-top: 24px;
+  }
+  
+  .add-review textarea {
+    width: 100%;
+    padding: 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 14px;
+    margin-bottom: 12px;
+    resize: vertical;
+    min-height: 100px;
+    font-family: inherit;
+  }
+  
+  .add-review textarea:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+  
+  /* Details Actions */
+  .details-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding-top: 32px;
+    border-top: 1px solid #e2e8f0;
+    flex-wrap: wrap;
+  }
+  
+  .details-actions .btn {
+    padding: 12px 28px;
+    font-weight: 600;
+    min-width: 180px;
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 992px) {
+    .listing-details {
+      padding: 24px;
+    }
+    
+    .details-header {
+      flex-direction: column;
+    }
+    
+    .header-right {
+      width: 100%;
+      justify-content: center;
+    }
+    
+    .details-actions .btn {
+      min-width: 150px;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .listing-details {
+      padding: 20px;
+      margin: 16px;
+    }
+    
+    .header-left h1 {
+      font-size: 1.5rem;
+    }
+    
+    .images-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .details-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .details-actions {
+      flex-direction: column;
+    }
+    
+    .details-actions .btn {
+      width: 100%;
+    }
+  }
+  
+  /* Dark mode support */
+  @media (prefers-color-scheme: dark) {
+    .listing-details {
+      background: #1e293b;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
+    }
+    
+    .back-button {
+      background: #334155;
+      border-color: #475569;
+      color: #e2e8f0;
+    }
+    
+    .back-button:hover {
+      background: #475569;
+      border-color: #64748b;
+    }
+    
+    .header-left h1 {
+      color: #f1f5f9;
+    }
+    
+    .status-badge.verified {
+      background: rgba(21, 128, 61, 0.3);
+      color: #86efac;
+      border-color: rgba(134, 239, 172, 0.2);
+    }
+    
+    .status-badge.pending {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.2);
+    }
+    
+    .images-section h3 {
+      color: #f1f5f9;
+    }
+    
+    .no-images {
+      background: #334155;
+      border-color: #475569;
+      color: #94a3b8;
+    }
+    
+    .no-images svg {
+      color: #64748b;
+    }
+    
+    .detail-card {
+      background: #334155;
+      border-color: #475569;
+    }
+    
+    .detail-card h3 {
+      color: #f1f5f9;
+      border-bottom-color: #475569;
+    }
+    
+    .detail-label {
+      color: #cbd5e0;
+    }
+    
+    .detail-value {
+      color: #e2e8f0;
+    }
+    
+    .description-section h3 {
+      color: #f1f5f9;
+    }
+    
+    .description-content {
+      background: #334155;
+      border-color: #475569;
+      color: #cbd5e0;
+    }
+    
+    .reviews-section h3 {
+      color: #f1f5f9;
+    }
+    
+    .review-item {
+      background: #334155;
+      border-color: #475569;
+    }
+    
+    .review-item p {
+      color: #cbd5e0;
+    }
+    
+    .no-reviews {
+      background: #334155;
+      border-color: #475569;
+      color: #94a3b8;
+    }
+    
+    .add-review textarea {
+      background: #334155;
+      border-color: #475569;
+      color: #e2e8f0;
+    }
+    
+    .add-review textarea:focus {
+      border-color: #667eea;
+    }
+    
+    .details-actions {
+      border-top-color: #475569;
+    }
+  }

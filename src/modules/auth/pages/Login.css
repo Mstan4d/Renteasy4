@@ -1,0 +1,304 @@
+/* src/modules/auth/pages/Login.css */
+
+/* =================== ROOT CONTAINER =================== */
+.login-container {
+    /* Center the login card vertically and horizontally */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 1rem;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  }
+  
+  /* =================== LOGIN CARD =================== */
+  .login-card {
+    /* Card styling */
+    width: 100%;
+    max-width: 450px;
+    background: white;
+    border-radius: 1rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    padding: 2.5rem;
+    transition: transform 0.3s ease;
+  }
+  
+  .login-card:hover {
+    /* Subtle hover effect for better UX */
+    transform: translateY(-5px);
+  }
+  
+  /* =================== TYPOGRAPHY =================== */
+  .login-title {
+    /* Main heading */
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #007bff;
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+  
+  .login-subtitle {
+    /* Subtitle text */
+    font-size: 1rem;
+    color: #666;
+    text-align: center;
+    margin-bottom: 2rem;
+    line-height: 1.5;
+  }
+  
+  /* =================== ERROR DISPLAY =================== */
+  .error-alert {
+    /* Container for error messages */
+    background: #fee;
+    border: 1px solid #f99;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .error-text {
+    /* Individual error message */
+    color: #c00;
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  /* =================== FORM STYLES =================== */
+  .login-form {
+    /* Form container */
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .form-group {
+    /* Individual form field container */
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .form-label {
+    /* Field labels */
+    font-weight: 600;
+    color: #333;
+    font-size: 0.95rem;
+  }
+  
+  .form-input,
+  .form-select {
+    /* Input and select fields */
+    padding: 0.75rem 1rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background: white;
+  }
+  
+  .form-input:focus,
+  .form-select:focus {
+    /* Focus state for better accessibility */
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+  }
+  
+  .form-input:disabled,
+  .form-select:disabled {
+    /* Disabled state styling */
+    background: #f5f5f5;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+  
+  .form-help {
+    /* Help text below fields */
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 0.25rem;
+  }
+  
+  /* =================== BUTTONS =================== */
+  .submit-button {
+    /* Primary submit button */
+    background: #007bff;
+    color: white;
+    padding: 0.875rem;
+    border: none;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .submit-button:hover:not(:disabled) {
+    /* Hover state */
+    background: #0056b3;
+  }
+  
+  .submit-button:disabled {
+    /* Disabled state */
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .submit-button .spinner {
+    /* Loading spinner */
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  
+  /* =================== FORGOT PASSWORD =================== */
+  .forgot-password {
+    /* Forgot password link container */
+    text-align: center;
+    margin-top: -0.5rem;
+  }
+  
+  .forgot-link {
+    /* Forgot password link */
+    color: #666;
+    font-size: 0.9rem;
+    text-decoration: none;
+    transition: color 0.3s ease;
+  }
+  
+  .forgot-link:hover {
+    color: #007bff;
+    text-decoration: underline;
+  }
+  
+  /* =================== DIVIDER =================== */
+  .divider {
+    /* Horizontal divider between form and Google sign-in */
+    display: flex;
+    align-items: center;
+    margin: 1.5rem 0;
+    color: #999;
+  }
+  
+  .divider::before,
+  .divider::after {
+    /* Lines on either side of "OR" */
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e0e0e0;
+  }
+  
+  .divider-text {
+    /* "OR" text */
+    padding: 0 1rem;
+    font-size: 0.9rem;
+  }
+  
+  /* =================== GOOGLE BUTTON =================== */
+  .google-button {
+    /* Google sign-in button */
+    width: 100%;
+    background: white;
+    color: #333;
+    padding: 0.875rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  
+  .google-button:hover:not(:disabled) {
+    /* Hover state */
+    background: #f8f9fa;
+    border-color: #007bff;
+    transform: translateY(-2px);
+  }
+  
+  .google-button:disabled {
+    /* Disabled state */
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .google-icon {
+    /* Google logo */
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  
+  /* =================== REGISTRATION LINK =================== */
+  .registration-link {
+    /* Registration prompt container */
+    text-align: center;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e0e0e0;
+  }
+  
+  .registration-text {
+    /* Registration text */
+    color: #666;
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  
+  .registration-action {
+    /* Registration link */
+    color: #007bff;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.3s ease;
+  }
+  
+  .registration-action:hover {
+    color: #0056b3;
+    text-decoration: underline;
+  }
+  
+  /* =================== RESPONSIVE DESIGN =================== */
+  @media (max-width: 480px) {
+    /* Mobile-specific adjustments */
+    .login-card {
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+    }
+    
+    .login-title {
+      font-size: 1.5rem;
+    }
+    
+    .login-subtitle {
+      font-size: 0.9rem;
+    }
+    
+    .form-input,
+    .form-select,
+    .submit-button,
+    .google-button {
+      padding: 0.75rem;
+    }
+  }

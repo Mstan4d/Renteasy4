@@ -1,0 +1,278 @@
+/* src/shared/components/layout/BottomNav.css */
+
+/* =================== ROOT NAVIGATION CONTAINER =================== */
+.bottom-nav {
+    /* Fixed positioning for bottom placement */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    
+    /* Layout and spacing */
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    
+    /* Visual styling */
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+    padding: 12px 0 20px; /* Extra bottom padding for iPhone home indicator */
+    border-top: 2px solid rgba(89, 48, 224, 0.1); /* RentEasy brand color with transparency */
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+    
+    /* Z-index to ensure it stays above other content */
+    z-index: 1000;
+    
+    /* Safe area support for notched devices (iPhone X, etc.) */
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  
+  /* =================== NAVIGATION BUTTONS =================== */
+  .nav-btn {
+    /* Reset default button styles */
+    background: none;
+    border: none;
+    cursor: pointer;
+    
+    /* Flex layout for icon + label */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    
+    /* Typography and spacing */
+    color: #6b7280; /* Neutral gray for inactive state */
+    font-size: 0.75rem; /* Label font size */
+    gap: 4px; /* Space between icon and label */
+    
+    /* Dimensions */
+    min-width: 60px; /* Minimum touch target size */
+    padding: 8px 4px;
+    
+    /* Smooth transitions for interactive states */
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* Accessibility: ensure proper focus styling */
+    outline: none;
+  }
+  
+  /* =================== BUTTON ICONS =================== */
+  .nav-icon {
+    /* Icon/emoji styling */
+    font-size: 1.5rem; /* Size for emoji/icons */
+    line-height: 1;
+    transition: transform 0.3s ease;
+  }
+  
+  /* =================== BUTTON LABELS =================== */
+  .nav-label {
+    /* Label text styling */
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: capitalize;
+    opacity: 0.8;
+    transition: opacity 0.3s ease;
+  }
+  
+  /* =================== ACTIVE STATE =================== */
+  .nav-btn.active {
+    /* Active state styling */
+    color: #5930e0; /* RentEasy primary purple */
+    transform: translateY(-4px); /* Lift effect */
+  }
+  
+  .nav-btn.active .nav-icon {
+    /* Active icon scaling */
+    transform: scale(1.2);
+  }
+  
+  .nav-btn.active .nav-label {
+    /* Active label emphasis */
+    opacity: 1;
+    font-weight: 600;
+  }
+  
+  /* Active state indicator (dot) */
+  .active-indicator {
+    /* Visual indicator for active page */
+    position: absolute;
+    top: 4px;
+    width: 4px;
+    height: 4px;
+    background: #5930e0;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.2);
+    }
+  }
+  
+  /* =================== PRIMARY ACTION BUTTON =================== */
+  .nav-btn.primary-action {
+    /* Special styling for primary actions (like Post) */
+    position: relative;
+    margin-top: -20px; /* Lifts the button above others */
+  }
+  
+  .nav-btn.primary-action .nav-icon {
+    /* Primary action icon */
+    font-size: 1.8rem;
+    background: linear-gradient(135deg, #5930e0 0%, #7c3aed 100%);
+    color: white;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(89, 48, 224, 0.3);
+    transition: all 0.3s ease;
+  }
+  
+  .nav-btn.primary-action:hover .nav-icon {
+    /* Hover effect for primary action */
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(89, 48, 224, 0.4);
+  }
+  
+  .nav-btn.primary-action.active .nav-icon {
+    /* Active state for primary action */
+    background: linear-gradient(135deg, #7c3aed 0%, #9f7aea 100%);
+  }
+  
+  /* =================== HOVER & FOCUS STATES =================== */
+  .nav-btn:hover:not(.active):not(.primary-action) {
+    /* Hover effect for secondary buttons */
+    color: #4f46e5; /* Slightly lighter purple */
+    transform: translateY(-2px);
+  }
+  
+  .nav-btn:hover .nav-icon {
+    /* Icon animation on hover */
+    transform: scale(1.1);
+  }
+  
+  .nav-btn:focus-visible {
+    /* Accessibility: keyboard focus indicator */
+    outline: 2px solid #5930e0;
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  
+  /* =================== DISABLED STATE =================== */
+  .nav-btn:disabled {
+    /* Disabled button styling */
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+  
+  .nav-btn:disabled .nav-icon {
+    transform: none !important;
+  }
+  
+  /* =================== RESPONSIVE DESIGN =================== */
+  
+  /* Hide on desktop screens (show regular navigation instead) */
+  @media (min-width: 769px) {
+    .bottom-nav {
+      display: none;
+    }
+  }
+  
+  /* Tablet adjustments */
+  @media (max-width: 768px) and (min-width: 481px) {
+    .bottom-nav {
+      padding: 10px 0 16px;
+    }
+    
+    .nav-btn {
+      min-width: 70px;
+    }
+    
+    .nav-icon {
+      font-size: 1.6rem;
+    }
+    
+    .nav-label {
+      font-size: 0.75rem;
+    }
+  }
+  
+  /* Small mobile adjustments */
+  @media (max-width: 480px) {
+    .bottom-nav {
+      padding: 8px 0 14px;
+    }
+    
+    .nav-btn {
+      min-width: 55px;
+      padding: 6px 2px;
+    }
+    
+    .nav-icon {
+      font-size: 1.4rem;
+    }
+    
+    .nav-label {
+      font-size: 0.65rem;
+    }
+    
+    .nav-btn.primary-action .nav-icon {
+      width: 45px;
+      height: 45px;
+      font-size: 1.6rem;
+    }
+  }
+  
+  /* Extra small devices (iPhone SE, etc.) */
+  @media (max-width: 320px) {
+    .bottom-nav {
+      padding: 6px 0 12px;
+    }
+    
+    .nav-btn {
+      min-width: 50px;
+    }
+    
+    .nav-icon {
+      font-size: 1.3rem;
+    }
+    
+    .nav-label {
+      font-size: 0.6rem;
+    }
+  }
+  
+  /* =================== DARK MODE SUPPORT =================== */
+  @media (prefers-color-scheme: dark) {
+    .bottom-nav {
+      background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+      border-top: 2px solid rgba(139, 92, 246, 0.2);
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .nav-btn {
+      color: #9ca3af; /* Lighter gray for dark mode */
+    }
+    
+    .nav-btn.active {
+      color: #a78bfa; /* Lighter purple for dark mode */
+    }
+    
+    .active-indicator {
+      background: #a78bfa;
+    }
+    
+    .nav-btn.primary-action .nav-icon {
+      background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    }
+  }

@@ -1,0 +1,634 @@
+/* src/modules/providers/pages/ProviderRegistration.css */
+.provider-registration {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: 2rem 1rem;
+  }
+  
+  .registration-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 2rem;
+  }
+  
+  .registration-header {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  
+  .registration-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+  
+  .registration-header .highlight {
+    color: #3b82f6;
+  }
+  
+  .registration-header .subtitle {
+    color: #64748b;
+    font-size: 1.1rem;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  
+  .progress-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 3rem;
+    position: relative;
+  }
+  
+  .progress-bar::before {
+    content: '';
+    position: absolute;
+    top: 25px;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: #e2e8f0;
+    z-index: 1;
+  }
+  
+  .progress-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .progress-step.active .step-number {
+    background: #3b82f6;
+    color: white;
+    transform: scale(1.1);
+  }
+  
+  .progress-step.completed .step-number {
+    background: #10b981;
+    color: white;
+  }
+  
+  .step-number {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 0.5rem;
+    transition: all 0.3s ease;
+    border: 3px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .step-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #64748b;
+    text-align: center;
+  }
+  
+  .progress-step.active .step-label {
+    color: #3b82f6;
+    font-weight: 600;
+  }
+  
+  .registration-form {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+  
+  .registration-step {
+    margin-bottom: 2rem;
+  }
+  
+  .step-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+  
+  .form-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 0.5rem;
+  }
+  
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+  }
+  
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  
+  .form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+  
+  .categories-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+  
+  .category-card {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .category-card:hover {
+    border-color: #93c5fd;
+  }
+  
+  .category-card.selected {
+    border-color: #3b82f6;
+    background-color: #eff6ff;
+  }
+  
+  .category-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .category-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  
+  .services-input {
+    position: relative;
+  }
+  
+  .services-input small {
+    display: block;
+    margin-top: 0.25rem;
+    color: #6b7280;
+  }
+  
+  .services-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  
+  .service-tag {
+    background: #f3f4f6;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .service-tag button {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    font-size: 1.25rem;
+    line-height: 1;
+    padding: 0;
+  }
+  
+  .checkbox-group {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+  }
+  
+  .checkbox-label input[type="checkbox"] {
+    width: auto;
+  }
+  
+  .checkbox-text {
+    font-size: 0.875rem;
+    color: #374151;
+  }
+  
+  .coverage-section {
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 8px;
+  }
+  
+  .form-group-sm {
+    margin-top: 1rem;
+  }
+  
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  
+  .pricing-card {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .pricing-card:hover {
+    border-color: #93c5fd;
+  }
+  
+  .pricing-card.selected {
+    border-color: #3b82f6;
+    background-color: #eff6ff;
+  }
+  
+  .pricing-card h4 {
+    margin: 0 0 0.5rem 0;
+    color: #1e293b;
+  }
+  
+  .pricing-card p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+  
+  .checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  
+  .document-uploads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  
+  .upload-box {
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .upload-box:hover {
+    border-color: #3b82f6;
+    background: #f8fafc;
+  }
+  
+  .upload-box svg {
+    color: #9ca3af;
+    margin-bottom: 0.5rem;
+  }
+  
+  .upload-box p {
+    margin: 0 0 0.25rem 0;
+    font-weight: 500;
+    color: #374151;
+  }
+  
+  .upload-box small {
+    color: #6b7280;
+  }
+  
+  .verification-benefits {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+  }
+  
+  .verification-benefits h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1rem 0;
+    color: #0369a1;
+  }
+  
+  .verification-benefits ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .verification-benefits li {
+    padding: 0.25rem 0;
+    color: #0c4a6e;
+  }
+  
+  .review-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+  }
+  
+  .summary-section {
+    padding: 1.5rem;
+    background: #f9fafb;
+    border-radius: 8px;
+  }
+  
+  .summary-section h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1rem 0;
+    color: #1e293b;
+  }
+  
+  .summary-section p {
+    margin: 0.5rem 0;
+    color: #4b5563;
+  }
+  
+  .terms-agreement {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  .terms-agreement .checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+  
+  .terms-agreement .checkbox-text {
+    flex: 1;
+  }
+  
+  .terms-agreement a {
+    color: #3b82f6;
+    text-decoration: underline;
+  }
+  
+  .submit-section {
+    text-align: center;
+  }
+  
+  .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  
+  .btn-primary {
+    background: #3b82f6;
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    background: #2563eb;
+  }
+  
+  .btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+  }
+  
+  .btn-secondary:hover {
+    background: #d1d5db;
+  }
+  
+  .btn-large {
+    padding: 1rem 2rem;
+    font-size: 1.125rem;
+  }
+  
+  .btn-small {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+  
+  .disclaimer {
+    margin-top: 1rem;
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+  
+  .form-navigation {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e5e7eb;
+  }
+  
+  .benefits-sidebar {
+    position: sticky;
+    top: 2rem;
+    align-self: start;
+  }
+  
+  .benefits-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+  
+  .benefits-card h3 {
+    color: #1e293b;
+    margin: 0 0 1.5rem 0;
+    font-size: 1.25rem;
+  }
+  
+  .benefits-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 2rem 0;
+  }
+  
+  .benefits-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  
+  .benefits-list li:last-child {
+    border-bottom: none;
+  }
+  
+  .benefits-list li svg {
+    color: #10b981;
+    flex-shrink: 0;
+  }
+  
+  .benefits-list li strong {
+    display: block;
+    color: #1e293b;
+  }
+  
+  .benefits-list li small {
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+  
+  .commission-notice {
+    background: #f0f9ff;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .commission-notice h4 {
+    color: #0369a1;
+    margin: 0 0 1rem 0;
+  }
+  
+  .commission-rates {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+  
+  .rate-item {
+    text-align: center;
+  }
+  
+  .rate-item .rate {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #3b82f6;
+  }
+  
+  .rate-item .label {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+  
+  .support-info {
+    background: #f3f4f6;
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  
+  .support-info p {
+    margin: 0.5rem 0;
+    color: #4b5563;
+  }
+  
+  .support-contact {
+    font-weight: 500;
+    color: #3b82f6 !important;
+  }
+  
+  .btn-text {
+    background: none;
+    border: none;
+    color: #3b82f6;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  
+  .btn-text:hover {
+    text-decoration: underline;
+  }
+  
+  @media (max-width: 1024px) {
+    .registration-container {
+      grid-template-columns: 1fr;
+    }
+    
+    .benefits-sidebar {
+      position: static;
+      order: -1;
+      margin-bottom: 2rem;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .form-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .progress-bar::before {
+      left: 5%;
+      right: 5%;
+    }
+    
+    .categories-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .pricing-grid {
+      grid-template-columns: 1fr;
+    }
+  }

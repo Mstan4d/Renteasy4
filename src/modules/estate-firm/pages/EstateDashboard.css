@@ -1,0 +1,892 @@
+/* EstateDashboard.css - MOBILE FIRST APPROACH */
+
+/* ============================================
+   VARIABLES & RESET
+============================================ */
+:root {
+  --primary-color: #3a86ff;
+  --secondary-color: #8338ec;
+  --success-color: #38b000;
+  --warning-color: #ffbe0b;
+  --danger-color: #ff006e;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6c757d;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --border-color: #e0e0e0;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
+/* ============================================
+   BASE MOBILE STYLES (0px - 768px)
+============================================ */
+.estate-dashboard-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg-secondary);
+}
+
+/* Mobile Sidebar - Hidden by default, shown via menu button */
+.estate-nav-mobile {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background: var(--bg-primary);
+  z-index: 1000;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.estate-nav-mobile.active {
+  display: block;
+}
+
+/* Mobile menu button */
+.mobile-menu-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 1001;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+}
+
+/* Main dashboard area */
+.estate-dashboard {
+  padding: 16px;
+  width: 100%;
+  margin-top: 64px; /* Space for fixed header */
+}
+
+/* Dashboard Header - Stack vertically on mobile */
+.dashboard-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+  background: var(--bg-primary);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.welcome-section h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.welcome-section .subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* Action buttons - Full width on mobile */
+.header-actions .action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.header-actions .btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 15px;
+  border-radius: var(--radius-sm);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 44px; /* Touch-friendly */
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2a76ff;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 2px solid var(--primary-color);
+  color: var(--primary-color);
+}
+
+.btn-outline:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* Dashboard Tabs - Horizontal scroll on mobile */
+.dashboard-tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  padding: 16px 0;
+  margin-bottom: 16px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.dashboard-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 0 0 auto;
+  padding: 12px 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.tab.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+/* Stats Grid - 2 columns on mobile */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.dashboard-card {
+  background: var(--bg-primary);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-card .card-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dashboard-card .card-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Properties Table - Horizontal scroll on mobile */
+.breakdown-section {
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.card-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.filter-buttons {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filter-btn {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-btn.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* Table container with horizontal scroll */
+.properties-table {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.properties-table table {
+  min-width: 700px; /* Ensures table can scroll on mobile */
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.properties-table th {
+  text-align: left;
+  padding: 12px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.properties-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+/* Property row styling for mobile */
+.property-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.property-info strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.property-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-rent-easy {
+  background: var(--primary-color);
+  color: white;
+}
+
+.badge-external {
+  background: var(--success-color);
+  color: white;
+}
+
+.badge-managed {
+  background: var(--secondary-color);
+  color: white;
+}
+
+.property-address {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+/* Status badges */
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.status-badge.occupied {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.vacant {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Action buttons in table */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-icon {
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: var(--bg-secondary);
+  border-color: var(--primary-color);
+}
+
+/* Main Content Grid - Single column on mobile */
+.main-content-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.content-card {
+  background: var(--bg-primary);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.content-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.content-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Quick Actions Grid - 2 columns on mobile */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.quick-action-btn {
+  padding: 16px 12px;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 90px;
+}
+
+.quick-action-btn:hover {
+  background: #e9ecef;
+  transform: translateY(-2px);
+}
+
+.quick-action-btn span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+/* Alerts Section */
+.alerts-section {
+  margin-bottom: 24px;
+}
+
+.alerts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alert-card {
+  background: var(--bg-primary);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border-left: 4px solid;
+  box-shadow: var(--shadow-sm);
+}
+
+.alert-card.high {
+  border-left-color: var(--danger-color);
+  background: linear-gradient(135deg, #ffeaea 0%, #ffffff 100%);
+}
+
+.alert-card.medium {
+  border-left-color: var(--warning-color);
+  background: linear-gradient(135deg, #fff4e6 0%, #ffffff 100%);
+}
+
+.alert-card.low {
+  border-left-color: var(--success-color);
+  background: linear-gradient(135deg, #e6ffe6 0%, #ffffff 100%);
+}
+
+.alert-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.alert-type {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.alert-content p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.alert-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 13px;
+  min-height: 36px;
+}
+
+/* Performance Summary */
+.performance-summary {
+  background: var(--bg-primary);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+
+.performance-summary h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.performance-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.performance-stat {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Modal styles for mobile */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.modal {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  padding: 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 12px;
+}
+
+/* Form styles for mobile */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 16px; /* Prevents iOS zoom */
+  background: var(--bg-primary);
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ============================================
+   TABLET STYLES (769px - 1024px)
+============================================ */
+@media (min-width: 769px) {
+  .estate-dashboard-container {
+    flex-direction: row;
+  }
+
+  .estate-nav-mobile {
+    display: none; /* Hide mobile nav on tablet */
+  }
+
+  .mobile-menu-btn {
+    display: none;
+  }
+
+  /* Show desktop sidebar */
+  .estate-dashboard {
+    margin-left: 250px; /* Adjust based on your sidebar width */
+    margin-top: 0;
+    padding: 24px;
+  }
+
+  .dashboard-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .header-actions .action-buttons {
+    flex-direction: row;
+    width: auto;
+  }
+
+  .header-actions .btn {
+    width: auto;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .dashboard-card {
+    padding: 20px;
+  }
+
+  .card-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .filter-buttons {
+    overflow-x: visible;
+  }
+
+  .main-content-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  .quick-actions-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .alerts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .performance-stats {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .form-row {
+    flex-direction: row;
+  }
+
+  .form-row .form-group {
+    flex: 1;
+  }
+}
+
+/* ============================================
+   DESKTOP STYLES (1025px and up)
+============================================ */
+@media (min-width: 1025px) {
+  .estate-dashboard {
+    margin-left: 280px; /* Adjust based on your sidebar width */
+    padding: 32px;
+    max-width: 1400px;
+  }
+
+  .welcome-section h1 {
+    font-size: 32px;
+  }
+
+  .subtitle {
+    font-size: 16px;
+  }
+
+  .dashboard-tabs {
+    overflow-x: visible;
+    justify-content: flex-start;
+  }
+
+  .tab {
+    padding: 12px 24px;
+  }
+
+  .main-content-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .quick-actions-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .properties-table {
+    overflow-x: visible;
+  }
+
+  .properties-table table {
+    min-width: 100%;
+  }
+}
+
+/* ============================================
+   UTILITY CLASSES
+============================================ */
+.hidden-mobile {
+  display: none;
+}
+
+.visible-mobile {
+  display: block;
+}
+
+@media (min-width: 769px) {
+  .hidden-mobile {
+    display: block;
+  }
+  
+  .visible-mobile {
+    display: none;
+  }
+}
+
+/* ============================================
+   SWIPEABLE SECTION FOR MODERN APP FEEL
+============================================ */
+.swipeable-section {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.swipeable-container {
+  display: flex;
+  transition: transform 0.3s ease;
+  width: 100%;
+}
+
+.swipeable-panel {
+  flex: 0 0 100%;
+  width: 100%;
+  min-height: 400px;
+  padding: 16px;
+}
+
+.swipe-indicators {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.swipe-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-color);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.swipe-indicator.active {
+  background: var(--primary-color);
+  transform: scale(1.2);
+}
+
+/* ============================================
+   TOUCH FRIENDLY ENHANCEMENTS
+============================================ */
+@media (hover: none) and (pointer: coarse) {
+  .btn,
+  .btn-icon,
+  .tab,
+  .quick-action-btn,
+  .filter-btn {
+    min-height: 44px;
+  }
+
+  .btn-icon {
+    min-width: 44px;
+  }
+
+  .form-input,
+  .form-select {
+    min-height: 44px;
+  }
+
+  /* Increase tap target sizes */
+  .action-buttons .btn-icon {
+    padding: 12px;
+  }
+
+  /* Better scrolling */
+  .properties-table,
+  .dashboard-tabs,
+  .filter-buttons {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ============================================
+   DARK MODE SUPPORT (Optional)
+============================================ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-primary: #f8f9fa;
+    --text-secondary: #adb5bd;
+    --bg-primary: #1a1d29;
+    --bg-secondary: #13141f;
+    --border-color: #2d3748;
+  }
+
+  .content-card,
+  .dashboard-card,
+  .alert-card,
+  .breakdown-section,
+  .performance-summary {
+    border: 1px solid var(--border-color);
+  }
+}

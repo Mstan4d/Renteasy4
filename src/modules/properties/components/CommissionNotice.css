@@ -1,0 +1,191 @@
+/* src/modules/properties/components/CommissionNotice.css */
+.commission-notice {
+    background: white;
+    border-radius: 15px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid #e3e8ff;
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.08);
+  }
+  
+  .commission-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e3e8ff;
+  }
+  
+  .commission-header h3 {
+    margin: 0;
+    color: #2d3748;
+    font-size: 1.25rem;
+  }
+  
+  .commission-header svg {
+    color: #667eea;
+  }
+  
+  .commission-description {
+    color: #4a5568;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+    font-size: 15px;
+  }
+  
+  .commission-breakdown {
+    background: #f8f9ff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .breakdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+  }
+  
+  .breakdown-item:last-child {
+    border-bottom: none;
+  }
+  
+  .breakdown-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4a5568;
+    font-size: 14px;
+  }
+  
+  .breakdown-label svg {
+    color: #718096;
+  }
+  
+  .commission-item .commission-value {
+    font-weight: 600;
+    font-size: 15px;
+  }
+  
+  .commission-item.renteasy .commission-value {
+    color: #667eea;
+  }
+  
+  .commission-item.manager .commission-value {
+    color: #38b2ac;
+  }
+  
+  .commission-item.referral .commission-value {
+    color: #ed8936;
+  }
+  
+  .breakdown-separator {
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    color: #a0aec0;
+    padding: 8px 0;
+  }
+  
+  .total-item {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 10px;
+    border: none;
+  }
+  
+  .total-item .breakdown-label {
+    color: white;
+    font-weight: 500;
+  }
+  
+  .total-item .commission-value {
+    color: white;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  
+  .tenant-bonus-notice {
+    background: #e6fffa;
+    border: 1px solid #81e6d9;
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 1rem;
+  }
+  
+  .tenant-bonus-notice svg {
+    color: #319795;
+    flex-shrink: 0;
+  }
+  
+  .tenant-bonus-notice div {
+    flex: 1;
+  }
+  
+  .tenant-bonus-notice strong {
+    color: #234e52;
+    display: block;
+    margin-bottom: 4px;
+  }
+  
+  .tenant-bonus-notice p {
+    color: #4a5568;
+    font-size: 14px;
+    margin: 0;
+    line-height: 1.5;
+  }
+  
+  .commission-note {
+    background: #fefcbf;
+    border: 1px solid #f6e05e;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 1rem;
+  }
+  
+  .commission-note small {
+    color: #744210;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  
+  .price {
+    font-weight: 700;
+    color: #2d3748;
+    font-size: 16px;
+  }
+  
+  @media (max-width: 768px) {
+    .commission-notice {
+      padding: 1rem;
+      margin: 1rem;
+    }
+    
+    .commission-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    
+    .commission-breakdown {
+      padding: 1rem;
+    }
+    
+    .breakdown-item {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 10px 0;
+    }
+    
+    .commission-item .commission-value {
+      align-self: flex-end;
+    }
+  }

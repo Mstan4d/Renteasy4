@@ -1,0 +1,296 @@
+/* src/modules/properties/components/steps/LocationStep.css */
+.location-step {
+    animation: fadeIn 0.5s ease;
+  }
+  
+  .step-description {
+    color: #4a5568;
+    margin-top: 0.5rem;
+    line-height: 1.5;
+  }
+  
+  .search-container {
+    position: relative;
+  }
+  
+  .search-container input {
+    width: 100%;
+    padding-right: 40px;
+  }
+  
+  .search-icon {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a0aec0;
+    pointer-events: none;
+  }
+  
+  .map-container {
+    margin-top: 2rem;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+  }
+  
+  .map-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: #f8f9ff;
+    border-bottom: 1px solid #e3e8ff;
+  }
+  
+  .map-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: #2d3748;
+    font-size: 1.1rem;
+  }
+  
+  .map-header svg {
+    color: #667eea;
+  }
+  
+  .btn.btn-outline {
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .map-placeholder {
+    height: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #f7fafc;
+    color: #718096;
+  }
+  
+  .map-placeholder .loading-spinner {
+    width: 30px;
+    height: 30px;
+    border-width: 3px;
+    margin-bottom: 12px;
+  }
+  
+  .map-instructions {
+    padding: 1rem 1.5rem;
+    background: #f8f9ff;
+    border-top: 1px solid #e3e8ff;
+    font-size: 14px;
+  }
+  
+  .map-instructions p {
+    margin: 0;
+    color: #4a5568;
+    line-height: 1.5;
+  }
+  
+  .map-instructions strong {
+    color: #2d3748;
+  }
+  
+  .location-notes {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: #f0f9ff;
+    border-radius: 12px;
+    border: 1px solid #bee3f8;
+  }
+  
+  .location-notes h4 {
+    color: #2c5282;
+    margin-top: 0;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .location-notes ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    color: #4a5568;
+  }
+  
+  .location-notes li {
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  
+  .location-notes li:last-child {
+    margin-bottom: 0;
+  }
+  
+  .map-error {
+    padding: 2rem;
+    text-align: center;
+    background: #fed7d7;
+    border: 1px solid #fc8181;
+    border-radius: 12px;
+    color: #c53030;
+  }
+  
+  .map-error p {
+    margin: 0.5rem 0;
+  }
+  
+  .map-error p:first-child {
+    font-weight: 600;
+  }
+  
+  /* Custom Google Maps Styling */
+  .gm-style .gm-style-iw-c {
+    border-radius: 12px !important;
+    padding: 16px !important;
+  }
+  
+  .gm-style .gm-style-iw-t::after {
+    background: linear-gradient(45deg, #667eea, #764ba2) !important;
+  }
+  
+  .gm-style .gm-style-iw-d {
+    overflow: hidden !important;
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .map-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 1rem;
+    }
+    
+    .map-header h3 {
+      justify-content: center;
+    }
+    
+    .btn.btn-outline {
+      width: 100%;
+      justify-content: center;
+    }
+    
+    .location-notes {
+      padding: 1rem;
+    }
+    
+    .form-group input {
+      font-size: 16px; /* Prevents zoom on iOS */
+    }
+  }
+
+  /* Add to LocationStep.css */
+.map-instructions-container {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: #fff8e1;
+    border-radius: 12px;
+    border: 1px solid #ffecb3;
+  }
+  
+  .map-instruction-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1rem;
+  }
+  
+  .instruction-icon {
+    color: #f59e0b;
+  }
+  
+  .map-instructions-container h3 {
+    margin: 0;
+    color: #92400e;
+  }
+  
+  .map-instructions-container p {
+    color: #92400e;
+    margin-bottom: 1rem;
+    line-height: 1.5;
+  }
+  
+  .instruction-steps {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    border: 1px solid #e2e8f0;
+  }
+  
+  .instruction-steps h4 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    color: #2d3748;
+  }
+  
+  .instruction-steps ol {
+    margin: 0;
+    padding-left: 1.5rem;
+    color: #4a5568;
+  }
+  
+  .instruction-steps li {
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  
+  .instruction-steps li:last-child {
+    margin-bottom: 0;
+  }
+  
+  .instruction-steps code {
+    background: #f7fafc;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #2d3748;
+    border: 1px solid #e2e8f0;
+  }
+  
+  .map-fallback-note {
+    padding: 1rem;
+    background: #f0fff4;
+    border-radius: 8px;
+    border: 1px solid #c6f6d5;
+    margin-top: 1rem;
+  }
+  
+  .map-fallback-note p {
+    margin: 0;
+    color: #22543d;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  
+  .map-error {
+    padding: 2rem;
+    text-align: center;
+    background: #fed7d7;
+    border: 1px solid #fc8181;
+    border-radius: 12px;
+    color: #c53030;
+  }
+  
+  .map-error svg {
+    margin-bottom: 1rem;
+  }
+  
+  .map-error h3 {
+    margin: 0.5rem 0;
+  }
+  
+  .map-error p {
+    margin: 0.5rem 0;
+  }
