@@ -1,1 +1,0 @@
-import{c}from"./index-EfzA-Ay5.js";const o=[["path",{d:"M20 6 9 17l-5-5",key:"1gmf2c"}]],n=c("check",o);const e=[["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}],["path",{d:"M12 16v-4",key:"1dtifu"}],["path",{d:"M12 8h.01",key:"e9boi3"}]],a=c("info",e);export{n as C,a as I};
