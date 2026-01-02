@@ -435,9 +435,9 @@ const Home = () => {
                   <div key={listing.id} className={`property-card ${status.class}`}>
                     {/* Property Image */}
                     <div className="property-image-container">
-                     <div className="random-badge">
+                 {/* <div className="random-badge">
                         Random Pick
-                     </div>
+                     </div> */}
                       <img 
                         src={getFirstImage(listing)} 
                         alt={listing.title} 

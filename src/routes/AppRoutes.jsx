@@ -66,6 +66,8 @@ const TenantMaintenance = lazy(() => import('../modules/dashboard/pages/tenant/T
 const TenantDocuments = lazy(() => import('../modules/dashboard/pages/tenant/TenantDocuments'));
 const TenantReferrals = lazy(() => import('../modules/dashboard/pages/tenant/TenantReferrals'));
 const TenantSettings = lazy(() => import('../modules/dashboard/pages/tenant/TenantSettings'));
+const TenantLeases = lazy(() => import('../modules/dashboard/pages/tenant/TenantLeases'));
+
 
 // Landlord Components
 const LandlordDashboard = lazy(() => import('../modules/dashboard/pages/landlord/LandlordDashboard'));
@@ -639,7 +641,7 @@ const AppRoutes = () => {
           path="post-property" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord', 'estate-firm', 'manager']}>
+              <PrivateRoute allowedRoles={['landlord', 'estate-firm', 'tenant', 'manager']}>
                 <PostPropertyPage />
               </PrivateRoute>
             </Suspense>

@@ -1,0 +1,13 @@
+/* src/shared/components/PageWrapper.css */
+.page-wrapper {
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
+    background: #f8fafc; /* Your dashboard background */
+  }
+  
+  /* Ensure proper stacking */
+  .page-wrapper > * {
+    position: relative;
+    z-index: 1;
+  }

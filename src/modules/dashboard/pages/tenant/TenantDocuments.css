@@ -1,4 +1,4 @@
-/* src/modules/dashboard/pages/tenant/TenantDocuments.css */
+/* src/modules/dashboard/pages/tenant/TenantDocuments.css - UPDATED FOR MOBILE */
 .tenant-documents {
     padding: 24px;
     background: #f8fafc;
@@ -28,14 +28,14 @@
   .document-stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
+    gap: 16px;
     margin-bottom: 32px;
   }
   
   .document-categories {
     background: white;
     border-radius: 16px;
-    padding: 32px;
+    padding: 24px;
     margin-bottom: 32px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
@@ -48,20 +48,23 @@
   
   .categories-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
   }
   
   .category-card {
     border: 2px solid #e5e7eb;
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     transition: border-color 0.2s, transform 0.2s;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
   }
   
   .category-card:hover {
     border-color: #3b82f6;
-    transform: translateY(-4px);
+    transform: translateY(-2px);
   }
   
   .category-header {
@@ -69,38 +72,44 @@
     align-items: center;
     gap: 16px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
   }
   
   .category-icon {
     font-size: 32px;
-    width: 60px;
-    height: 60px;
+    width: 50px;
+    height: 50px;
     background: #f0f9ff;
     border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #3b82f6;
+    flex-shrink: 0;
   }
   
   .category-header h4 {
     margin: 0;
     color: #1f2937;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
+    flex: 1;
+    min-width: 150px;
   }
   
   .category-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
     border-bottom: 1px solid #e5e7eb;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   
   .doc-count,
   .verified-count {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 500;
   }
   
@@ -114,6 +123,7 @@
   
   .category-docs {
     margin-bottom: 16px;
+    flex: 1;
   }
   
   .doc-preview {
@@ -124,6 +134,8 @@
     background: #f9fafb;
     border-radius: 8px;
     margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   
   .doc-preview:last-child {
@@ -134,16 +146,18 @@
     color: #4b5563;
     font-size: 0.9rem;
     flex: 1;
+    min-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   
   .doc-status {
-    padding: 2px 8px;
+    padding: 4px 10px;
     border-radius: 12px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 500;
+    white-space: nowrap;
   }
   
   .doc-status.verified {
@@ -174,15 +188,19 @@
   .no-docs {
     text-align: center;
     color: #9ca3af;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     margin: 0;
     padding: 20px 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   
   .all-documents {
     background: white;
     border-radius: 16px;
-    padding: 32px;
+    padding: 24px;
     margin-bottom: 32px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
@@ -190,16 +208,18 @@
   .all-documents h3 {
     font-size: 1.5rem;
     color: #374151;
-    margin: 0 0 24px 0;
+    margin: 0 0 20px 0;
   }
   
   .documents-table-container {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
   
   .documents-table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 600px;
   }
   
   .documents-table th {
@@ -218,290 +238,213 @@
     color: #4b5563;
   }
   
-  .documents-table tr:hover {
-    background: #f8fafc;
-  }
-  
-  .document-name {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  
-  .doc-icon {
-    font-size: 1.5rem;
-  }
-  
-  .category-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.9rem;
-  }
-  
   .document-actions {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
   }
   
-  .btn-action.download {
-    background: #dbeafe;
-    color: #1e40af;
-    padding: 6px 12px;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
+  /* ==================== MEDIA QUERIES ==================== */
   
-  .btn-action.download:hover {
-    background: #bfdbfe;
-  }
-  
-  .btn-action.delete {
-    background: #fee2e2;
-    color: #dc2626;
-    padding: 6px 12px;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  
-  .btn-action.delete:hover {
-    background: #fecaca;
-  }
-  
-  .required-documents {
-    background: white;
-    border-radius: 16px;
-    padding: 32px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  }
-  
-  .required-documents h3 {
-    font-size: 1.5rem;
-    color: #374151;
-    margin: 0 0 24px 0;
-    text-align: center;
-  }
-  
-  .requirements-list {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .requirement-item {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    padding: 20px;
-    border-radius: 12px;
-    border: 2px solid #e5e7eb;
-  }
-  
-  .requirement-item.completed {
-    border-color: #d1fae5;
-    background: #f0fdf4;
-  }
-  
-  .requirement-item.pending {
-    border-color: #fef3c7;
-    background: #fffbeb;
-  }
-  
-  .requirement-item.optional {
-    border-color: #e5e7eb;
-    background: #f9fafb;
-  }
-  
-  .requirement-icon {
-    font-size: 24px;
-    width: 48px;
-    height: 48px;
-    background: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .requirement-item.completed .requirement-icon {
-    color: #059669;
-    background: #d1fae5;
-  }
-  
-  .requirement-item.pending .requirement-icon {
-    color: #d97706;
-    background: #fef3c7;
-  }
-  
-  .requirement-item.optional .requirement-icon {
-    color: #6b7280;
-    background: #f3f4f6;
-  }
-  
-  .requirement-info {
-    flex: 1;
-  }
-  
-  .requirement-info h4 {
-    margin: 0 0 4px 0;
-    color: #1f2937;
-    font-size: 1.1rem;
-  }
-  
-  .requirement-info p {
-    margin: 0;
-    color: #6b7280;
-    font-size: 0.95rem;
-  }
-  
-  .upload-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 20px;
-  }
-  
-  .upload-modal {
-    background: white;
-    border-radius: 16px;
-    width: 100%;
-    max-width: 500px;
-    max-height: 90vh;
-    overflow-y: auto;
-    animation: modalSlideIn 0.3s ease;
-  }
-  
-  @keyframes modalSlideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  .file-upload-area {
-    margin: 24px 0;
-  }
-  
-  .file-upload-label {
-    display: block;
-    cursor: pointer;
-  }
-  
-  .file-input {
-    display: none;
-  }
-  
-  .upload-placeholder {
-    border: 3px dashed #d1d5db;
-    border-radius: 12px;
-    padding: 40px 20px;
-    text-align: center;
-    transition: all 0.2s;
-  }
-  
-  .file-upload-label:hover .upload-placeholder {
-    border-color: #3b82f6;
-    background: #f0f9ff;
-  }
-  
-  .upload-icon {
-    font-size: 48px;
-    color: #9ca3af;
-    margin-bottom: 16px;
-    display: block;
-  }
-  
-  .file-upload-label:hover .upload-icon {
-    color: #3b82f6;
-  }
-  
-  .upload-placeholder p {
-    color: #4b5563;
-    margin: 0 0 8px 0;
-    font-size: 1.1rem;
-    font-weight: 500;
-  }
-  
-  .upload-placeholder small {
-    color: #9ca3af;
-    font-size: 0.9rem;
-  }
-  
-  .documents-loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 400px;
-  }
-  
+  /* Tablet (768px and below) */
   @media (max-width: 768px) {
     .tenant-documents {
-      padding: 12px;
+      padding: 16px;
     }
     
     .documents-header {
       flex-direction: column;
       align-items: flex-start;
+      gap: 16px;
+    }
+    
+    .documents-header h1 {
+      font-size: 1.75rem;
+    }
+    
+    .document-stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .document-categories,
+    .all-documents,
+    .required-documents {
+      padding: 20px;
+      border-radius: 12px;
+    }
+    
+    .categories-grid {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    
+    .category-card {
+      padding: 16px;
+    }
+    
+    .category-header {
+      gap: 12px;
+    }
+    
+    .category-icon {
+      width: 40px;
+      height: 40px;
+      font-size: 24px;
+    }
+    
+    .category-header h4 {
+      font-size: 1rem;
+    }
+    
+    .category-info {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    
+    .doc-preview {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    
+    .doc-name {
+      min-width: 100%;
+      white-space: normal;
+      word-break: break-word;
+    }
+    
+    .doc-status {
+      align-self: flex-start;
+    }
+  }
+  
+  /* Mobile (576px and below) */
+  @media (max-width: 576px) {
+    .tenant-documents {
+      padding: 12px;
+    }
+    
+    .documents-header h1 {
+      font-size: 1.5rem;
+    }
+    
+    .documents-header p {
+      font-size: 0.9rem;
     }
     
     .document-stats {
       grid-template-columns: 1fr;
     }
     
+    .stat-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    
+    .stat-icon {
+      font-size: 24px;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f0f9ff;
+      border-radius: 10px;
+    }
+    
+    .document-categories h3,
+    .all-documents h3,
+    .required-documents h3 {
+      font-size: 1.25rem;
+      margin-bottom: 20px;
+    }
+    
     .categories-grid {
-      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    
+    .category-card {
+      border-radius: 10px;
     }
     
     .category-header {
       flex-direction: column;
-      text-align: center;
-      gap: 12px;
-    }
-    
-    .category-info {
-      flex-direction: column;
-      gap: 8px;
       align-items: flex-start;
+      text-align: left;
+      gap: 10px;
     }
     
+    .category-icon {
+      align-self: flex-start;
+    }
+    
+    .category-header h4 {
+      min-width: 100%;
+    }
+    
+    /* Make table responsive */
     .documents-table {
-      font-size: 0.9rem;
+      min-width: 100%;
     }
     
-    .documents-table th,
+    .documents-table thead {
+      display: none;
+    }
+    
+    .documents-table tr {
+      display: block;
+      margin-bottom: 16px;
+      background: white;
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    
     .documents-table td {
-      padding: 12px 8px;
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f1f1;
+    }
+    
+    .documents-table td:before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: #374151;
+      min-width: 120px;
+      margin-right: 16px;
+    }
+    
+    .documents-table td:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
     }
     
     .document-name {
       flex-direction: column;
       align-items: flex-start;
-      gap: 6px;
+      gap: 8px;
     }
     
     .document-actions {
-      flex-direction: column;
-      gap: 4px;
+      width: 100%;
+      justify-content: space-between;
+    }
+    
+    .btn-action.download,
+    .btn-action.delete {
+      flex: 1;
+      text-align: center;
+    }
+    
+    .requirements-list {
+      gap: 12px;
     }
     
     .requirement-item {
@@ -510,7 +453,113 @@
       gap: 12px;
     }
     
-    .requirement-info {
-      text-align: center;
+    .requirement-info h4 {
+      font-size: 1rem;
+    }
+    
+    .requirement-info p {
+      font-size: 0.85rem;
+    }
+  }
+  
+  /* Small Mobile (400px and below) */
+  @media (max-width: 400px) {
+    .tenant-documents {
+      padding: 8px;
+    }
+    
+    .documents-header h1 {
+      font-size: 1.25rem;
+    }
+    
+    .document-categories,
+    .all-documents,
+    .required-documents {
+      padding: 16px;
+    }
+    
+    .category-card {
+      padding: 12px;
+    }
+    
+    .doc-preview {
+      padding: 6px 8px;
+    }
+    
+    .doc-name {
+      font-size: 0.8rem;
+    }
+    
+    .doc-status {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+    }
+    
+    .document-actions {
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .btn-action.download,
+    .btn-action.delete {
+      width: 100%;
+      padding: 8px;
+    }
+  }
+  
+  /* Fix for tablets in landscape */
+  @media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
+    .categories-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .category-card {
+      min-height: 220px;
+    }
+  }
+  
+  /* Touch device optimizations */
+  @media (hover: none) and (pointer: coarse) {
+    .category-card:hover {
+      transform: none;
+    }
+    
+    .btn-action.download,
+    .btn-action.delete {
+      padding: 10px 16px;
+      font-size: 0.9rem;
+    }
+    
+    .doc-preview {
+      padding: 10px 12px;
+    }
+  }
+  
+  /* Dark mode support (optional) */
+  @media (prefers-color-scheme: dark) {
+    .tenant-documents {
+      background: #0f172a;
+    }
+    
+    .category-card,
+    .stat-card,
+    .documents-table tr {
+      background: #1e293b;
+      border-color: #334155;
+    }
+    
+    .documents-header h1,
+    .category-header h4,
+    .doc-name {
+      color: #f1f5f9;
+    }
+    
+    .documents-header p,
+    .doc-count {
+      color: #94a3b8;
+    }
+    
+    .doc-preview {
+      background: #334155;
     }
   }

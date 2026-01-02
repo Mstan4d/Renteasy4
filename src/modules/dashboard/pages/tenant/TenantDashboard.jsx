@@ -1,4 +1,4 @@
-// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - UPDATED
+// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../../shared/context/AuthContext'
@@ -6,18 +6,14 @@ import VerifiedBadge, { InlineVerifiedBadge } from '../../../../shared/component
 import './TenantDashboard.css'
 
 const TenantDashboard = () => {
-  const { user, isVerified, verificationStatus } = useAuth()
+  const { user, isVerified } = useAuth()
   const navigate = useNavigate()
   
   const [dashboardData, setDashboardData] = useState({
     userInfo: null,
-    currentRental: null,
-    listedProperties: [], // Properties tenant has listed
+    listedProperties: [],
     savedProperties: [],
     applications: [],
-    upcomingPayments: [],
-    maintenanceRequests: [],
-    notifications: [],
     stats: {
       listedProperties: 0,
       savedProperties: 0,
@@ -36,43 +32,29 @@ const TenantDashboard = () => {
   const loadDashboardData = () => {
     setLoading(true)
     
-    // Load user's listed properties from localStorage
+    // Load data from localStorage (will be replaced with backend API)
     const allListings = JSON.parse(localStorage.getItem('listings') || '[]')
     const userListings = allListings.filter(listing => 
       listing.posterId === user?.id || listing.userId === user?.id
     )
     
-    // Load saved properties
     const savedProperties = JSON.parse(localStorage.getItem(`saved_properties_${user?.id}`) || '[]')
-    
-    // Load applications
     const applications = JSON.parse(localStorage.getItem(`applications_${user?.id}`) || '[]')
     
-    // Mock user data
     const mockUserData = {
       id: user?.id,
       name: user?.name || 'Tenant User',
       email: user?.email || 'tenant@example.com',
       phone: user?.phone || '+234 801 234 5678',
       avatar: `https://ui-avatars.com/api/?name=${user?.name || 'Tenant'}&background=10b981&color=fff`,
-      verificationStatus: user?.verificationStatus || 'not_started',
-      isVerified: user?.isVerified || false,
-      verificationLevel: user?.verificationLevel || 'basic',
       trustScore: user?.isVerified ? 85 : 65
     }
     
-    // Current rental (if any)
-    const currentRental = JSON.parse(localStorage.getItem(`current_rental_${user?.id}`)) || null
-    
     setDashboardData({
       userInfo: mockUserData,
-      currentRental,
       listedProperties: userListings,
       savedProperties,
       applications,
-      upcomingPayments: [],
-      maintenanceRequests: [],
-      notifications: [],
       stats: {
         listedProperties: userListings.length,
         savedProperties: savedProperties.length,
@@ -98,9 +80,6 @@ const TenantDashboard = () => {
       case 'get_verified':
         navigate('/verify')
         break
-      case 'view_applications':
-        navigate('/dashboard/tenant/applications')
-        break
       default:
         break
     }
@@ -119,7 +98,7 @@ const TenantDashboard = () => {
       const allListings = JSON.parse(localStorage.getItem('listings') || '[]')
       const updatedListings = allListings.filter(listing => listing.id !== listingId)
       localStorage.setItem('listings', JSON.stringify(updatedListings))
-      loadDashboardData() // Refresh data
+      loadDashboardData()
     }
   }
 
@@ -127,7 +106,7 @@ const TenantDashboard = () => {
     const saved = JSON.parse(localStorage.getItem(`saved_properties_${user?.id}`) || '[]')
     const updated = saved.filter(item => item.id !== propertyId)
     localStorage.setItem(`saved_properties_${user?.id}`, JSON.stringify(updated))
-    loadDashboardData() // Refresh data
+    loadDashboardData()
   }
 
   if (loading) {
@@ -143,9 +122,13 @@ const TenantDashboard = () => {
     <div className="tenant-dashboard">
       {/* Dashboard Header */}
       <header className="dashboard-header">
-        <div className="header-user-info">
-          <div className="user-avatar">
-            <img src={dashboardData.userInfo?.avatar} alt={dashboardData.userInfo?.name} />
+        <div className="user-info-section">
+          <div className="user-avatar-container">
+            <img 
+              src={dashboardData.userInfo?.avatar} 
+              alt={dashboardData.userInfo?.name} 
+              className="user-avatar"
+            />
             {isVerified && (
               <div className="verified-badge-overlay">
                 <VerifiedBadge type="tenant" size="small" />
@@ -153,108 +136,171 @@ const TenantDashboard = () => {
             )}
           </div>
           <div className="user-details">
-            <h1 className="dashboard-title">
-              Welcome back, <span className="user-highlight">{dashboardData.userInfo?.name}</span>!
+            <h1 className="greeting">
+              Welcome back, <span className="user-name">{dashboardData.userInfo?.name}</span>!
             </h1>
-            <p className="dashboard-subtitle">
-              {isVerified ? 'Verified Tenant Account' : 'Complete verification to unlock features'}
+            <p className="user-status">
+              {isVerified ? '✅ Verified Tenant Account' : '⚠️ Verification Required'}
             </p>
             <div className="user-meta">
-              <span className="meta-item">
-                <span className="meta-label">Trust Score:</span>
-                <span className="meta-value score">{dashboardData.userInfo?.trustScore}/100</span>
-              </span>
+              <div className="trust-score">
+                <span className="label">Trust Score:</span>
+                <span className="value">{dashboardData.userInfo?.trustScore}/100</span>
+              </div>
               {!isVerified && (
-                <span className="meta-item">
-                  <button 
-                    className="btn-get-verified"
-                    onClick={() => navigate('/verify')}
-                  >
-                    Get Verified Now
-                  </button>
-                </span>
+                <button 
+                  className="btn btn-sm btn-verify"
+                  onClick={() => navigate('/verify')}
+                >
+                  Get Verified
+                </button>
               )}
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="header-stats">
-          <div className="stat-card" onClick={() => navigate('/dashboard/tenant/applications')}>
-            <div className="stat-icon">🏠</div>
-            <div className="stat-content">
-              <span className="stat-label">Listed Properties</span>
-              <span className="stat-value">{dashboardData.stats.listedProperties}</span>
-            </div>
-          </div>
-          <div className="stat-card" onClick={() => navigate('/dashboard/tenant/saved')}>
-            <div className="stat-icon">⭐</div>
-            <div className="stat-content">
-              <span className="stat-label">Saved Properties</span>
-              <span className="stat-value">{dashboardData.stats.savedProperties}</span>
-            </div>
-          </div>
-          <div className="stat-card" onClick={() => navigate('/dashboard/tenant/applications')}>
-            <div className="stat-icon">📋</div>
-            <div className="stat-content">
-              <span className="stat-label">Applications</span>
-              <span className="stat-value">{dashboardData.stats.applications}</span>
-            </div>
-          </div>
-          <div className="stat-card" onClick={() => navigate('/dashboard/messages')}>
-            <div className="stat-icon">💬</div>
-            <div className="stat-content">
-              <span className="stat-label">Unread Messages</span>
-              <span className="stat-value">{dashboardData.stats.unreadMessages}</span>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Dashboard Tabs - These are now in the sidebar, but we keep for quick navigation */}
-      <div className="dashboard-tabs">
-        <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-          📊 Overview
-        </button>
-        <button className={`tab-btn ${activeTab === 'listed' ? 'active' : ''}`} onClick={() => setActiveTab('listed')}>
-          🏠 Listed ({dashboardData.stats.listedProperties})
-        </button>
-        <button className={`tab-btn ${activeTab === 'saved' ? 'active' : ''}`} onClick={() => setActiveTab('saved')}>
-          ⭐ Saved ({dashboardData.stats.savedProperties})
-        </button>
-        <button className={`tab-btn ${activeTab === 'applications' ? 'active' : ''}`} onClick={() => navigate('/dashboard/tenant/applications')}>
-          📋 Applications ({dashboardData.stats.applications})
-        </button>
-        <button className={`tab-btn ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => navigate('/dashboard/messages')}>
-          💬 Messages
-        </button>
+      {/* Stats Cards */}
+      <div className="stats-grid">
+        <div 
+          className="stat-card" 
+          onClick={() => setActiveTab('listed')}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="stat-icon">🏠</div>
+          <div className="stat-content">
+            <div className="stat-value">{dashboardData.stats.listedProperties}</div>
+            <div className="stat-label">Listed</div>
+          </div>
+        </div>
+        
+        <div 
+          className="stat-card" 
+          onClick={() => setActiveTab('saved')}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="stat-icon">⭐</div>
+          <div className="stat-content">
+            <div className="stat-value">{dashboardData.stats.savedProperties}</div>
+            <div className="stat-label">Saved</div>
+          </div>
+        </div>
+        
+        <div 
+          className="stat-card" 
+          onClick={() => navigate('/dashboard/tenant/applications')}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="stat-icon">📋</div>
+          <div className="stat-content">
+            <div className="stat-value">{dashboardData.stats.applications}</div>
+            <div className="stat-label">Applications</div>
+          </div>
+        </div>
+        
+        <div 
+          className="stat-card" 
+          onClick={() => navigate('/dashboard/messages')}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="stat-icon">💬</div>
+          <div className="stat-content">
+            <div className="stat-value">{dashboardData.stats.unreadMessages}</div>
+            <div className="stat-label">Messages</div>
+          </div>
+        </div>
       </div>
 
-      {/* Tab Content */}
-      <div className="tab-content">
+      {/* Dashboard Navigation Tabs */}
+      <nav className="dashboard-nav">
+        <div className="nav-tabs">
+          <button 
+            className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`}
+            onClick={() => setActiveTab('overview')}
+          >
+            <span className="tab-icon">📊</span>
+            <span className="tab-label">Overview</span>
+          </button>
+          
+          <button 
+            className={`nav-tab ${activeTab === 'listed' ? 'active' : ''}`}
+            onClick={() => setActiveTab('listed')}
+          >
+            <span className="tab-icon">🏠</span>
+            <span className="tab-label">Listed</span>
+            {dashboardData.stats.listedProperties > 0 && (
+              <span className="tab-badge">{dashboardData.stats.listedProperties}</span>
+            )}
+          </button>
+          
+          <button 
+            className={`nav-tab ${activeTab === 'saved' ? 'active' : ''}`}
+            onClick={() => setActiveTab('saved')}
+          >
+            <span className="tab-icon">⭐</span>
+            <span className="tab-label">Saved</span>
+            {dashboardData.stats.savedProperties > 0 && (
+              <span className="tab-badge">{dashboardData.stats.savedProperties}</span>
+            )}
+          </button>
+          
+          <button 
+            className="nav-tab"
+            onClick={() => navigate('/dashboard/tenant/applications')}
+          >
+            <span className="tab-icon">📋</span>
+            <span className="tab-label">Applications</span>
+            {dashboardData.stats.applications > 0 && (
+              <span className="tab-badge">{dashboardData.stats.applications}</span>
+            )}
+          </button>
+        </div>
+      </nav>
+
+      {/* Main Content Area */}
+      <main className="dashboard-content">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="overview-content">
             {/* Quick Actions */}
-            <div className="content-card quick-actions">
-              <h3>Quick Actions</h3>
-              <div className="action-grid">
-                <button className="action-btn" onClick={() => handleQuickAction('list_property')}>
+            <div className="content-section">
+              <h3 className="section-title">Quick Actions</h3>
+              <div className="quick-actions-grid">
+                <button 
+                  className="quick-action-btn"
+                  onClick={() => handleQuickAction('list_property')}
+                >
                   <span className="action-icon">➕</span>
-                  <span className="action-label">List a Property</span>
+                  <span className="action-label">List Property</span>
                 </button>
-                <button className="action-btn" onClick={() => handleQuickAction('browse_properties')}>
+                
+                <button 
+                  className="quick-action-btn"
+                  onClick={() => handleQuickAction('browse_properties')}
+                >
                   <span className="action-icon">🔍</span>
-                  <span className="action-label">Browse Properties</span>
+                  <span className="action-label">Browse</span>
                 </button>
-                <button className="action-btn" onClick={() => handleQuickAction('view_messages')}>
+                
+                <button 
+                  className="quick-action-btn"
+                  onClick={() => handleQuickAction('view_messages')}
+                >
                   <span className="action-icon">💬</span>
-                  <span className="action-label">View Messages</span>
+                  <span className="action-label">Messages</span>
                 </button>
+                
                 {!isVerified && (
-                  <button className="action-btn" onClick={() => handleQuickAction('get_verified')}>
+                  <button 
+                    className="quick-action-btn"
+                    onClick={() => handleQuickAction('get_verified')}
+                  >
                     <span className="action-icon">✅</span>
-                    <span className="action-label">Get Verified</span>
+                    <span className="action-label">Verify</span>
                   </button>
                 )}
               </div>
@@ -262,25 +308,39 @@ const TenantDashboard = () => {
 
             {/* Listed Properties Preview */}
             {dashboardData.listedProperties.length > 0 && (
-              <div className="content-card">
-                <div className="card-header">
-                  <h3>Your Listed Properties</h3>
-                  <button className="btn btn-sm btn-outline" onClick={() => navigate('/dashboard/post-property')}>
+              <div className="content-section">
+                <div className="section-header">
+                  <h3 className="section-title">Recent Listings</h3>
+                  <button 
+                    className="btn btn-link"
+                    onClick={() => setActiveTab('listed')}
+                  >
                     View All
                   </button>
                 </div>
                 <div className="properties-preview">
-                  {dashboardData.listedProperties.slice(0, 3).map(listing => (
-                    <div key={listing.id} className="property-preview-card">
-                      <img src={listing.images?.[0] || 'https://via.placeholder.com/150'} alt={listing.title} />
-                      <div className="preview-content">
-                        <h4>{listing.title}</h4>
-                        <p className="preview-price">₦{listing.price?.toLocaleString()}</p>
-                        <div className="preview-actions">
-                          <button className="btn btn-sm btn-primary" onClick={() => viewListingDetails(listing.id)}>
+                  {dashboardData.listedProperties.slice(0, 2).map(listing => (
+                    <div key={listing.id} className="property-preview">
+                      <div className="property-image">
+                        <img 
+                          src={listing.images?.[0] || 'https://via.placeholder.com/150'} 
+                          alt={listing.title}
+                        />
+                      </div>
+                      <div className="property-info">
+                        <h4 className="property-title">{listing.title}</h4>
+                        <p className="property-price">₦{listing.price?.toLocaleString()}/month</p>
+                        <div className="property-actions">
+                          <button 
+                            className="btn btn-sm btn-primary"
+                            onClick={() => viewListingDetails(listing.id)}
+                          >
                             View
                           </button>
-                          <button className="btn btn-sm btn-outline" onClick={() => editListing(listing.id)}>
+                          <button 
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => editListing(listing.id)}
+                          >
                             Edit
                           </button>
                         </div>
@@ -292,23 +352,29 @@ const TenantDashboard = () => {
             )}
 
             {/* Verification Status */}
-            <div className="content-card verification-status">
-              <h3>Verification Status</h3>
-              <div className="verification-info">
-                <div className={`verification-badge ${isVerified ? 'verified' : 'not-verified'}`}>
-                  {isVerified ? '✅ Verified' : '⚠️ Not Verified'}
+            <div className="content-section">
+              <h3 className="section-title">Verification Status</h3>
+              <div className={`verification-card ${isVerified ? 'verified' : 'pending'}`}>
+                <div className="verification-icon">
+                  {isVerified ? '✅' : '⚠️'}
                 </div>
-                <p>
-                  {isVerified 
-                    ? 'Your account is verified. You get priority in search results and higher trust scores.'
-                    : 'Get verified to increase your chances of finding a property and build trust with landlords.'
-                  }
-                </p>
-                {!isVerified && (
-                  <button className="btn btn-primary" onClick={() => navigate('/verify')}>
-                    Start Verification
-                  </button>
-                )}
+                <div className="verification-content">
+                  <h4>{isVerified ? 'Account Verified' : 'Verification Required'}</h4>
+                  <p>
+                    {isVerified 
+                      ? 'Your verified status helps build trust with landlords.'
+                      : 'Complete verification to unlock all features and build trust.'
+                    }
+                  </p>
+                  {!isVerified && (
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => navigate('/verify')}
+                    >
+                      Start Verification
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -316,177 +382,172 @@ const TenantDashboard = () => {
 
         {/* Listed Properties Tab */}
         {activeTab === 'listed' && (
-          <div className="listed-content">
-            <div className="content-card">
-              <div className="card-header">
-                <h3>Properties You've Listed</h3>
-                <button className="btn btn-primary" onClick={() => navigate('/dashboard/post-property')}>
-                  + List New Property
-                </button>
-              </div>
-              
-              {dashboardData.listedProperties.length > 0 ? (
-                <div className="listed-properties-grid">
-                  {dashboardData.listedProperties.map(listing => (
-                    <div key={listing.id} className="listed-property-card">
-                      <div className="property-image-container">
-                        <img src={listing.images?.[0] || 'https://via.placeholder.com/300x200'} alt={listing.title} />
-                        {isVerified && (
-                          <div className="verified-badge-overlay">
-                            <InlineVerifiedBadge type="tenant" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="property-content">
-                        <div className="property-header">
-                          <h4>{listing.title}</h4>
-                          <span className={`status-badge ${listing.status || 'active'}`}>
-                            {listing.status || 'Active'}
-                          </span>
-                        </div>
-                        <p className="property-description">{listing.description}</p>
-                        <div className="property-details">
-                          <div className="detail-item">
-                            <span className="detail-label">Price:</span>
-                            <span className="detail-value">₦{listing.price?.toLocaleString()}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">Location:</span>
-                            <span className="detail-value">{listing.location || listing.address}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">Views:</span>
-                            <span className="detail-value">{listing.views || 0}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">Inquiries:</span>
-                            <span className="detail-value">{listing.inquiries || 0}</span>
-                          </div>
-                        </div>
-                        <div className="property-actions">
-                          <button className="btn btn-sm btn-primary" onClick={() => viewListingDetails(listing.id)}>
-                            View
-                          </button>
-                          <button className="btn btn-sm btn-secondary" onClick={() => editListing(listing.id)}>
-                            Edit
-                          </button>
-                          <button className="btn btn-sm btn-outline" onClick={() => deleteListing(listing.id)}>
-                            Delete
-                          </button>
-                        </div>
+          <div className="listed-properties">
+            <div className="section-header">
+              <h3 className="section-title">Your Listed Properties</h3>
+              <button 
+                className="btn btn-primary"
+                onClick={() => navigate('/dashboard/post-property')}
+              >
+                + List New
+              </button>
+            </div>
+            
+            {dashboardData.listedProperties.length > 0 ? (
+              <div className="properties-list">
+                {dashboardData.listedProperties.map(listing => (
+                  <div key={listing.id} className="property-card">
+                    <div className="property-card-image">
+                      <img 
+                        src={listing.images?.[0] || 'https://via.placeholder.com/300x200'} 
+                        alt={listing.title}
+                      />
+                      <div className="property-status">
+                        <span className={`status-badge ${listing.status || 'active'}`}>
+                          {listing.status || 'Active'}
+                        </span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-icon">🏠</div>
-                  <h4>No Properties Listed</h4>
-                  <p>List your first property to get started</p>
-                  <button className="btn btn-primary" onClick={() => navigate('/dashboard/post-property')}>
-                    List Your First Property
-                  </button>
-                </div>
-              )}
-            </div>
+                    <div className="property-card-content">
+                      <div className="property-card-header">
+                        <h4 className="property-title">{listing.title}</h4>
+                        <div className="property-badges">
+                          {isVerified && (
+                            <InlineVerifiedBadge type="tenant" compact />
+                          )}
+                        </div>
+                      </div>
+                      <p className="property-price">₦{listing.price?.toLocaleString()}/month</p>
+                      <p className="property-description">{listing.description}</p>
+                      <div className="property-details">
+                        <div className="detail">
+                          <span className="detail-label">Location:</span>
+                          <span className="detail-value">{listing.location || listing.address}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="detail-label">Views:</span>
+                          <span className="detail-value">{listing.views || 0}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="detail-label">Inquiries:</span>
+                          <span className="detail-value">{listing.inquiries || 0}</span>
+                        </div>
+                      </div>
+                      <div className="property-card-actions">
+                        <button 
+                          className="btn btn-sm btn-primary"
+                          onClick={() => viewListingDetails(listing.id)}
+                        >
+                          View Details
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => editListing(listing.id)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-danger"
+                          onClick={() => deleteListing(listing.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">🏠</div>
+                <h4>No Properties Listed</h4>
+                <p>List your first property to get started</p>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => navigate('/dashboard/post-property')}
+                >
+                  List Your First Property
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* Saved Properties Tab */}
         {activeTab === 'saved' && (
-          <div className="saved-content">
-            <div className="content-card">
-              <div className="card-header">
-                <h3>Saved Properties</h3>
-                <button className="btn btn-outline" onClick={() => navigate('/listings')}>
-                  Browse More
-                </button>
-              </div>
-              
-              {dashboardData.savedProperties.length > 0 ? (
-                <div className="saved-properties-grid">
-                  {dashboardData.savedProperties.map(property => (
-                    <div key={property.id} className="saved-property-card">
-                      <div className="property-image-container">
-                        <img src={property.image} alt={property.title} />
-                        {property.verified && (
-                          <div className="verified-badge-overlay">
-                            <VerifiedBadge type="property" size="small" />
-                          </div>
-                        )}
+          <div className="saved-properties">
+            <div className="section-header">
+              <h3 className="section-title">Saved Properties</h3>
+              <button 
+                className="btn btn-outline"
+                onClick={() => navigate('/listings')}
+              >
+                Browse More
+              </button>
+            </div>
+            
+            {dashboardData.savedProperties.length > 0 ? (
+              <div className="properties-list">
+                {dashboardData.savedProperties.map(property => (
+                  <div key={property.id} className="property-card">
+                    <div className="property-card-image">
+                      <img 
+                        src={property.image} 
+                        alt={property.title}
+                      />
+                    </div>
+                    <div className="property-card-content">
+                      <div className="property-card-header">
+                        <h4 className="property-title">{property.title}</h4>
+                        <div className="poster-info">
+                          <span className="poster-name">{property.posterName}</span>
+                          {property.posterVerified && (
+                            <InlineVerifiedBadge type={property.posterRole === 'landlord' ? 'landlord' : 'tenant'} compact />
+                          )}
+                        </div>
                       </div>
-                      <div className="property-content">
-                        <div className="property-header">
-                          <h4>{property.title}</h4>
-                          <div className="poster-info">
-                            <span className="poster-name">{property.posterName}</span>
-                            {property.posterVerified && (
-                              <InlineVerifiedBadge type={property.posterRole === 'landlord' ? 'landlord' : 'tenant'} />
-                            )}
-                          </div>
-                        </div>
-                        <p className="property-price">₦{property.price?.toLocaleString()}</p>
-                        <p className="property-location">{property.location}</p>
-                        <div className="property-actions">
-                          <button 
-                            className="btn btn-sm btn-primary"
-                            onClick={() => navigate(`/listings/${property.id}`)}
-                          >
-                            View Details
-                          </button>
-                          <button 
-                            className="btn btn-sm btn-outline"
-                            onClick={() => navigate(`/dashboard/messages?property=${property.id}`)}
-                          >
-                            Message {property.posterRole === 'landlord' ? 'Landlord' : 'Tenant'}
-                          </button>
-                          <button 
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => removeSavedProperty(property.id)}
-                          >
-                            Remove
-                          </button>
-                        </div>
+                      <p className="property-price">₦{property.price?.toLocaleString()}/month</p>
+                      <p className="property-location">{property.location}</p>
+                      <div className="property-card-actions">
+                        <button 
+                          className="btn btn-sm btn-primary"
+                          onClick={() => navigate(`/listings/${property.id}`)}
+                        >
+                          View Details
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => navigate(`/dashboard/messages?property=${property.id}`)}
+                        >
+                          Message {property.posterRole === 'landlord' ? 'Landlord' : 'Tenant'}
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-danger"
+                          onClick={() => removeSavedProperty(property.id)}
+                        >
+                          Remove
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-icon">⭐</div>
-                  <h4>No Saved Properties</h4>
-                  <p>Save properties you're interested in for easy access</p>
-                  <button className="btn btn-primary" onClick={() => navigate('/listings')}>
-                    Browse Properties
-                  </button>
-                </div>
-              )}
-            </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">⭐</div>
+                <h4>No Saved Properties</h4>
+                <p>Save properties you're interested in for easy access</p>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => navigate('/listings')}
+                >
+                  Browse Properties
+                </button>
+              </div>
+            )}
           </div>
         )}
-
-        {/* Applications Tab - Redirect to applications page */}
-        {activeTab === 'applications' && (
-          <div className="applications-content">
-            <button className="btn btn-primary" onClick={() => navigate('/dashboard/tenant/applications')}>
-              View All Applications
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Action Bar */}
-      <div className="action-bar">
-        <button className="btn btn-primary" onClick={() => navigate('/dashboard/post-property')}>
-          List a Property
-        </button>
-        <button className="btn btn-secondary" onClick={() => navigate('/listings')}>
-          Browse Properties
-        </button>
-        <button className="btn btn-outline" onClick={() => navigate('/dashboard/messages')}>
-          Messages
-        </button>
-      </div>
+      </main>
     </div>
   )
 }

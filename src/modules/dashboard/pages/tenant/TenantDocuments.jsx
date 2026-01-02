@@ -148,6 +148,15 @@ const TenantDocuments = () => {
     }
   };
 
+  const tableHeaders = [
+    { key: 'name', label: 'Document Name' },
+    { key: 'category', label: 'Category' },
+    { key: 'uploadedDate', label: 'Uploaded Date' },
+    { key: 'size', label: 'Size' },
+    { key: 'status', label: 'Status' },
+    { key: 'actions', label: 'Actions' }
+  ];
+
   const downloadDocument = (docId) => {
     alert(`Downloading document ${docId}`);
   };
@@ -281,59 +290,59 @@ const TenantDocuments = () => {
               </tr>
             </thead>
             <tbody>
-              {documents.length > 0 ? (
-                documents.map(doc => {
-                  const statusBadge = getStatusBadge(doc.status);
-                  return (
-                    <tr key={doc.id}>
-                      <td>
-                        <div className="document-name">
-                          <span className="doc-icon">
-                            {doc.type === 'pdf' ? '📕' : 
-                             doc.type === 'jpg' || doc.type === 'png' ? '🖼️' : '📄'}
-                          </span>
-                          <span>{doc.name}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="category-label">
-                          {getCategoryIcon(doc.category)} {getCategoryLabel(doc.category)}
-                        </span>
-                      </td>
-                      <td>{doc.uploadedDate}</td>
-                      <td>{doc.size}</td>
-                      <td>
-                        <span className={`status-badge ${statusBadge.class}`}>
-                          {statusBadge.label}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="document-actions">
-                          <button 
-                            className="btn-action download"
-                            onClick={() => downloadDocument(doc.id)}
-                          >
-                            Download
-                          </button>
-                          <button 
-                            className="btn-action delete"
-                            onClick={() => deleteDocument(doc.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="6" className="empty-table">
-                    No documents found. Upload your first document to get started.
-                  </td>
-                </tr>
-              )}
-            </tbody>
+  {documents.length > 0 ? (
+    documents.map(doc => {
+      const statusBadge = getStatusBadge(doc.status);
+      return (
+        <tr key={doc.id}>
+          <td data-label="Document Name">
+            <div className="document-name">
+              <span className="doc-icon">
+                {doc.type === 'pdf' ? '📕' : 
+                 doc.type === 'jpg' || doc.type === 'png' ? '🖼️' : '📄'}
+              </span>
+              <span>{doc.name}</span>
+            </div>
+          </td>
+          <td data-label="Category">
+            <span className="category-label">
+              {getCategoryIcon(doc.category)} {getCategoryLabel(doc.category)}
+            </span>
+          </td>
+          <td data-label="Uploaded Date">{doc.uploadedDate}</td>
+          <td data-label="Size">{doc.size}</td>
+          <td data-label="Status">
+          <span className={`status-badge ${statusBadge.class}`}>
+              {statusBadge.label}
+            </span>
+          </td>
+          <td data-label="Actions">
+            <div className="document-actions">
+              <button 
+                className="btn-action download"
+                onClick={() => downloadDocument(doc.id)}
+              >
+                Download
+              </button>
+              <button 
+                className="btn-action delete"
+                onClick={() => deleteDocument(doc.id)}
+              >
+                Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+      );
+    })
+  ) : (
+    <tr>
+      <td colSpan="6" className="empty-table">
+        No documents found. Upload your first document to get started.
+      </td>
+    </tr>
+  )}
+</tbody>
           </table>
         </div>
       </div>

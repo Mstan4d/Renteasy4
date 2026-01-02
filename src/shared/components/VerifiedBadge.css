@@ -1,0 +1,247 @@
+/* src/shared/components/VerifiedBadge.css */
+
+/* ===== BASE VERIFIED BADGE ===== */
+.verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: white;
+    border-radius: 20px;
+    padding: 4px 10px 4px 6px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1;
+    position: relative;
+    z-index: 10;
+    max-width: fit-content;
+    isolation: isolate; /* Prevent CSS inheritance issues */
+  }
+  
+  /* Size Variants */
+  .badge-sm {
+    padding: 2px 8px 2px 4px;
+    font-size: 11px !important;
+  }
+  
+  .badge-md {
+    padding: 4px 10px 4px 6px;
+    font-size: 12px !important;
+  }
+  
+  .badge-lg {
+    padding: 6px 12px 6px 8px;
+    font-size: 14px !important;
+  }
+  
+  /* Icon Container */
+  .badge-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  
+  .badge-sm .badge-icon {
+    width: 14px;
+    height: 14px;
+    font-size: 8px;
+  }
+  
+  .badge-lg .badge-icon {
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+  }
+  
+  /* Label */
+  .badge-label {
+    color: #374151;
+    font-weight: 600;
+    white-space: nowrap;
+    font-size: inherit !important; /* Force font size */
+    line-height: 1.2;
+  }
+  
+  /* Tooltip */
+  .badge-tooltip {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: #1f2937;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: normal;
+    white-space: nowrap;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  .badge-tooltip::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid #1f2937;
+  }
+  
+  .verified-badge:hover .badge-tooltip {
+    opacity: 1;
+    visibility: visible;
+  }
+  
+  /* ===== INLINE VERIFIED BADGE ===== */
+  .inline-verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid;
+    font-size: 11px !important; /* Force small font size */
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    margin-left: 4px;
+    vertical-align: middle;
+    max-width: fit-content;
+  }
+  
+  .inline-verified-badge.compact {
+    padding: 1px 5px;
+    font-size: 10px !important;
+  }
+  
+  .inline-badge-icon {
+    font-size: 9px;
+    line-height: 1;
+  }
+  
+  .inline-badge-text {
+    font-size: inherit !important;
+  }
+  
+  /* ===== POSITIONING CLASSES ===== */
+  /* For avatar overlays */
+  .verified-badge-overlay {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    z-index: 20;
+  }
+  
+  .verified-badge-overlay .verified-badge {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  /* For property cards */
+  .property-verified-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+  }
+  
+  /* For listing details page */
+  .listing-verified-badge {
+    position: relative;
+    display: inline-block;
+    margin: 8px 0;
+  }
+  
+  /* ===== FIXED SIZING FOR ALL BADGES ===== */
+  /* Prevent any parent from affecting badge size */
+  .verified-badge,
+  .inline-verified-badge {
+    font-size: 12px !important; /* Force base font size */
+    box-sizing: border-box !important;
+  }
+  
+  .verified-badge *,
+  .inline-verified-badge * {
+    box-sizing: border-box !important;
+  }
+  
+  /* ===== RESPONSIVE ADJUSTMENTS ===== */
+  @media (max-width: 768px) {
+    .badge-md {
+      padding: 3px 8px 3px 5px;
+      font-size: 11px !important;
+    }
+    
+    .badge-md .badge-icon {
+      width: 16px;
+      height: 16px;
+      font-size: 9px;
+    }
+    
+    .inline-verified-badge {
+      font-size: 10px !important;
+      padding: 1px 6px;
+    }
+  }
+  
+  /* ===== SPECIFIC FIX FOR NAVIGATION BUG ===== */
+  /* Ensure badges maintain size during page transitions */
+  .page-wrapper .verified-badge,
+  .page-wrapper .inline-verified-badge {
+    transform: translateZ(0); /* Force GPU rendering */
+    backface-visibility: hidden;
+    perspective: 1000;
+  }
+  
+  /* ===== COLOR VARIATIONS ===== */
+  /* These colors match your config */
+  .verified-badge[data-type="user"] .badge-icon,
+  .verified-badge[data-type="tenant"] .badge-icon {
+    background-color: #10b981 !important;
+    color: white !important;
+  }
+  
+  .verified-badge[data-type="landlord"] .badge-icon {
+    background-color: #3b82f6 !important;
+    color: white !important;
+  }
+  
+  .verified-badge[data-type="estate"] .badge-icon {
+    background-color: #8b5cf6 !important;
+    color: white !important;
+  }
+  
+  .verified-badge[data-type="property"] .badge-icon {
+    background-color: #f59e0b !important;
+    color: white !important;
+  }
+  
+  .verified-badge[data-type="premium"] .badge-icon {
+    background-color: #ec4899 !important;
+    color: white !important;
+  }
+  
+  /* Inline badge colors are handled via inline styles in the component */
+  
+  /* ===== ANIMATION FOR NEW BADGES ===== */
+  @keyframes badgePulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  
+  .verified-badge.new,
+  .inline-verified-badge.new {
+    animation: badgePulse 0.6s ease-in-out;
+  }

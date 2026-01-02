@@ -9,7 +9,7 @@ import LocationStep from '../components/steps/LocationStep';
 import ImagesStep from '../components/steps/ImagesStep';
 import ConfirmationStep from '../components/steps/ConfirmationStep';
 import CommissionNotice from '../components/CommissionNotice';
-import { createNewListing } from '../../../shared/utils/listingUtils'; // Import the function
+import { createNewListing } from '../../listings/pages/ListingsPage'; // Import the function
 import './PostProperty.css';
 
 const PostPropertyPage = () => {
@@ -122,60 +122,71 @@ const PostPropertyPage = () => {
   };
 
   // Calculate commission for all posts
-  const calculateCommission = () => {
-    const listingPrice = parseFloat(formData.price) || 0;
-    const totalCommission = listingPrice * 0.075; // 7.5%
-    
-    const commissionBreakdown = {
-      total: totalCommission,
-      rentEasy: totalCommission * 0.5333, // 4%
-      manager: totalCommission * 0.3333,  // 2.5%
-      referral: formData.referralCode ? totalCommission * 0.1333 : 0 // 1%
-    };
-    
-    return {
-      listingPrice,
-      totalPrice: listingPrice + totalCommission,
-      breakdown: commissionBreakdown
-    };
+  // Fix commission calculation
+const calculateCommission = () => {
+  const listingPrice = parseFloat(formData.price) || 0;
+  
+  // Ensure we have a valid price
+  if (listingPrice <= 0) {
+    alert('Please enter a valid price');
+    return null;
+  }
+  
+  const totalCommission = listingPrice * 0.075; // 7.5%
+  
+  const commissionBreakdown = {
+    total: totalCommission,
+    rentEasy: listingPrice * 0.04, // Fixed: 4%
+    manager: listingPrice * 0.025, // Fixed: 2.5%
+    referral: formData.referralCode ? listingPrice * 0.01 : 0 // 1%
   };
-
+  
+  return {
+    listingPrice,
+    totalPrice: listingPrice + totalCommission,
+    breakdown: commissionBreakdown
+  };
+};
   // Submit the listing - UPDATED TO USE createNewListing FUNCTION
   const submitListing = async () => {
+    // Validate form data first
+    if (!validateCurrentStep()) {
+      alert('Please complete all required fields');
+      return;
+    }
+  
+    const commission = calculateCommission();
+    if (!commission) return; // If calculation failed
+  
     setIsSubmitting(true);
     
     try {
-      const commission = calculateCommission();
       const listingPrice = commission.listingPrice;
       
-      // Prepare listing data for createNewListing function
+      // Prepare listing data
       const listingData = {
         // Basic info
-        title: formData.title,
-        description: formData.description,
+        title: formData.title.trim(),
+        description: formData.description.trim(),
         price: listingPrice,
         propertyType: formData.propertyType,
         contactPhone: formData.contactPhone,
         contactEmail: formData.contactEmail,
         
         // Location
-        address: formData.address,
+        address: formData.address.trim(),
         state: formData.state,
         lga: formData.lga,
         coordinates: formData.coordinates,
         
-        // Images - flatten the images object for simpler storage
+        // Images
         images: [
-          ...formData.images.kitchen,
-          ...formData.images.dining,
-          ...formData.images.outside,
-          ...formData.images.inside,
-          ...formData.images.other
-        ].slice(0, 5), // Take only first 5 images
-        
-        // Commission & Pricing
-        totalPrice: commission.totalPrice,
-        commission: commission.breakdown,
+          ...(formData.images.kitchen || []),
+          ...(formData.images.dining || []),
+          ...(formData.images.outside || []),
+          ...(formData.images.inside || []),
+          ...(formData.images.other || [])
+        ].slice(0, 5),
         
         // User verification requirements
         requiresLandlordVerification: formData.userRole === 'tenant',
@@ -183,65 +194,48 @@ const PostPropertyPage = () => {
         
         // Referral
         referralCode: formData.referralCode,
-        referralBonus: formData.referralCode ? listingPrice * 0.01 : 0,
         
-        // Additional details for better listing display
+        // Additional details
         bedrooms: formData.propertyType.includes('Bedroom') 
           ? parseInt(formData.propertyType.match(/\d+/)?.[0] || '1') 
-          : 0,
-        bathrooms: 1, // Default, can be added to form later
-        area: '', // Can be added to form later
+          : 1,
+        bathrooms: 1,
         
-        // Flags for filtering
+        // Flags
         isFeatured: false,
         isUrgent: false,
-        
-        // Revenue tracking
-        revenueDistribution: {
-          rentEasy: commission.breakdown.rentEasy,
-          manager: commission.breakdown.manager,
-          referrer: commission.breakdown.referral,
-          timestamp: new Date().toISOString(),
-          paid: false
-        }
       };
-
-      // Use the createNewListing function from ListingsPage
-      const newListing = createNewListing(listingData, {
-        ...user,
-        verified: formData.verified || false
-      });
-
-      // Show success message with commission breakdown
+  
+      // Get user data
+      const currentUser = user || {
+        id: `temp_${Date.now()}`,
+        name: formData.userName || 'Anonymous',
+        role: formData.userRole || 'user',
+        verified: formData.verified || false,
+        email: formData.userEmail
+      };
+  
+      // Use the createNewListing function
+      const newListing = createNewListing(listingData, currentUser);
+  
+      // Show success message
       alert(`✅ Listing submitted successfully!\n\n` +
         `📋 Listing Price: ₦${listingPrice.toLocaleString()}\n` +
-        `💰 Total Commission (7.5%): ₦${commission.breakdown.total.toLocaleString()}\n` +
+        `📊 Commission (7.5%): ₦${commission.breakdown.total.toLocaleString()}\n` +
         `💵 Total Payable: ₦${commission.totalPrice.toLocaleString()}\n\n` +
-        `🔄 Status: ${formData.userRole === 'tenant' 
-          ? 'Pending landlord verification by admin' 
-          : 'Pending admin verification'}\n\n` +
-        `📊 Commission Breakdown:\n` +
-        `   • RentEasy (4%): ₦${commission.breakdown.rentEasy.toLocaleString()}\n` +
-        `   • Manager (2.5%): ₦${commission.breakdown.manager.toLocaleString()}\n` +
-        `${formData.referralCode ? `   • Referral (1%): ₦${commission.breakdown.referral.toLocaleString()}\n` : ''}\n\n` +
-        `📍 Your listing will appear on:\n` +
-        `   • Listings Page: Immediately (as unverified)\n` +
-        `   • Home Page: Randomly (unverified status)\n` +
-        `   • Admin Dashboard: For verification\n` +
-        `   • Manager Dashboard: If in assigned area`
+        `🔄 Status: Pending admin verification`
       );
-
-      // Navigate to listings page to see the new listing
+  
+      // Navigate to listings page
       navigate('/listings');
-
+  
     } catch (error) {
       console.error('Error submitting listing:', error);
-      alert('❌ Failed to submit listing. Please try again.');
+      alert(`❌ Failed to submit listing: ${error.message}\n\nPlease check your data and try again.`);
     } finally {
       setIsSubmitting(false);
     }
   };
-
   // Request verification (for landlords/managers) - You can keep this if needed
   const requestVerification = () => {
     const adminQueue = JSON.parse(localStorage.getItem('adminListings') || '[]');

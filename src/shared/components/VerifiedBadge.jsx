@@ -1,8 +1,7 @@
-// src/shared/components/VerifiedBadge.jsx
+// src/shared/components/VerifiedBadge.jsx - UPDATED WITH DATA ATTRIBUTES
 import React from 'react'
 import './VerifiedBadge.css'
 
-// ✅ SHARED HELPER (accessible to both components)
 const getBadgeConfig = (type) => {
   const configs = {
     user: {
@@ -50,10 +49,11 @@ const VerifiedBadge = ({
   type = 'user',
   size = 'medium',
   showTooltip = true,
-  tooltipText = ''
+  tooltipText = '',
+  className = '',
+  style = {}
 }) => {
-
-  const getSizeClasses = () => {
+  const getSizeClass = () => {
     const sizes = {
       small: 'badge-sm',
       medium: 'badge-md',
@@ -65,7 +65,11 @@ const VerifiedBadge = ({
   const config = getBadgeConfig(type)
 
   return (
-    <div className={`verified-badge ${getSizeClasses()}`}>
+    <div 
+      className={`verified-badge ${getSizeClass()} ${className}`}
+      data-type={type}
+      style={style}
+    >
       <div 
         className="badge-icon"
         style={{ backgroundColor: config.color }}
@@ -83,24 +87,35 @@ const VerifiedBadge = ({
   )
 }
 
-// ✅ Inline Badge now works perfectly
-export const InlineVerifiedBadge = ({ type = 'user', compact = false }) => {
+export const InlineVerifiedBadge = ({ 
+  type = 'user', 
+  compact = false, 
+  className = '',
+  style = {}
+}) => {
   const config = getBadgeConfig(type)
 
   return (
     <span 
-      className={`inline-verified-badge ${compact ? 'compact' : ''}`}
+      className={`inline-verified-badge ${compact ? 'compact' : ''} ${className}`}
       style={{ 
         backgroundColor: `${config.color}15`,
         borderColor: config.color,
-        color: config.color
+        color: config.color,
+        ...style
       }}
       title={config.tooltip}
+      data-type={type}
     >
       <span className="inline-badge-icon">{config.icon}</span>
       {!compact && <span className="inline-badge-text">{config.label}</span>}
     </span>
   )
+}
+
+// Export a helper function to get badge colors
+export const getBadgeColor = (type) => {
+  return getBadgeConfig(type).color;
 }
 
 export default VerifiedBadge
