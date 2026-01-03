@@ -1047,3 +1047,271 @@
     gap: 4px;
   }
 }
+
+/* Profile Picture Sync Styles */
+
+/* Dashboard Header Enhancements */
+.dashboard-header {
+  position: relative;
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.dashboard-cover-photo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 150px;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+}
+
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.3;
+}
+
+.user-info-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  position: relative;
+  z-index: 1;
+}
+
+.user-avatar-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+}
+
+.user-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid white;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.change-profile-pic-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background: #3b82f6;
+  color: white;
+  border: 2px solid white;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.change-profile-pic-btn:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.edit-icon {
+  font-size: 0.9rem;
+}
+
+.verified-badge-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: white;
+  border-radius: 50%;
+  padding: 4px;
+}
+
+.user-name-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.greeting {
+  font-size: 1.8rem;
+  color: #1f2937;
+  margin: 0;
+}
+
+.user-name {
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.btn-profile-edit {
+  padding: 6px 16px;
+  background: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.btn-profile-edit:hover {
+  background: #e5e7eb;
+}
+
+.user-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  margin: 0 0 12px 0;
+  font-size: 0.95rem;
+}
+
+.user-occupation {
+  color: #4b5563;
+  font-weight: 500;
+  padding-left: 8px;
+  border-left: 2px solid #e5e7eb;
+}
+
+.user-meta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.trust-score {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0f9ff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid #bfdbfe;
+}
+
+.trust-score .label {
+  color: #1e40af;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.trust-score .value {
+  color: #1e40af;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.user-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.location-icon {
+  font-size: 0.875rem;
+}
+
+.user-bio {
+  color: #4b5563;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 16px 0 0 0;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+  max-width: 600px;
+}
+
+/* Loading State */
+.dashboard-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f4f6;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-loading p {
+  color: #6b7280;
+  font-size: 1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .user-info-section {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+  }
+  
+  .user-avatar-container {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .greeting {
+    font-size: 1.5rem;
+  }
+  
+  .user-name-section {
+    justify-content: center;
+  }
+  
+  .user-meta {
+    justify-content: center;
+  }
+  
+  .dashboard-cover-photo {
+    height: 100px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-header {
+    padding: 16px;
+  }
+  
+  .greeting {
+    font-size: 1.3rem;
+  }
+  
+  .user-avatar-container {
+    width: 80px;
+    height: 80px;
+  }
+  
+  .change-profile-pic-btn {
+    width: 30px;
+    height: 30px;
+  }
+}

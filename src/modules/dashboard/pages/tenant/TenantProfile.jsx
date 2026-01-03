@@ -1,4 +1,4 @@
-// src/modules/dashboard/pages/tenant/TenantProfile.jsx - MODERN VERSION
+// src/modules/dashboard/pages/tenant/TenantProfile.jsx - UPDATED
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import VerifiedBadge from '../../../../shared/components/VerifiedBadge';
@@ -73,6 +73,7 @@ const TenantProfile = () => {
       if (profilePic) localStorage.setItem(`tenant_profile_pic_${user.id}`, profilePic);
       if (coverPhoto) localStorage.setItem(`tenant_cover_photo_${user.id}`, coverPhoto);
       
+      // Update user context with profile data
       updateUser({ 
         ...user, 
         ...profile,
@@ -80,10 +81,28 @@ const TenantProfile = () => {
         coverPhoto: coverPhoto || user.coverPhoto
       });
       
+      // Trigger dashboard update
+      triggerDashboardUpdate();
+      
       setEditMode(false);
       setLoading(false);
       alert('Profile updated successfully!');
     }, 1000);
+  };
+
+  const triggerDashboardUpdate = () => {
+    // Dispatch custom event to notify dashboard
+    const event = new CustomEvent('profileUpdated', {
+      detail: { userId: user.id }
+    });
+    window.dispatchEvent(event);
+    
+    // Also trigger storage event for cross-tab sync
+    window.dispatchEvent(new Event('storage'));
+    
+    // Force a localStorage change event
+    const timestamp = new Date().getTime();
+    localStorage.setItem('profile_update_timestamp', timestamp.toString());
   };
 
   const handleInputChange = (e) => {

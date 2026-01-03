@@ -1,4 +1,4 @@
-// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - COMPLETE FIXED VERSION
+// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - CORRECTED VERSION
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../../shared/context/AuthContext'
@@ -24,10 +24,24 @@ const TenantDashboard = () => {
 
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(true)
+  const [profilePic, setProfilePic] = useState(null)
+  const [coverPhoto, setCoverPhoto] = useState(null)
 
   useEffect(() => {
     loadDashboardData()
+    loadUserImages()
   }, [user])
+
+  const loadUserImages = () => {
+    if (user?.id) {
+      // Load profile picture from localStorage (same key used in TenantProfile)
+      const savedProfilePic = localStorage.getItem(`tenant_profile_pic_${user.id}`)
+      const savedCoverPhoto = localStorage.getItem(`tenant_cover_photo_${user.id}`)
+      
+      if (savedProfilePic) setProfilePic(savedProfilePic)
+      if (savedCoverPhoto) setCoverPhoto(savedCoverPhoto)
+    }
+  }
 
   const loadDashboardData = () => {
     setLoading(true)
@@ -41,13 +55,23 @@ const TenantDashboard = () => {
     const savedProperties = JSON.parse(localStorage.getItem(`saved_properties_${user?.id}`) || '[]')
     const applications = JSON.parse(localStorage.getItem(`applications_${user?.id}`) || '[]')
     
+    // Get user profile data from localStorage (same as TenantProfile)
+    const savedProfile = JSON.parse(localStorage.getItem(`tenant_profile_${user?.id}`) || 'null')
+    
+    // Get profile picture - priority: localStorage > user.profilePic > default avatar
+    const userProfilePic = profilePic || user?.profilePic
+    
     const mockUserData = {
       id: user?.id,
-      name: user?.name || 'Tenant User',
-      email: user?.email || 'tenant@example.com',
-      phone: user?.phone || '+234 801 234 5678',
-      avatar: `https://ui-avatars.com/api/?name=${user?.name || 'Tenant'}&background=10b981&color=fff`,
-      trustScore: user?.isVerified ? 85 : 65
+      name: user?.name || savedProfile?.name || 'Tenant User',
+      email: user?.email || savedProfile?.email || 'tenant@example.com',
+      phone: user?.phone || savedProfile?.phone || '+234 801 234 5678',
+      avatar: userProfilePic || `https://ui-avatars.com/api/?name=${user?.name || 'Tenant'}&background=10b981&color=fff`,
+      coverPhoto: coverPhoto || user?.coverPhoto,
+      trustScore: user?.isVerified ? 85 : 65,
+      occupation: savedProfile?.occupation || 'Tenant',
+      bio: savedProfile?.bio || 'A responsible tenant looking for comfortable accommodation.',
+      address: savedProfile?.address || ''
     }
     
     setDashboardData({
@@ -66,6 +90,31 @@ const TenantDashboard = () => {
     setLoading(false)
   }
 
+  // Add this function to refresh dashboard when profile is updated
+  const refreshDashboard = () => {
+    loadUserImages()
+    loadDashboardData()
+  }
+
+  // Listen for profile updates from other components
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      refreshDashboard()
+    }
+    
+    // Listen for custom event when profile is updated
+    window.addEventListener('profileUpdated', handleProfileUpdate)
+    
+    // Also listen for storage changes (when localStorage is updated)
+    window.addEventListener('storage', handleProfileUpdate)
+    
+    return () => {
+      window.removeEventListener('profileUpdated', handleProfileUpdate)
+      window.removeEventListener('storage', handleProfileUpdate)
+    }
+  }, [])
+
+  // Missing functions from original code
   const handleQuickAction = (action) => {
     switch(action) {
       case 'list_property':
@@ -120,33 +169,68 @@ const TenantDashboard = () => {
 
   return (
     <div className="tenant-dashboard">
-      {/* Dashboard Header */}
+      {/* Dashboard Header with Cover Photo Support */}
       <header className="dashboard-header">
+        {coverPhoto && (
+          <div className="dashboard-cover-photo">
+            <img src={coverPhoto} alt="Cover" className="cover-image" />
+          </div>
+        )}
         <div className="user-info-section">
           <div className="user-avatar-container">
             <img 
               src={dashboardData.userInfo?.avatar} 
               alt={dashboardData.userInfo?.name} 
               className="user-avatar"
+              onError={(e) => {
+                e.target.onerror = null
+                e.target.src = `https://ui-avatars.com/api/?name=${dashboardData.userInfo?.name || 'Tenant'}&background=10b981&color=fff`
+              }}
             />
             {isVerified && (
               <div className="verified-badge-overlay">
                 <VerifiedBadge type="tenant" size="small" />
               </div>
             )}
+            <button 
+              className="change-profile-pic-btn"
+              onClick={() => navigate('/dashboard/tenant/profile')}
+              title="Edit Profile Picture"
+            >
+              <span className="edit-icon">✏️</span>
+            </button>
           </div>
           <div className="user-details">
-            <h1 className="greeting">
-              Welcome back, <span className="user-name">{dashboardData.userInfo?.name}</span>!
-            </h1>
+            <div className="user-name-section">
+              <h1 className="greeting">
+                Welcome back, <span className="user-name">{dashboardData.userInfo?.name}</span>!
+              </h1>
+              <button 
+                className="btn btn-sm btn-profile-edit"
+                onClick={() => navigate('/dashboard/tenant/profile')}
+              >
+                Edit Profile
+              </button>
+            </div>
             <p className="user-status">
               {isVerified ? '✅ Verified Tenant Account' : '⚠️ Verification Required'}
+              {dashboardData.userInfo?.occupation && (
+                <span className="user-occupation">
+                  • {dashboardData.userInfo?.occupation}
+                </span>
+              )}
             </p>
             <div className="user-meta">
               <div className="trust-score">
                 <span className="label">Trust Score:</span>
                 <span className="value">{dashboardData.userInfo?.trustScore}/100</span>
               </div>
+              {dashboardData.userInfo?.address && (
+                <div className="user-location">
+                  <span className="location-icon">📍</span>
+                  <span>{dashboardData.userInfo?.address.substring(0, 30)}...</span>
+                </div>
+              )}
               {!isVerified && (
                 <button 
                   className="btn btn-sm btn-verify"
@@ -156,6 +240,11 @@ const TenantDashboard = () => {
                 </button>
               )}
             </div>
+            {dashboardData.userInfo?.bio && (
+              <p className="user-bio">
+                {dashboardData.userInfo?.bio}
+              </p>
+            )}
           </div>
         </div>
       </header>

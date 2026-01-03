@@ -1,316 +1,209 @@
-import React, { useEffect, useMemo, useState } from 'react'
+// src/modules/messaging/pages/Messages.jsx
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from "../../../shared/context/AuthContext";
+import BottomNav from "../../../shared/components/layout/BottomNav";
+import { Lock, Unlock, Shield, AlertTriangle } from "lucide-react";
+import "./Messages.css";
 
-/**
- * ROLES:
- * tenant | landlord | manager | admin
- */
+const Messages = () => {
+  const { user } = useAuth();
+  const chatRef = useRef(null);
 
-const Messages = ({ user }) => {
-  /* =========================
-     STATE
-  ========================== */
-  const [conversations, setConversations] = useState([])
-  const [activeConversation, setActiveConversation] = useState(null)
-  const [messages, setMessages] = useState([])
-  const [messageText, setMessageText] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [conversations, setConversations] = useState([]);
+  const [activeConversation, setActiveConversation] = useState(null);
+  const [newMessage, setNewMessage] = useState("");
+  const [disputeReason, setDisputeReason] = useState("");
 
-  const [notifications, setNotifications] = useState([])
+  const isAdmin = user?.role === "admin";
+  const isManager = user?.role === "manager";
 
-  // dispute / admin
-  const [disputeModalOpen, setDisputeModalOpen] = useState(false)
-  const [disputeReason, setDisputeReason] = useState('')
-
-  /* =========================
-     LOAD INITIAL DATA
-  ========================== */
+  /* ================= MOCK SEED ================= */
   useEffect(() => {
-    // 🔌 replace with API later
-    setConversations([])
-    setNotifications([])
-    setLoading(false)
-  }, [])
+    if (!user) return;
 
-  /* =========================
-     PERMISSIONS
-  ========================== */
-  const canInitiateConversation = useMemo(() => {
-    if (!user) return false
-    if (user.role !== 'tenant') return false
-    if (!user.isVerified) return false
-    return true
-  }, [user])
+    const stored = JSON.parse(localStorage.getItem("conversations"));
 
-  const isChatLocked = useMemo(() => {
-    if (!activeConversation) return true
-    return ['disputed', 'frozen', 'closed'].includes(
-      activeConversation.status
-    )
-  }, [activeConversation])
-
-  /* =========================
-     START CONVERSATION
-     Tenant → Landlord
-  ========================== */
-  const startNewConversation = (listing) => {
-    if (!canInitiateConversation) {
-      alert('You must be a verified tenant to start a chat.')
-      return
+    if (!stored || stored.length === 0) {
+      const seed = [
+        {
+          id: "conv-1",
+          listingTitle: "2 Bedroom Flat – Yaba",
+          status: "pending", // pending | active | closed | disputed
+          isFrozen: false,
+          managerId: null,
+          availabilityConfirmed: false,
+          messages: [
+            {
+              id: "m1",
+              senderRole: "tenant",
+              senderId: "t1",
+              content: "Is this house still available?",
+              timestamp: new Date().toISOString()
+            }
+          ]
+        }
+      ];
+      localStorage.setItem("conversations", JSON.stringify(seed));
+      setConversations(seed);
+    } else {
+      setConversations(stored);
     }
+  }, [user]);
 
-    const newConversation = {
-      id: Date.now(),
-      listingId: listing.id,
-      tenantId: user.id,
-      landlordId: listing.landlordId,
-      managerId: null,
-      status: 'pending-landlord',
-      createdAt: new Date(),
-      dispute: null
-    }
+  /* ================= HELPERS ================= */
+  const updateConversation = (updated) => {
+    const list = conversations.map(c =>
+      c.id === updated.id ? updated : c
+    );
+    setConversations(list);
+    setActiveConversation(updated);
+    localStorage.setItem("conversations", JSON.stringify(list));
+  };
 
-    setConversations((prev) => [newConversation, ...prev])
-    setActiveConversation(newConversation)
-    setMessages([])
-  }
+  const canSendMessage = () => {
+    if (!activeConversation) return false;
+    if (!activeConversation.availabilityConfirmed) return false;
+    if (activeConversation.status === "closed") return false;
+    if (activeConversation.isFrozen) return false;
+    if (activeConversation.status === "disputed" && !isAdmin) return false;
+    return true;
+  };
 
-  /* =========================
-     LANDLORD RESPONSE
-     triggers MANAGER NOTIFY
-  ========================== */
-  const landlordRespondsAvailable = () => {
-    if (!activeConversation) return
-
-    const updated = {
-      ...activeConversation,
-      status: 'awaiting-manager'
-    }
-
-    setActiveConversation(updated)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    )
-
-    notifyManagers(updated)
-  }
-
-  /* =========================
-     MANAGER NOTIFICATION
-  ========================== */
-  const notifyManagers = (conversation) => {
-    // 🔔 socket / backend later
-    console.log('Notify managers near listing:', conversation.listingId)
-  }
-
-  /* =========================
-     MANAGER ACCEPTS CHAT
-     FIRST COME = OWNER
-  ========================== */
-  const managerAcceptChat = () => {
-    if (user.role !== 'manager') return
-    if (activeConversation?.managerId) return
-
-    const updated = {
-      ...activeConversation,
-      managerId: user.id,
-      status: 'managed'
-    }
-
-    setActiveConversation(updated)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    )
-  }
-
-  /* =========================
-     SEND MESSAGE
-  ========================== */
+  /* ================= MESSAGE ================= */
   const sendMessage = () => {
-    if (!messageText.trim()) return
-    if (isChatLocked) {
-      alert('Chat is locked.')
-      return
-    }
+    if (!newMessage.trim() || !canSendMessage()) return;
 
     const msg = {
-      id: Date.now(),
+      id: Date.now().toString(),
       senderId: user.id,
       senderRole: user.role,
-      text: messageText,
-      createdAt: new Date()
-    }
+      content: newMessage,
+      timestamp: new Date().toISOString()
+    };
 
-    setMessages((prev) => [...prev, msg])
-    setMessageText('')
-  }
-
-  /* =========================
-     DISPUTE SYSTEM
-  ========================== */
-  const raiseDispute = () => {
-    if (!disputeReason.trim()) return
-
-    const updated = {
+    updateConversation({
       ...activeConversation,
-      status: 'disputed',
-      dispute: {
-        raisedBy: user.role,
-        reason: disputeReason,
-        raisedAt: new Date()
-      }
+      messages: [...activeConversation.messages, msg]
+    });
+
+    setNewMessage("");
+  };
+
+  /* ================= AVAILABILITY ================= */
+  const confirmAvailability = (yes) => {
+    if (!yes) {
+      updateConversation({ ...activeConversation, status: "closed" });
+      return;
     }
 
-    setActiveConversation(updated)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    )
-
-    setDisputeModalOpen(false)
-    setDisputeReason('')
-  }
-
-  /* =========================
-     ADMIN CONTROLS
-  ========================== */
-  const adminOverrideManager = (newManagerId = null) => {
-    if (user.role !== 'admin') return
-
-    const updated = {
+    updateConversation({
       ...activeConversation,
-      managerId: newManagerId,
-      status: newManagerId ? 'managed' : 'awaiting-manager'
-    }
+      availabilityConfirmed: true,
+      status: "active"
+    });
+  };
 
-    setActiveConversation(updated)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    )
-  }
-
-  const resolveDispute = (note, closeChat = false) => {
-    if (user.role !== 'admin') return
-
-    const updated = {
-      ...activeConversation,
-      status: closeChat ? 'closed' : 'managed',
-      dispute: {
-        ...activeConversation.dispute,
-        resolvedBy: user.id,
-        resolutionNote: note,
-        resolvedAt: new Date()
-      }
-    }
-
-    setActiveConversation(updated)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    )
-  }
-
-  /* =========================
-     UI
-  ========================== */
-  if (loading) return <div>Loading messages...</div>
-
+  /* ================= UI ================= */
   return (
     <div className="messages-page">
-      <aside className="conversation-list">
-        {conversations.map((c) => (
-          <div
-            key={c.id}
-            onClick={() => setActiveConversation(c)}
-            className={`conversation-item ${
-              activeConversation?.id === c.id ? 'active' : ''
-            }`}
-          >
-            <div>Status: {c.status}</div>
-            {c.dispute && <span className="dispute-tag">DISPUTE</span>}
-          </div>
-        ))}
-      </aside>
+     
+      <div className="messages-container">
 
-      <main className="chat-area">
-        {!activeConversation ? (
-          <div>Select a conversation</div>
-        ) : (
-          <>
-            <header>
-              <h3>Conversation</h3>
+        {/* SIDEBAR */}
+        <aside className="conversations-sidebar">
+          <ul className="conversation-list">
+            {conversations.map(conv => (
+              <li
+                key={conv.id}
+                className={`conversation-item ${activeConversation?.id === conv.id ? "active" : ""}`}
+                onClick={() => setActiveConversation(conv)}
+              >
+                <strong>{conv.listingTitle}</strong>
+                {conv.status === "closed" && <span> 🔒</span>}
+              </li>
+            ))}
+          </ul>
+        </aside>
 
-              {user.role === 'manager' &&
-                activeConversation.status === 'awaiting-manager' && (
-                  <button onClick={managerAcceptChat}>
-                    Accept & Monitor
-                  </button>
-                )}
-
-              {['tenant', 'landlord'].includes(user.role) &&
-                activeConversation.status === 'managed' && (
-                  <button onClick={() => setDisputeModalOpen(true)}>
-                    Raise Dispute
-                  </button>
-                )}
-            </header>
-
-            <div className="messages">
-              {messages.map((m) => (
-                <div key={m.id} className="message">
-                  <strong>{m.senderRole}:</strong> {m.text}
-                </div>
-              ))}
+        {/* CHAT */}
+        <section className="chat-area">
+          {!activeConversation ? (
+            <div className="chat-placeholder">
+              <h3>Select a conversation</h3>
             </div>
+          ) : (
+            <>
+              <div className="chat-header">
+                <h3>{activeConversation.listingTitle}</h3>
 
-            {!isChatLocked && (
-              <footer>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => updateConversation({
+                      ...activeConversation,
+                      isFrozen: !activeConversation.isFrozen
+                    })}>
+                      {activeConversation.isFrozen ? <Unlock /> : <Lock />}
+                    </button>
+                    <button onClick={() => updateConversation({ ...activeConversation, status: "closed" })}>
+                      <AlertTriangle />
+                    </button>
+                    <button onClick={() => updateConversation({
+                      ...activeConversation,
+                      status: "active",
+                      dispute: null
+                    })}>
+                      <Shield />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* AVAILABILITY GATE */}
+              {!activeConversation.availabilityConfirmed && (
+                <div className="chat-placeholder">
+                  <p>Is this house available?</p>
+                  <button onClick={() => confirmAvailability(true)}>Yes</button>
+                  <button onClick={() => confirmAvailability(false)}>No</button>
+                </div>
+              )}
+
+              {/* MESSAGES */}
+              <div className="chat-messages" ref={chatRef}>
+                {activeConversation.messages.map(msg => (
+                  <div
+                    key={msg.id}
+                    className={`message ${msg.senderId === user.id ? "outgoing" : "incoming"}`}
+                  >
+                    <div className="message-bubble">
+                      <p>{msg.content}</p>
+                      <small>{new Date(msg.timestamp).toLocaleTimeString()}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* INPUT */}
+              <div className="message-input">
                 <input
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Type message..."
+                  className="message-text-input"
+                  value={newMessage}
+                  onChange={e => setNewMessage(e.target.value)}
+                  placeholder="Type a message…"
+                  disabled={!canSendMessage()}
+                  onKeyDown={e => e.key === "Enter" && sendMessage()}
                 />
-                <button onClick={sendMessage}>Send</button>
-              </footer>
-            )}
+                <button className="send-btn" onClick={sendMessage} disabled={!canSendMessage()}>
+                  Send
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
 
-            {/* ADMIN PANEL */}
-            {user.role === 'admin' && (
-              <section className="admin-panel">
-                <h4>Admin Controls</h4>
-                <button onClick={() => adminOverrideManager(null)}>
-                  Remove Manager
-                </button>
-                <button
-                  onClick={() =>
-                    resolveDispute('Resolved by admin')
-                  }
-                >
-                  Resolve Dispute
-                </button>
-                <button
-                  onClick={() =>
-                    resolveDispute('Fraud detected', true)
-                  }
-                >
-                  Close Chat
-                </button>
-              </section>
-            )}
-          </>
-        )}
-      </main>
-
-      {/* DISPUTE MODAL */}
-      {disputeModalOpen && (
-        <div className="modal">
-          <textarea
-            value={disputeReason}
-            onChange={(e) => setDisputeReason(e.target.value)}
-            placeholder="Explain issue..."
-          />
-          <button onClick={raiseDispute}>Submit Dispute</button>
-        </div>
-      )}
+      <BottomNav />
     </div>
-  )
-}
+  );
+};
 
-export default Messages
+export default Messages;

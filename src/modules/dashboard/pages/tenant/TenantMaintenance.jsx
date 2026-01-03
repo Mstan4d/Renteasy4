@@ -146,39 +146,63 @@ const TenantMaintenance = () => {
     });
   };
 
-  const submitNewRequest = (e) => {
-    e.preventDefault();
-    
-    const request = {
-      id: `req_${Date.now()}`,
-      ...newRequest,
-      date: new Date().toISOString().split('T')[0],
-      status: 'pending',
-      assignedTo: null,
-      contact: null,
-      estimatedCompletion: null,
-      notes: ''
-    };
-
-    const updatedRequests = [request, ...requests];
-    setRequests(updatedRequests);
-    localStorage.setItem(`tenant_maintenance_${user?.id}`, JSON.stringify(updatedRequests));
-    
-    // Reset form and close modal
-    setNewRequest({
-      title: '',
-      category: '',
-      description: '',
-      priority: 'medium',
-      property: '',
-      emergency: false,
-      images: []
-    });
-    setShowNewRequest(false);
-    
-    alert('Maintenance request submitted successfully!');
+  // Update the submitNewRequest function in TenantMaintenance.jsx
+const submitNewRequest = (e) => {
+  e.preventDefault();
+  
+  const request = {
+    id: `req_${Date.now()}`,
+    ...newRequest,
+    date: new Date().toISOString().split('T')[0],
+    status: 'pending',
+    assignedTo: null,
+    contact: null,
+    estimatedCompletion: null,
+    notes: '',
+    tenantId: user?.id,
+    tenantName: user?.name || 'Tenant',
+    createdAt: new Date().toISOString(),
+    propertyId: user?.propertyId || '', // Add property ID if available
+    landlordId: user?.landlordId || '' // Add landlord ID if available
   };
 
+  // Save to tenant's local storage
+  const updatedRequests = [request, ...requests];
+  setRequests(updatedRequests);
+  localStorage.setItem(`tenant_maintenance_${user?.id}`, JSON.stringify(updatedRequests));
+  
+  // ALSO save to landlord's maintenance reports
+  const landlordId = request.property.split(',')[0]?.trim() || 'default_landlord'; // Extract landlord ID from property or use a default
+  const landlordReportsKey = `landlord_maintenance_reports_${landlordId}`;
+  const existingLandlordReports = JSON.parse(localStorage.getItem(landlordReportsKey) || '[]');
+  
+  // Add to landlord's reports
+  const landlordReportEntry = {
+    ...request,
+    reportId: `report_${Date.now()}`,
+    viewed: false,
+    priorityLevel: request.priority,
+    emergency: request.emergency,
+    tenantContact: user?.email || user?.phone || 'Not provided'
+  };
+  
+  const updatedLandlordReports = [landlordReportEntry, ...existingLandlordReports];
+  localStorage.setItem(landlordReportsKey, JSON.stringify(updatedLandlordReports));
+  
+  // Reset form and close modal
+  setNewRequest({
+    title: '',
+    category: '',
+    description: '',
+    priority: 'medium',
+    property: '',
+    emergency: false,
+    images: []
+  });
+  setShowNewRequest(false);
+  
+  alert('Maintenance request submitted successfully! Landlord has been notified.');
+};
   const markAsCompleted = (requestId) => {
     if (window.confirm('Mark this maintenance request as completed?')) {
       const updatedRequests = requests.map(request => {

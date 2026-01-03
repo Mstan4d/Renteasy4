@@ -9,7 +9,7 @@ import LocationStep from '../components/steps/LocationStep';
 import ImagesStep from '../components/steps/ImagesStep';
 import ConfirmationStep from '../components/steps/ConfirmationStep';
 import CommissionNotice from '../components/CommissionNotice';
-import { createNewListing } from '../../listings/pages/ListingsPage'; // Import the function
+import { createNewListing } from '../../../shared/utils/listingUtils';
 import './PostProperty.css';
 
 const PostPropertyPage = () => {
