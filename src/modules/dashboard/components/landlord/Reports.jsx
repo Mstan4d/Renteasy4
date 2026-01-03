@@ -21,7 +21,6 @@ import {
   Zap,
   Hammer,
   PaintBucket,
-  Tool,
   MessageCircle,
   Bell,
   FileText
