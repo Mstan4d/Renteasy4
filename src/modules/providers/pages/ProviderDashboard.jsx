@@ -1,526 +1,399 @@
-// src/modules/providers/pages/ProviderDashboard.jsx
-import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../../shared/context/AuthContext';
-import {
-  BarChart3, Users, DollarSign, MessageSquare,
-  Star, Clock, TrendingUp, Bell, Settings,
-  PlusCircle, FileText, CheckCircle, AlertCircle,
-  Briefcase, Tag, Calendar, Award, Shield, Edit
-} from 'lucide-react';
-import { serviceCategories, serviceTags } from '../../marketplace/data/serviceCategories';
-import './ProviderDashboard.css';
+import React, { useState, useEffect } from 'react';
+import ProviderPageTemplate from '../templates/ProviderPageTemplate';
+import { 
+  FaMoneyBill, FaCalendarAlt, FaStar, FaChartLine,
+  FaBell, FaTools, FaUserCheck, FaExclamationTriangle
+} from 'react-icons/fa';
 
 const ProviderDashboard = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  
-  const [provider, setProvider] = useState(null);
   const [stats, setStats] = useState({
-    totalLeads: 0,
-    successfulHires: 0,
-    pendingRequests: 0,
-    totalRevenue: 0,
-    rating: 0,
-    responseRate: 0,
-    profileViews: 0,
-    conversionRate: 0
+    totalEarnings: 0,
+    pendingBookings: 0,
+    completedJobs: 0,
+    averageRating: 0,
+    responseRate: '0%',
+    upcomingJobs: 0,
+    leadsThisMonth: 0,
+    conversionRate: '0%'
   });
-  
-  const [recentLeads, setRecentLeads] = useState([]);
-  const [recentReviews, setRecentReviews] = useState([]);
-  const [selectedServices, setSelectedServices] = useState([]);
-  const [availableServices, setAvailableServices] = useState([]);
-  const [isEditingServices, setIsEditingServices] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [performanceMetrics, setPerformanceMetrics] = useState({
-    avgResponseTime: '2 hours',
-    clientSatisfaction: 0,
-    repeatClients: 0,
-    leadConversion: 0
-  });
-  
-  // Create a ref to map service names to categories
-  const serviceCategoryMap = useRef(new Map());
-  
-  // Initialize available services from marketplace categories
+
+  const [recentBookings, setRecentBookings] = useState([
+    { id: 1, client: 'John Doe', service: 'House Cleaning', date: '2024-01-15', status: 'Upcoming', amount: '₦15,000' },
+    { id: 2, client: 'Jane Smith', service: 'Painting', date: '2024-01-14', status: 'Completed', amount: '₦45,000' },
+    { id: 3, client: 'Mike Johnson', service: 'Plumbing', date: '2024-01-12', status: 'In Progress', amount: '₦25,000' },
+  ]);
+
+  const [notifications, setNotifications] = useState([
+    { id: 1, message: 'New booking request from Sarah', time: '2 hours ago', type: 'booking' },
+    { id: 2, message: 'Your service has been reviewed', time: '1 day ago', type: 'review' },
+    { id: 3, message: 'Payment received ₦15,000', time: '2 days ago', type: 'payment' },
+  ]);
+
   useEffect(() => {
-    const allServices = [];
-    
-    // Transform your serviceCategories data to extract services
-    serviceCategories.forEach(category => {
-      if (category.subCategories) {
-        category.subCategories.forEach(subCat => {
-          const serviceName = subCat.name || subCat.id;
-          allServices.push(serviceName);
-          // Map service name to its category
-          serviceCategoryMap.current.set(serviceName, {
-            categoryId: category.id,
-            categoryName: category.name,
-            serviceId: subCat.id,
-            serviceName: serviceName
-          });
-        });
-      }
-      // Also include main category as a service option if it has providers
-      if (category.providers && category.providers.length > 0) {
-        allServices.push(category.name);
-        serviceCategoryMap.current.set(category.name, {
-          categoryId: category.id,
-          categoryName: category.name,
-          serviceId: category.id,
-          serviceName: category.name
-        });
-      }
+    // Mock data - replace with actual API call
+    setStats({
+      totalEarnings: 125000,
+      pendingBookings: 3,
+      completedJobs: 24,
+      averageRating: 4.7,
+      responseRate: '95%',
+      upcomingJobs: 5,
+      leadsThisMonth: 12,
+      conversionRate: '42%'
     });
-    
-    // Add service tags as additional service options
-    serviceTags.forEach(tag => {
-      allServices.push(tag.name);
-      serviceCategoryMap.current.set(tag.name, {
-        categoryId: 'tags',
-        categoryName: 'Tags',
-        serviceId: tag.id,
-        serviceName: tag.name
-      });
-    });
-    
-    setAvailableServices([...new Set(allServices)]); // Remove duplicates
   }, []);
-  
-  useEffect(() => {
-    loadProviderData();
-  }, []);
-  
-  const loadProviderData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load provider profile
-      const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-      const userProvider = providers.find(p => p.userId === user?.id || p.email === user?.email);
-      
-      if (userProvider) {
-        setProvider(userProvider);
-        
-        // Load provider's selected services
-        const providerServices = JSON.parse(localStorage.getItem('providerServices') || '[]');
-        const userServices = providerServices.filter(s => s.providerId === userProvider.userId);
-        setSelectedServices(userServices.map(s => s.title));
-        
-        // Calculate stats from leads
-        const leads = JSON.parse(localStorage.getItem('firmLeads') || '[]');
-        const providerLeads = leads.filter(lead => lead.providerId === userProvider.id);
-        
-        const successfulHires = providerLeads.filter(l => l.status === 'hired').length;
-        const respondedLeads = providerLeads.filter(l => l.respondedAt).length;
-        
-        setStats({
-          totalLeads: providerLeads.length,
-          successfulHires,
-          pendingRequests: providerLeads.filter(l => l.status === 'pending').length,
-          totalRevenue: providerLeads
-            .filter(l => l.status === 'hired')
-            .reduce((sum, lead) => sum + (lead.amount || 0), 0),
-          rating: userProvider.rating || 0,
-          responseRate: providerLeads.length > 0 ? Math.round((respondedLeads / providerLeads.length) * 100) : 0,
-          profileViews: userProvider.views || 0,
-          conversionRate: providerLeads.length > 0 ? Math.round((successfulHires / providerLeads.length) * 100) : 0
-        });
-        
-        // Load recent leads (last 5)
-        setRecentLeads(providerLeads
-          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-          .slice(0, 5));
-        
-        // Load recent reviews
-        const reviews = JSON.parse(localStorage.getItem('providerReviews') || '[]');
-        const providerReviews = reviews.filter(r => r.providerId === userProvider.id);
-        setRecentReviews(providerReviews
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .slice(0, 3));
-        
-        // Calculate performance metrics
-        if (providerReviews.length > 0) {
-          const avgSatisfaction = providerReviews.reduce((sum, r) => sum + r.rating, 0) / providerReviews.length;
-          setPerformanceMetrics(prev => ({
-            ...prev,
-            clientSatisfaction: Math.round(avgSatisfaction * 20), // Convert to percentage
-            repeatClients: userProvider.repeatClients || 0,
-            leadConversion: providerLeads.length > 0 ? Math.round((successfulHires / providerLeads.length) * 100) : 0
-          }));
-        }
-      }
-    } catch (error) {
-      console.error('Error loading provider data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const toggleServiceSelection = (service) => {
-    if (selectedServices.includes(service)) {
-      setSelectedServices(prev => prev.filter(s => s !== service));
-    } else {
-      setSelectedServices(prev => [...prev, service]);
-    }
-  };
-  
-  const saveServiceSelections = () => {
-    if (!provider) return;
-    
-    try {
-      // Update provider's services in localStorage
-      const providerServices = JSON.parse(localStorage.getItem('providerServices') || '[]');
-      
-      // Remove existing services for this provider
-      const filteredServices = providerServices.filter(s => s.providerId !== provider.userId);
-      
-      // Add new services with category information
-      const newServices = selectedServices.map(service => {
-        const serviceInfo = serviceCategoryMap.current.get(service);
-        return {
-          id: `service_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          providerId: provider.userId,
-          title: service,
-          description: '',
-          category: serviceInfo?.categoryId || 'other',
-          subCategory: serviceInfo?.serviceId || service,
-          price: 0,
-          createdAt: new Date().toISOString()
-        };
-      });
-      
-      localStorage.setItem('providerServices', JSON.stringify([
-        ...filteredServices,
-        ...newServices
-      ]));
-      
-      // Also update provider object with services
-      const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-      const updatedProviders = providers.map(p => 
-        p.id === provider.id ? { ...p, services: selectedServices } : p
-      );
-      localStorage.setItem('serviceProviders', JSON.stringify(updatedProviders));
-      
-      setProvider(prev => ({ ...prev, services: selectedServices }));
-      setIsEditingServices(false);
-      
-      alert('Services updated successfully!');
-    } catch (error) {
-      console.error('Error saving services:', error);
-      alert('Failed to save services. Please try again.');
-    }
-  };
-  
-  const handlePostService = () => {
-    if (selectedServices.length === 0) {
-      setIsEditingServices(true);
-      alert('Please select at least one service before posting.');
-      return;
-    }
-    navigate('/providers/post-service');
-  };
-  
-  // Group services by category for better organization
-  const getServicesByCategory = () => {
-    const servicesByCategory = {};
-    
-    serviceCategories.forEach(category => {
-      const categoryServices = [];
-      
-      // Add main category as service if it has providers
-      if (category.providers && category.providers.length > 0) {
-        categoryServices.push({
-          name: category.name,
-          id: category.id,
-          type: 'category'
-        });
-      }
-      
-      // Add subcategories
-      if (category.subCategories) {
-        category.subCategories.forEach(subCat => {
-          categoryServices.push({
-            name: subCat.name,
-            id: subCat.id,
-            type: 'subcategory',
-            icon: subCat.icon
-          });
-        });
-      }
-      
-      if (categoryServices.length > 0) {
-        servicesByCategory[category.name] = {
-          services: categoryServices,
-          icon: category.icon,
-          description: category.description
-        };
-      }
-    });
-    
-    // Add tags as a separate category
-    if (serviceTags.length > 0) {
-      servicesByCategory['Specialties'] = {
-        services: serviceTags.map(tag => ({
-          name: tag.name,
-          id: tag.id,
-          type: 'tag',
-          icon: tag.icon
-        })),
-        icon: '🏷️',
-        description: 'Special service features and capabilities'
-      };
-    }
-    
-    return servicesByCategory;
-  };
-  
-  if (loading) {
-    return (
-      <div className="dashboard-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading your dashboard...</p>
-      </div>
-    );
-  }
-  
-  if (!provider) {
-    return (
-      <div className="no-provider-found">
-        <div className="empty-state">
-          <h2>No Provider Profile Found</h2>
-          <p>You haven't registered as a service provider yet.</p>
-          <Link to="/providers/register" className="btn btn-primary">
-            Register Now
-          </Link>
-        </div>
-      </div>
-    );
-  }
-  
-  const servicesByCategory = getServicesByCategory();
-  
+
+  const statsCards = [
+    { 
+      title: 'Total Earnings', 
+      value: `₦${stats.totalEarnings.toLocaleString()}`, 
+      icon: <FaMoneyBill />, 
+      color: 'linear-gradient(135deg, #00c853 0%, #64dd17 100%)',
+      change: '+12%'
+    },
+    { 
+      title: 'Pending Bookings', 
+      value: stats.pendingBookings, 
+      icon: <FaCalendarAlt />, 
+      color: 'linear-gradient(135deg, #ff9800 0%, #ff5722 100%)',
+      change: '+3'
+    },
+    { 
+      title: 'Avg. Rating', 
+      value: stats.averageRating, 
+      icon: <FaStar />, 
+      color: 'linear-gradient(135deg, #ffeb3b 0%, #fbc02d 100%)',
+      change: '+0.2'
+    },
+    { 
+      title: 'Response Rate', 
+      value: stats.responseRate, 
+      icon: <FaChartLine />, 
+      color: 'linear-gradient(135deg, #2196f3 0%, #03a9f4 100%)',
+      change: '+5%'
+    },
+  ];
+
+  const quickActions = [
+    { label: 'Post New Service', path: '/dashboard/provider/post-service', icon: <FaTools /> },
+    { label: 'Check Messages', path: '/dashboard/provider/messages', icon: <FaBell /> },
+    { label: 'Update Availability', path: '/dashboard/provider/availability', icon: <FaCalendarAlt /> },
+    { label: 'Get Verified', path: '/dashboard/provider/verify', icon: <FaUserCheck /> },
+  ];
+
   return (
-    <div className="provider-dashboard">
-      {/* Header */}
-      <header className="dashboard-header">
-        <div className="welcome-section">
-          <h1>Welcome back, {provider.ownerName || provider.businessName}!</h1>
-          <p>Here's what's happening with your business today.</p>
-        </div>
-        
-        <div className="header-actions">
-          <button 
-            className="btn btn-primary"
-            onClick={handlePostService}
-          >
-            <PlusCircle size={18} />
-            Post New Service
-          </button>
-          <button 
-            className="btn btn-secondary"
-            onClick={() => navigate('/providers/profile')}
-          >
-            <Settings size={18} />
-            Manage Profile
-          </button>
-        </div>
-      </header>
-      
-      {/* Status Banner */}
-      <div className={`status-banner ${provider.status}`}>
-        <div className="banner-content">
-          <div className="status-info">
-            <strong>Status:</strong> {provider.status.toUpperCase()}
-            {provider.status === 'pending' && ' - Under review'}
-            {provider.status === 'approved' && ' - Ready to receive leads'}
-            {provider.status === 'rejected' && ' - Please update your information'}
-          </div>
-          {provider.status === 'pending' && (
-            <button className="btn btn-small">
-              Check Verification Status
-            </button>
-          )}
-        </div>
-      </div>
-      
+    <ProviderPageTemplate
+      title="Provider Dashboard"
+      subtitle="Welcome back! Here's your business overview"
+    >
       {/* Stats Grid */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: '#3b82f620' }}>
-            <Users size={24} color="#3b82f6" />
-          </div>
-          <div className="stat-content">
-            <h3>{stats.totalLeads}</h3>
-            <p>Total Leads</p>
-          </div>
-          <div className="stat-progress">
-            <div className="progress-bar" style={{ width: `${stats.conversionRate}%` }}></div>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: '#10b98120' }}>
-            <CheckCircle size={24} color="#10b981" />
-          </div>
-          <div className="stat-content">
-            <h3>{stats.successfulHires}</h3>
-            <p>Successful Hires</p>
-          </div>
-          <span className="stat-trend positive">+{stats.conversionRate}% conversion</span>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: '#f59e0b20' }}>
-            <DollarSign size={24} color="#f59e0b" />
-          </div>
-          <div className="stat-content">
-            <h3>₦{stats.totalRevenue.toLocaleString()}</h3>
-            <p>Total Revenue</p>
-          </div>
-          <span className="stat-trend positive">+15%</span>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: '#8b5cf620' }}>
-            <Star size={24} color="#8b5cf6" />
-          </div>
-          <div className="stat-content">
-            <h3>{stats.rating.toFixed(1)}</h3>
-            <p>Average Rating</p>
-            <div className="rating-stars">
-              {[...Array(5)].map((_, i) => (
-                <Star 
-                  key={i} 
-                  size={14} 
-                  fill={i < Math.floor(stats.rating) ? "#fbbf24" : "#e5e7eb"} 
-                  color={i < Math.floor(stats.rating) ? "#fbbf24" : "#e5e7eb"} 
-                />
-              ))}
+      <div className="provider-grid provider-grid-4" style={{ marginBottom: '2rem' }}>
+        {statsCards.map((stat, index) => (
+          <div 
+            key={index} 
+            className="provider-card stats-card"
+            style={{ background: stat.color }}
+          >
+            <div className="card-header">
+              <h3 className="card-title" style={{ color: 'white' }}>{stat.title}</h3>
+              <span style={{ fontSize: '1.5rem', color: 'white' }}>{stat.icon}</span>
+            </div>
+            <div className="stats-number">{stat.value}</div>
+            <div className="stats-label">
+              <span style={{ color: 'rgba(255,255,255,0.9)' }}>
+                {stat.change} from last month
+              </span>
             </div>
           </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: '#ec489920' }}>
-            <MessageSquare size={24} color="#ec4899" />
-          </div>
-          <div className="stat-content">
-            <h3>{stats.responseRate}%</h3>
-            <p>Response Rate</p>
-          </div>
-          <span className="stat-trend positive">+5%</span>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: '#14b8a620' }}>
-            <TrendingUp size={24} color="#14b8a6" />
-          </div>
-          <div className="stat-content">
-            <h3>{stats.profileViews}</h3>
-            <p>Profile Views</p>
-          </div>
-          <span className="stat-trend positive">+24%</span>
-        </div>
+        ))}
       </div>
-      
-      {/* Service Selection Panel */}
-      <div className="service-selection-panel">
-        <div className="panel-header">
-          <h3><Tag size={20} /> Your Service Categories</h3>
-          <button 
-            className="btn btn-small btn-secondary"
-            onClick={() => setIsEditingServices(!isEditingServices)}
-          >
-            <Edit size={16} />
-            {isEditingServices ? 'Cancel Editing' : 'Edit Services'}
-          </button>
-        </div>
-        
-        {isEditingServices ? (
-          <div className="editing-mode">
-            <p className="edit-instruction">
-              Select the services you offer. These will be displayed in the marketplace.
-            </p>
+
+      <div className="provider-grid">
+        {/* Recent Bookings */}
+        <div className="provider-card" style={{ gridColumn: 'span 2' }}>
+          <div className="card-header">
+            <h3 className="card-title">Recent Bookings</h3>
+            <button 
+              className="btn-secondary"
+              onClick={() => window.location.href = '/dashboard/provider/bookings'}
+            >
+              View All
+            </button>
+          </div>
+          
+          <div className="provider-table">
+            <div className="table-header">
+              <div className="provider-grid provider-grid-5">
+                <div>Client</div>
+                <div>Service</div>
+                <div>Date</div>
+                <div>Status</div>
+                <div>Amount</div>
+              </div>
+            </div>
             
-            <div className="service-categories-grid">
-              {Object.entries(servicesByCategory).map(([categoryName, categoryData]) => (
-                <div key={categoryName} className="service-category">
-                  <h4 className="category-title">
-                    <span className="category-icon">{categoryData.icon}</span>
-                    {categoryName}
-                  </h4>
-                  {categoryData.description && (
-                    <p className="category-description">{categoryData.description}</p>
-                  )}
-                  <div className="service-tags">
-                    {categoryData.services.map(service => (
-                      <button
-                        key={service.id}
-                        className={`service-tag ${selectedServices.includes(service.name) ? 'selected' : ''}`}
-                        onClick={() => toggleServiceSelection(service.name)}
-                      >
-                        {service.icon && <span className="service-icon">{service.icon}</span>}
-                        {service.name}
-                        {selectedServices.includes(service.name) && <CheckCircle size={14} />}
-                      </button>
-                    ))}
+            {recentBookings.map((booking) => (
+              <div key={booking.id} className="table-row">
+                <div className="provider-grid provider-grid-5">
+                  <div className="table-cell">{booking.client}</div>
+                  <div className="table-cell">{booking.service}</div>
+                  <div className="table-cell">{booking.date}</div>
+                  <div className="table-cell">
+                    <span className={`status-badge status-${booking.status.toLowerCase().replace(' ', '')}`}>
+                      {booking.status}
+                    </span>
+                  </div>
+                  <div className="table-cell" style={{ fontWeight: '600' }}>{booking.amount}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="provider-card">
+          <div className="card-header">
+            <h3 className="card-title">Quick Actions</h3>
+          </div>
+          
+          <div className="quick-actions-grid">
+            {quickActions.map((action, index) => (
+              <button
+                key={index}
+                className="quick-action-btn"
+                onClick={() => window.location.href = action.path}
+              >
+                <span className="action-icon">{action.icon}</span>
+                <span className="action-label">{action.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Notifications */}
+          <div style={{ marginTop: '2rem' }}>
+            <div className="card-header">
+              <h3 className="card-title">Recent Notifications</h3>
+            </div>
+            
+            <div className="notifications-list">
+              {notifications.map((notification) => (
+                <div key={notification.id} className="notification-item">
+                  <div className="notification-icon">
+                    {notification.type === 'booking' && '📅'}
+                    {notification.type === 'review' && '⭐'}
+                    {notification.type === 'payment' && '💰'}
+                  </div>
+                  <div className="notification-content">
+                    <p className="notification-message">{notification.message}</p>
+                    <span className="notification-time">{notification.time}</span>
                   </div>
                 </div>
               ))}
             </div>
-            
-            <div className="edit-actions">
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setIsEditingServices(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn btn-primary"
-                onClick={saveServiceSelections}
-                disabled={selectedServices.length === 0}
-              >
-                Save Services ({selectedServices.length} selected)
-              </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Additional Stats */}
+      <div className="provider-grid" style={{ marginTop: '2rem' }}>
+        <div className="provider-card">
+          <h3 className="card-title">Performance Overview</h3>
+          <div className="performance-stats">
+            <div className="performance-item">
+              <span className="performance-label">Completed Jobs</span>
+              <span className="performance-value">{stats.completedJobs}</span>
+            </div>
+            <div className="performance-item">
+              <span className="performance-label">Upcoming Jobs</span>
+              <span className="performance-value">{stats.upcomingJobs}</span>
+            </div>
+            <div className="performance-item">
+              <span className="performance-label">Leads This Month</span>
+              <span className="performance-value">{stats.leadsThisMonth}</span>
+            </div>
+            <div className="performance-item">
+              <span className="performance-label">Conversion Rate</span>
+              <span className="performance-value">{stats.conversionRate}</span>
             </div>
           </div>
-        ) : (
-          <div className="viewing-mode">
-            {provider.services?.length > 0 ? (
-              <div className="current-services">
-                <div className="services-tags">
-                  {provider.services.map(service => (
-                    <span key={service} className="service-tag">
-                      {service}
-                    </span>
-                  ))}
-                </div>
-                <p className="services-note">
-                  Your services are visible in the marketplace. Update them to reach more clients.
-                </p>
+        </div>
+
+        <div className="provider-card">
+          <h3 className="card-title">Verification Status</h3>
+          <div className="verification-status">
+            <div className="verification-item">
+              <FaUserCheck style={{ color: '#4caf50', fontSize: '2rem' }} />
+              <div>
+                <h4 style={{ margin: '0 0 0.5rem 0' }}>Profile Verified</h4>
+                <p style={{ color: '#666', margin: 0 }}>Your profile is 80% complete</p>
               </div>
-            ) : (
-              <div className="no-services">
-                <p>You haven't selected any services yet. Add services to appear in marketplace searches.</p>
-                <button 
-                  className="btn btn-primary btn-small"
-                  onClick={() => setIsEditingServices(true)}
-                >
-                  <PlusCircle size={16} />
-                  Add Services Now
-                </button>
-              </div>
-            )}
+            </div>
+            <button className="btn-primary" style={{ marginTop: '1rem' }}>
+              Complete Verification
+            </button>
           </div>
-        )}
+        </div>
+
+        <div className="provider-card">
+          <h3 className="card-title">Subscription Status</h3>
+          <div className="subscription-status">
+            <div className="subscription-info">
+              <p style={{ margin: '0 0 1rem 0' }}>
+                <strong>Status:</strong> <span className="status-active">Active</span>
+              </p>
+              <p style={{ margin: '0 0 1rem 0' }}>
+                <strong>Plan:</strong> Free Tier (5 bookings left)
+              </p>
+              <p style={{ margin: 0 }}>
+                <strong>Next Billing:</strong> After 5 more bookings
+              </p>
+            </div>
+            <button className="btn-secondary" style={{ marginTop: '1rem' }}>
+              Upgrade Plan
+            </button>
+          </div>
+        </div>
       </div>
-      
-      {/* Rest of your component remains the same */}
-      {/* ... (Keep all the other sections as they were) ... */}
-    </div>
+
+      <style jsx>{`
+        .provider-grid-4 {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        
+        .quick-actions-grid {
+          display: grid;
+          gap: 1rem;
+          grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .quick-action-btn {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 1.5rem;
+          background: #f8f9fa;
+          border: 2px solid #e0e0e0;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+        
+        .quick-action-btn:hover {
+          background: #e9ecef;
+          border-color: #1a237e;
+          transform: translateY(-2px);
+        }
+        
+        .action-icon {
+          font-size: 2rem;
+          margin-bottom: 0.5rem;
+          color: #1a237e;
+        }
+        
+        .action-label {
+          font-size: 0.9rem;
+          font-weight: 600;
+          text-align: center;
+        }
+        
+        .notifications-list {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        
+        .notification-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 1rem;
+          padding: 1rem;
+          background: #f8f9fa;
+          border-radius: 8px;
+          border-left: 4px solid #1a237e;
+        }
+        
+        .notification-icon {
+          font-size: 1.2rem;
+        }
+        
+        .notification-content {
+          flex: 1;
+        }
+        
+        .notification-message {
+          margin: 0 0 0.5rem 0;
+          font-weight: 500;
+        }
+        
+        .notification-time {
+          font-size: 0.8rem;
+          color: #666;
+        }
+        
+        .performance-stats {
+          display: grid;
+          gap: 1.5rem;
+          grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .performance-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          padding: 1rem;
+          background: #f8f9fa;
+          border-radius: 8px;
+        }
+        
+        .performance-label {
+          font-size: 0.9rem;
+          color: #666;
+          margin-bottom: 0.5rem;
+        }
+        
+        .performance-value {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #1a237e;
+        }
+        
+        .verification-item, .subscription-info {
+          padding: 1.5rem;
+          background: #f8f9fa;
+          border-radius: 8px;
+          margin-bottom: 1rem;
+        }
+        
+        .verification-item {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+        
+        @media (max-width: 1200px) {
+          .provider-grid-4 {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        
+        @media (max-width: 768px) {
+          .provider-grid-4,
+          .provider-grid-2 {
+            grid-template-columns: 1fr;
+          }
+          
+          .quick-actions-grid {
+            grid-template-columns: 1fr;
+          }
+          
+          .performance-stats {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </ProviderPageTemplate>
   );
 };
 

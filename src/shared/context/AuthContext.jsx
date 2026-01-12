@@ -1,4 +1,4 @@
-// src/shared/context/AuthContext.jsx - FIXED VERSION
+// src/shared/context/AuthContext.jsx - UPDATED WITH SUPER ADMIN
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const AuthContext = createContext();
@@ -32,10 +32,30 @@ export const AuthProvider = ({ children }) => {
 
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     const initializeAuth = () => {
       try {
+        // Check for Super Admin first
+        const superAdminToken = localStorage.getItem('superAdminToken');
+        const superAdminData = localStorage.getItem('superAdminData');
+        
+        if (superAdminToken && superAdminData) {
+          const parsedSuperAdmin = JSON.parse(superAdminData);
+          if (parsedSuperAdmin.role === 'super-admin') {
+            setUser(parsedSuperAdmin);
+            setIsSuperAdmin(true);
+            setLoading(false);
+            return;
+          } else {
+            // Invalid super admin data, clear it
+            localStorage.removeItem('superAdminToken');
+            localStorage.removeItem('superAdminData');
+          }
+        }
+
+        // Regular user check
         const savedUser = localStorage.getItem('renteasy_user');
         const savedToken = localStorage.getItem('renteasy_token');
         
@@ -49,11 +69,14 @@ export const AuthProvider = ({ children }) => {
           };
           
           setUser(userWithVerification);
+          setIsSuperAdmin(false);
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
         localStorage.removeItem('renteasy_user');
         localStorage.removeItem('renteasy_token');
+        localStorage.removeItem('superAdminToken');
+        localStorage.removeItem('superAdminData');
       } finally {
         setLoading(false);
       }
@@ -61,6 +84,113 @@ export const AuthProvider = ({ children }) => {
 
     initializeAuth();
   }, []);
+
+  // ========== SUPER ADMIN FUNCTIONS ==========
+  const superAdminLogin = (email, password) => {
+    try {
+      setAuthError(null);
+      
+      // For demo purposes - in production, this would be an API call
+      if (email === 'superadmin@renteasy.com' && password === 'admin123') {
+        const superAdminData = {
+          id: 'super-admin-001',
+          email: 'superadmin@renteasy.com',
+          name: 'RentEasy Super Admin',
+          role: 'super-admin',
+          permissions: ['*'],
+          isCEO: true,
+          isVerified: true,
+          verificationStatus: 'verified',
+          verificationLevel: 'super',
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        };
+        
+        // Store super admin session separately
+        localStorage.setItem('superAdminToken', 'super-admin-jwt-token');
+        localStorage.setItem('superAdminData', JSON.stringify(superAdminData));
+        
+        setUser(superAdminData);
+        setIsSuperAdmin(true);
+        
+        // Log the login
+        const auditLogs = JSON.parse(localStorage.getItem('auditLogs') || '[]');
+        auditLogs.unshift({
+          id: Date.now(),
+          action: 'SUPER_ADMIN_LOGIN',
+          user: 'superadmin@renteasy.com',
+          timestamp: new Date().toISOString(),
+          ip: '127.0.0.1',
+          details: 'Super Admin logged in successfully'
+        });
+        localStorage.setItem('auditLogs', JSON.stringify(auditLogs.slice(0, 1000)));
+        
+        return { success: true, user: superAdminData };
+      } else {
+        throw new Error('Invalid Super Admin credentials');
+      }
+    } catch (error) {
+      setAuthError(error.message);
+      return { success: false, error: error.message };
+    }
+  };
+
+  const superAdminLogout = () => {
+    setUser(null);
+    setIsSuperAdmin(false);
+    localStorage.removeItem('superAdminToken');
+    localStorage.removeItem('superAdminData');
+    setAuthError(null);
+    
+    // Redirect to home after logout
+    window.location.href = '/';
+    
+    return { success: true };
+  };
+
+  const switchToSuperAdmin = (adminData) => {
+    if (!adminData || adminData.role !== 'admin') {
+      throw new Error('Only admins can switch to super admin mode');
+    }
+    
+    const superAdminData = {
+      ...adminData,
+      role: 'super-admin',
+      isSuperAdmin: true,
+      switchedAt: new Date().toISOString()
+    };
+    
+    localStorage.setItem('superAdminToken', 'super-admin-temp-token');
+    localStorage.setItem('superAdminData', JSON.stringify(superAdminData));
+    
+    setUser(superAdminData);
+    setIsSuperAdmin(true);
+    
+    return { success: true, user: superAdminData };
+  };
+
+  const switchToRegularUser = () => {
+    // Clear super admin session
+    localStorage.removeItem('superAdminToken');
+    localStorage.removeItem('superAdminData');
+    setIsSuperAdmin(false);
+    
+    // Check for regular user session
+    const savedUser = localStorage.getItem('renteasy_user');
+    if (savedUser) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
+      } catch (error) {
+        setUser(null);
+      }
+    } else {
+      setUser(null);
+    }
+    
+    return { success: true };
+  };
+  // ========== END SUPER ADMIN FUNCTIONS ==========
 
   const login = (userData, token = null) => {
     try {
@@ -94,6 +224,7 @@ export const AuthProvider = ({ children }) => {
       };
       
       setUser(userWithVerification);
+      setIsSuperAdmin(false);
       
       localStorage.setItem('renteasy_user', JSON.stringify(userWithVerification));
       if (token) {
@@ -110,9 +241,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    // Clear all sessions
     setUser(null);
+    setIsSuperAdmin(false);
     localStorage.removeItem('renteasy_user');
     localStorage.removeItem('renteasy_token');
+    localStorage.removeItem('superAdminToken');
+    localStorage.removeItem('superAdminData');
     setAuthError(null);
     
     return { success: true };
@@ -121,6 +256,21 @@ export const AuthProvider = ({ children }) => {
   const updateUser = (updatedData) => {
     if (!user) {
       throw new Error('No user logged in');
+    }
+    
+    // If updating super admin, handle separately
+    if (isSuperAdmin) {
+      const updatedSuperAdmin = {
+        ...user,
+        ...updatedData,
+        verificationStatus: updatedData.verificationStatus || user.verificationStatus || 'not_started',
+        isVerified: (updatedData.verificationStatus || user.verificationStatus) === 'verified',
+        verificationLevel: updatedData.verificationLevel || user.verificationLevel || 'basic'
+      };
+      
+      setUser(updatedSuperAdmin);
+      localStorage.setItem('superAdminData', JSON.stringify(updatedSuperAdmin));
+      return updatedSuperAdmin;
     }
     
     const updatedUser = {
@@ -158,17 +308,35 @@ export const AuthProvider = ({ children }) => {
     };
     
     setUser(updatedUser);
-    localStorage.setItem('renteasy_user', JSON.stringify(updatedUser));
+    
+    if (isSuperAdmin) {
+      localStorage.setItem('superAdminData', JSON.stringify(updatedUser));
+    } else {
+      localStorage.setItem('renteasy_user', JSON.stringify(updatedUser));
+    }
     
     return updatedUser;
   };
 
   const refreshUser = () => {
     try {
+      // Check super admin first
+      const superAdminData = localStorage.getItem('superAdminData');
+      if (superAdminData) {
+        const parsed = JSON.parse(superAdminData);
+        if (parsed.role === 'super-admin') {
+          setUser(parsed);
+          setIsSuperAdmin(true);
+          return;
+        }
+      }
+      
+      // Check regular user
       const savedUser = localStorage.getItem('renteasy_user');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         setUser(parsed);
+        setIsSuperAdmin(false);
       }
     } catch (error) {
       console.error('Error refreshing user:', error);
@@ -178,8 +346,9 @@ export const AuthProvider = ({ children }) => {
   // ========== SECURE ADMIN CREATION FUNCTION ==========
   const createAdminAccount = (adminData, createdBy) => {
     try {
-      if (!createdBy || createdBy.role !== 'admin' || !createdBy.isCEO) {
-        throw new Error('Only CEO can create admin accounts');
+      // Only super admin or CEO admin can create admin accounts
+      if (!isSuperAdmin && (!createdBy || createdBy.role !== 'admin' || !createdBy.isCEO)) {
+        throw new Error('Only Super Admin or CEO can create admin accounts');
       }
       
       const storedUsers = JSON.parse(localStorage.getItem('renteasy_users') || '[]');
@@ -198,9 +367,10 @@ export const AuthProvider = ({ children }) => {
         isActive: true,
         isCEO: adminData.isCEO || false,
         createdAt: new Date().toISOString(),
-        createdBy: createdBy.email,
+        createdBy: isSuperAdmin ? 'superadmin@renteasy.com' : (createdBy.email || 'system'),
         permissions: adminData.permissions || ['view', 'edit', 'delete'],
-        requiresPasswordChange: true
+        requiresPasswordChange: true,
+        scope: adminData.scope || ['all'] // New field for admin scope
       };
       
       storedUsers.push(newAdmin);
@@ -210,8 +380,9 @@ export const AuthProvider = ({ children }) => {
       const adminLogs = JSON.parse(localStorage.getItem('admin_activities') || '[]');
       adminLogs.push({
         action: `Created admin account for ${adminData.email}`,
-        createdBy: createdBy.email,
-        timestamp: new Date().toISOString()
+        createdBy: isSuperAdmin ? 'superadmin@renteasy.com' : createdBy.email,
+        timestamp: new Date().toISOString(),
+        scope: newAdmin.scope
       });
       localStorage.setItem('admin_activities', JSON.stringify(adminLogs));
       
@@ -221,6 +392,96 @@ export const AuthProvider = ({ children }) => {
     }
   };
   // ========== END SECURE ADMIN CREATION ==========
+
+  // ========== SUPER ADMIN ONLY FUNCTIONS ==========
+  const suspendAdminAccount = (adminEmail, reason) => {
+    try {
+      if (!isSuperAdmin) {
+        throw new Error('Only Super Admin can suspend admin accounts');
+      }
+      
+      const storedUsers = JSON.parse(localStorage.getItem('renteasy_users') || '[]');
+      const adminIndex = storedUsers.findIndex(u => 
+        u.email === adminEmail && u.role === 'admin'
+      );
+      
+      if (adminIndex === -1) {
+        throw new Error('Admin account not found');
+      }
+      
+      // Don't allow suspending super admin
+      if (adminEmail === 'superadmin@renteasy.com') {
+        throw new Error('Cannot suspend Super Admin account');
+      }
+      
+      storedUsers[adminIndex] = {
+        ...storedUsers[adminIndex],
+        isActive: false,
+        suspensionReason: reason,
+        suspendedAt: new Date().toISOString(),
+        suspendedBy: 'superadmin@renteasy.com'
+      };
+      
+      localStorage.setItem('renteasy_users', JSON.stringify(storedUsers));
+      
+      // Log suspension
+      const adminLogs = JSON.parse(localStorage.getItem('admin_activities') || '[]');
+      adminLogs.push({
+        action: `Suspended admin account: ${adminEmail}`,
+        reason: reason,
+        suspendedBy: 'superadmin@renteasy.com',
+        timestamp: new Date().toISOString()
+      });
+      localStorage.setItem('admin_activities', JSON.stringify(adminLogs));
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+
+  const updateCommissionRules = (newRules) => {
+    try {
+      if (!isSuperAdmin) {
+        throw new Error('Only Super Admin can update commission rules');
+      }
+      
+      // Validate commission rules
+      if (newRules.totalCommission !== 7.5) {
+        throw new Error('Total commission must remain 7.5%');
+      }
+      
+      if (newRules.estateFirmCommission !== 0) {
+        throw new Error('Estate firm commission must remain 0%');
+      }
+      
+      const systemRules = JSON.parse(localStorage.getItem('systemRules') || '{}');
+      const updatedRules = {
+        ...systemRules,
+        commission: newRules,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'superadmin@renteasy.com'
+      };
+      
+      localStorage.setItem('systemRules', JSON.stringify(updatedRules));
+      
+      // Log rule change
+      const auditLogs = JSON.parse(localStorage.getItem('auditLogs') || '[]');
+      auditLogs.unshift({
+        id: Date.now(),
+        action: 'COMMISSION_RULES_UPDATE',
+        user: 'superadmin@renteasy.com',
+        timestamp: new Date().toISOString(),
+        details: `Updated commission rules: ${JSON.stringify(newRules)}`
+      });
+      localStorage.setItem('auditLogs', JSON.stringify(auditLogs.slice(0, 1000)));
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+  // ========== END SUPER ADMIN ONLY FUNCTIONS ==========
 
   const mockLoginAs = (role = 'tenant') => {
     const mockUsers = {
@@ -319,6 +580,10 @@ export const AuthProvider = ({ children }) => {
     return login(mockUser, 'mock_token_' + Date.now());
   };
 
+  const mockSuperAdminLogin = () => {
+    return superAdminLogin('superadmin@renteasy.com', 'admin123');
+  };
+
   const clearAuthError = () => {
     setAuthError(null);
   };
@@ -328,6 +593,7 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     authError,
+    isSuperAdmin,
     
     // Actions
     login,
@@ -337,7 +603,16 @@ export const AuthProvider = ({ children }) => {
     refreshUser,
     mockLoginAs,
     clearAuthError,
-    createAdminAccount, // New function for CEO to create admins
+    createAdminAccount,
+    
+    // Super Admin Actions
+    superAdminLogin,
+    superAdminLogout,
+    switchToSuperAdmin,
+    switchToRegularUser,
+    mockSuperAdminLogin,
+    suspendAdminAccount,
+    updateCommissionRules,
     
     // Computed
     isAuthenticated: !!user,
@@ -352,6 +627,15 @@ export const AuthProvider = ({ children }) => {
         return roles.includes(user.role);
       }
       return user.role === roles;
+    },
+    
+    // Permission check
+    can: (action) => {
+      if (!user) return false;
+      if (isSuperAdmin) return true; // Super Admin can do everything
+      if (user.permissions && user.permissions.includes('*')) return true;
+      if (user.permissions && user.permissions.includes(action)) return true;
+      return false;
     }
   };
 

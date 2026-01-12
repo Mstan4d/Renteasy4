@@ -219,11 +219,11 @@ const Signup = () => {
       newErrors.push('Full name must be at least 2 characters');
     }
     
-    if (!formData.phone.trim()) {
-      newErrors.push('Phone number is required');
-    } else if (!phoneRegex.test(formData.phone)) {
-      newErrors.push('Please enter a valid phone number');
-    }
+    //if (!formData.phone.trim()) {
+   //   newErrors.push('Phone number is required');
+   // } else if (!phoneRegex.test(formData.phone)) {
+   //   newErrors.push('Please enter a valid phone number');
+   // }
     
     if (!formData.password) {
       newErrors.push('Password is required');
@@ -552,7 +552,7 @@ const Signup = () => {
               <small className="form-help">We'll send verification to this address</small>
             </div>
             
-            <div className="form-group">
+           {/* <div className="form-group">
               <label htmlFor="phone" className="form-label">Phone Number *</label>
               <input
                 type="tel"
@@ -565,7 +565,7 @@ const Signup = () => {
                 aria-required="true"
               />
               <small className="form-help">Used for property-related communications</small>
-            </div>
+            </div>*/}
           </fieldset>
           
           <fieldset className="form-section">

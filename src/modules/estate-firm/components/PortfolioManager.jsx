@@ -85,7 +85,7 @@ const PortfolioManager = ({ properties, onAddProperty, onBulkUpload, onEditPrope
         <div className="header-actions">
           <button 
             className="btn btn-primary" 
-            onClick={() => onAddProperty('external')}
+            onClick={() => onAddProperty && onAddProperty('external')}
           >
             <PlusCircle size={18} />
             Add Property

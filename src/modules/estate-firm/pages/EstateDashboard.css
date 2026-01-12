@@ -1,892 +1,412 @@
-/* EstateDashboard.css - MOBILE FIRST APPROACH */
+/* EstateDashboard.css - Bootstrap Mobile Responsive */
 
-/* ============================================
-   VARIABLES & RESET
-============================================ */
+/* Custom Variables */
 :root {
-  --primary-color: #3a86ff;
-  --secondary-color: #8338ec;
-  --success-color: #38b000;
-  --warning-color: #ffbe0b;
-  --danger-color: #ff006e;
-  --text-primary: #1a1a2e;
-  --text-secondary: #6c757d;
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --border-color: #e0e0e0;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --renteasy-primary: #3a86ff;
+  --renteasy-secondary: #8338ec;
+  --renteasy-success: #38b000;
+  --renteasy-warning: #ffbe0b;
+  --renteasy-danger: #ff006e;
+  --renteasy-dark: #1a1a2e;
+  --renteasy-light: #f8f9fa;
 }
 
-/* ============================================
-   BASE MOBILE STYLES (0px - 768px)
-============================================ */
+/* Main Container */
 .estate-dashboard-container {
-  display: flex;
-  flex-direction: column;
   min-height: 100vh;
-  background: var(--bg-secondary);
+  background-color: #f8f9fa;
 }
 
-/* Mobile Sidebar - Hidden by default, shown via menu button */
-.estate-nav-mobile {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100vh;
-  background: var(--bg-primary);
-  z-index: 1000;
-  padding: 20px;
-  overflow-y: auto;
+.estate-main-content {
+  min-height: 100vh;
 }
 
-.estate-nav-mobile.active {
-  display: block;
-}
-
-/* Mobile menu button */
-.mobile-menu-btn {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  z-index: 1001;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 50%;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-lg);
-}
-
-/* Main dashboard area */
-.estate-dashboard {
-  padding: 16px;
-  width: 100%;
-  margin-top: 64px; /* Space for fixed header */
-}
-
-/* Dashboard Header - Stack vertically on mobile */
-.dashboard-header {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-bottom: 24px;
-  background: var(--bg-primary);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.welcome-section h1 {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 4px;
-  color: var(--text-primary);
-}
-
-.welcome-section .subtitle {
-  color: var(--text-secondary);
-  font-size: 14px;
-  margin: 0;
-}
-
-/* Action buttons - Full width on mobile */
-.header-actions .action-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-}
-
-.header-actions .btn {
-  width: 100%;
-  padding: 14px;
-  font-size: 15px;
-  border-radius: var(--radius-sm);
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  min-height: 44px; /* Touch-friendly */
-}
-
-.btn-primary {
-  background: var(--primary-color);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #2a76ff;
-}
-
-.btn-outline {
-  background: transparent;
-  border: 2px solid var(--primary-color);
-  color: var(--primary-color);
-}
-
-.btn-outline:hover {
-  background: var(--primary-color);
-  color: white;
-}
-
-/* Dashboard Tabs - Horizontal scroll on mobile */
-.dashboard-tabs {
-  display: flex;
-  overflow-x: auto;
-  gap: 8px;
-  padding: 16px 0;
-  margin-bottom: 16px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.dashboard-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.tab {
-  flex: 0 0 auto;
-  padding: 12px 20px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-
-.tab.active {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-}
-
-/* Stats Grid - 2 columns on mobile */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.dashboard-card {
-  background: var(--bg-primary);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.dashboard-card .card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dashboard-card .card-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.dashboard-card .card-subtitle {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-/* Properties Table - Horizontal scroll on mobile */
-.breakdown-section {
-  background: var(--bg-primary);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  margin-bottom: 24px;
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-.card-header {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.card-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.filter-buttons {
-  display: flex;
-  overflow-x: auto;
-  gap: 8px;
-  padding-bottom: 8px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.filter-btn {
-  flex: 0 0 auto;
-  padding: 8px 16px;
-  background: var(--bg-secondary);
-  border: none;
-  border-radius: var(--radius-lg);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.filter-btn.active {
-  background: var(--primary-color);
-  color: white;
-}
-
-/* Table container with horizontal scroll */
-.properties-table {
-  width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-}
-
-.properties-table table {
-  min-width: 700px; /* Ensures table can scroll on mobile */
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.properties-table th {
-  text-align: left;
-  padding: 12px;
-  background: var(--bg-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.properties-table td {
-  padding: 12px;
-  border-bottom: 1px solid var(--border-color);
-  vertical-align: top;
-}
-
-/* Property row styling for mobile */
-.property-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.property-info strong {
-  font-size: 14px;
-  color: var(--text-primary);
-}
-
-.property-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.badge {
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.badge-rent-easy {
-  background: var(--primary-color);
-  color: white;
-}
-
-.badge-external {
-  background: var(--success-color);
-  color: white;
-}
-
-.badge-managed {
-  background: var(--secondary-color);
-  color: white;
-}
-
-.property-address {
-  font-size: 11px;
-  color: var(--text-secondary);
-  flex: 1;
-}
-
-/* Status badges */
-.status-badge {
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  display: inline-block;
-}
-
-.status-badge.occupied {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.status-badge.vacant {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-/* Action buttons in table */
-.action-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.btn-icon {
-  min-width: 36px;
-  min-height: 36px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-  background: var(--bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-icon:hover {
-  background: var(--bg-secondary);
-  border-color: var(--primary-color);
-}
-
-/* Main Content Grid - Single column on mobile */
-.main-content-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.content-card {
-  background: var(--bg-primary);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.content-card .card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.content-card h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-}
-
-/* Quick Actions Grid - 2 columns on mobile */
-.quick-actions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.quick-action-btn {
-  padding: 16px 12px;
-  background: var(--bg-secondary);
-  border: none;
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  min-height: 90px;
-}
-
-.quick-action-btn:hover {
-  background: #e9ecef;
-  transform: translateY(-2px);
-}
-
-.quick-action-btn span {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  text-align: center;
-}
-
-/* Alerts Section */
-.alerts-section {
-  margin-bottom: 24px;
-}
-
-.alerts-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.alert-card {
-  background: var(--bg-primary);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  border-left: 4px solid;
-  box-shadow: var(--shadow-sm);
-}
-
-.alert-card.high {
-  border-left-color: var(--danger-color);
-  background: linear-gradient(135deg, #ffeaea 0%, #ffffff 100%);
-}
-
-.alert-card.medium {
-  border-left-color: var(--warning-color);
-  background: linear-gradient(135deg, #fff4e6 0%, #ffffff 100%);
-}
-
-.alert-card.low {
-  border-left-color: var(--success-color);
-  background: linear-gradient(135deg, #e6ffe6 0%, #ffffff 100%);
-}
-
-.alert-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.alert-type {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.alert-content p {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.alert-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.btn-sm {
-  padding: 8px 16px;
-  font-size: 13px;
-  min-height: 36px;
-}
-
-/* Performance Summary */
-.performance-summary {
-  background: var(--bg-primary);
-  padding: 20px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 24px;
-}
-
-.performance-summary h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 20px;
-}
-
-.performance-stats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-.performance-stat {
-  padding: 16px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-}
-
-.stat-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: block;
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-/* Modal styles for mobile */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-}
-
-.modal {
-  background: var(--bg-primary);
-  border-radius: var(--radius-lg);
-  width: 100%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-}
-
-.modal-header {
-  padding: 20px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--text-secondary);
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-.modal-footer {
-  padding: 20px;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  gap: 12px;
-}
-
-/* Form styles for mobile */
-.form-group {
-  margin-bottom: 16px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.form-input,
-.form-select {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  font-size: 16px; /* Prevents iOS zoom */
-  background: var(--bg-primary);
-}
-
-.form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* ============================================
-   TABLET STYLES (769px - 1024px)
-============================================ */
-@media (min-width: 769px) {
-  .estate-dashboard-container {
-    flex-direction: row;
-  }
-
-  .estate-nav-mobile {
-    display: none; /* Hide mobile nav on tablet */
-  }
-
-  .mobile-menu-btn {
-    display: none;
-  }
-
-  /* Show desktop sidebar */
-  .estate-dashboard {
-    margin-left: 250px; /* Adjust based on your sidebar width */
-    margin-top: 0;
-    padding: 24px;
-  }
-
-  .dashboard-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .header-actions .action-buttons {
-    flex-direction: row;
-    width: auto;
-  }
-
-  .header-actions .btn {
-    width: auto;
-  }
-
-  .stats-grid {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-  }
-
-  .dashboard-card {
-    padding: 20px;
-  }
-
-  .card-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .filter-buttons {
-    overflow-x: visible;
-  }
-
-  .main-content-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-  }
-
-  .quick-actions-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .alerts-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .performance-stats {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .form-row {
-    flex-direction: row;
-  }
-
-  .form-row .form-group {
-    flex: 1;
-  }
-}
-
-/* ============================================
-   DESKTOP STYLES (1025px and up)
-============================================ */
-@media (min-width: 1025px) {
-  .estate-dashboard {
-    margin-left: 280px; /* Adjust based on your sidebar width */
-    padding: 32px;
-    max-width: 1400px;
-  }
-
-  .welcome-section h1 {
-    font-size: 32px;
-  }
-
-  .subtitle {
-    font-size: 16px;
-  }
-
-  .dashboard-tabs {
-    overflow-x: visible;
-    justify-content: flex-start;
-  }
-
-  .tab {
-    padding: 12px 24px;
-  }
-
-  .main-content-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .quick-actions-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .properties-table {
-    overflow-x: visible;
-  }
-
-  .properties-table table {
-    min-width: 100%;
-  }
-}
-
-/* ============================================
-   UTILITY CLASSES
-============================================ */
-.hidden-mobile {
-  display: none;
-}
-
-.visible-mobile {
-  display: block;
-}
-
-@media (min-width: 769px) {
-  .hidden-mobile {
-    display: block;
+/* Header and Navigation Responsiveness */
+@media (max-width: 767.98px) {
+  .estate-main-content .pt-5 {
+    padding-top: 1rem !important;
   }
   
-  .visible-mobile {
+  .estate-main-content .pt-md-4 {
+    padding-top: 1rem !important;
+  }
+  
+  /* Welcome header mobile optimization */
+  .card .h4 {
+    font-size: 1.25rem !important;
+  }
+  
+  .card .h-md-3 {
+    font-size: 1.25rem !important;
+  }
+}
+
+/* Dashboard Tabs - Mobile Responsive */
+@media (max-width: 767.98px) {
+  .swipeable-tabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0 0.5rem;
+  }
+  
+  .swipeable-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .swipeable-tabs .btn {
+    white-space: nowrap;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+}
+
+/* Stats Grid - Mobile Responsive */
+@media (max-width: 767.98px) {
+  .row.g-3 {
+    margin: -0.5rem !important;
+  }
+  
+  .row.g-3 > .col-xs-6 {
+    padding: 0.5rem !important;
+  }
+  
+  .card .h3 {
+    font-size: 1.5rem !important;
+  }
+  
+  /* Stack stats on extra small screens */
+  @media (max-width: 375px) {
+    .row.g-3 > .col-xs-6 {
+      width: 100% !important;
+    }
+  }
+}
+
+/* TABLE RESPONSIVE FIXES - CRITICAL SECTION */
+
+/* Mobile-first table styles */
+@media (max-width: 767.98px) {
+  /* Force horizontal scrolling on small screens */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -1rem !important;
+    padding: 0 1rem !important;
+    width: calc(100% + 2rem) !important;
+  }
+  
+  /* Hide less important columns on mobile */
+  .table th.d-none,
+  .table td.d-none {
+    display: none !important;
+  }
+  
+  /* Make table more compact */
+  .table {
+    min-width: 700px; /* Ensure table has minimum width for horizontal scroll */
+    font-size: 0.875rem;
+  }
+  
+  .table th {
+    padding: 0.5rem 0.25rem !important;
+    font-size: 0.75rem !important;
+    white-space: nowrap;
+  }
+  
+  .table td {
+    padding: 0.5rem 0.25rem !important;
+    vertical-align: middle !important;
+  }
+  
+  /* Stack badges vertically on mobile */
+  .table td .badge {
+    display: block;
+    margin-bottom: 0.25rem;
+    width: fit-content;
+  }
+  
+  /* Adjust property name display */
+  .table td strong {
+    font-size: 0.9rem;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  
+  .table td .text-muted {
+    font-size: 0.75rem;
+  }
+  
+  /* Action buttons optimization */
+  .table td .d-flex.gap-1 {
+    flex-wrap: wrap;
+    gap: 0.25rem !important;
+  }
+  
+  .table td .btn {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    min-width: 36px;
+    height: 32px;
+  }
+  
+  .table td .btn svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* Alternative: Stacked table layout for small screens */
+@media (max-width: 575.98px) {
+  /* For very small screens, use card layout instead of table */
+  .table-responsive-stacked {
+    overflow: visible !important;
+  }
+  
+  .table-responsive-stacked table {
+    display: block;
+    width: 100% !important;
+  }
+  
+  .table-responsive-stacked thead {
+    display: none;
+  }
+  
+  .table-responsive-stacked tbody,
+  .table-responsive-stacked tr,
+  .table-responsive-stacked td {
+    display: block;
+    width: 100% !important;
+  }
+  
+  .table-responsive-stacked tr {
+    margin-bottom: 1rem;
+    background: white;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border: 1px solid #dee2e6;
+  }
+  
+  .table-responsive-stacked td {
+    padding: 0.5rem 0 !important;
+    border: none !important;
+    text-align: left !important;
+    position: relative;
+  }
+  
+  .table-responsive-stacked td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  
+  /* Hide data-label for actions column */
+  .table-responsive-stacked td[data-label="Actions"]:before {
     display: none;
   }
 }
 
-/* ============================================
-   SWIPEABLE SECTION FOR MODERN APP FEEL
-============================================ */
-.swipeable-section {
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-}
-
-.swipeable-container {
-  display: flex;
-  transition: transform 0.3s ease;
-  width: 100%;
-}
-
-.swipeable-panel {
-  flex: 0 0 100%;
-  width: 100%;
-  min-height: 400px;
-  padding: 16px;
-}
-
-.swipe-indicators {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.swipe-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-color);
-  transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-.swipe-indicator.active {
-  background: var(--primary-color);
-  transform: scale(1.2);
-}
-
-/* ============================================
-   TOUCH FRIENDLY ENHANCEMENTS
-============================================ */
-@media (hover: none) and (pointer: coarse) {
-  .btn,
-  .btn-icon,
-  .tab,
-  .quick-action-btn,
-  .filter-btn {
-    min-height: 44px;
+/* Quick Actions - Mobile Responsive */
+@media (max-width: 767.98px) {
+  .quick-action-btn {
+    height: 80px !important;
+    padding: 0.75rem !important;
   }
-
-  .btn-icon {
-    min-width: 44px;
+  
+  .quick-action-btn span {
+    font-size: 0.75rem !important;
   }
-
-  .form-input,
-  .form-select {
-    min-height: 44px;
+  
+  .quick-action-btn svg {
+    width: 20px !important;
+    height: 20px !important;
   }
+}
 
-  /* Increase tap target sizes */
-  .action-buttons .btn-icon {
-    padding: 12px;
+/* Modal Responsiveness */
+@media (max-width: 767.98px) {
+  .modal-dialog {
+    margin: 0.5rem !important;
   }
+  
+  .modal-content {
+    border-radius: 1rem !important;
+  }
+  
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding: 1rem !important;
+  }
+  
+  .modal-title {
+    font-size: 1.25rem !important;
+  }
+}
 
-  /* Better scrolling */
-  .properties-table,
-  .dashboard-tabs,
-  .filter-buttons {
+/* Badge adjustments for mobile */
+@media (max-width: 767.98px) {
+  .badge {
+    font-size: 0.65rem !important;
+    padding: 0.25em 0.5em !important;
+  }
+  
+  /* Badge icons sizing */
+  .badge svg {
+    width: 10px !important;
+    height: 10px !important;
+  }
+}
+
+/* Progress Bar Mobile */
+@media (max-width: 767.98px) {
+  .progress {
+    height: 6px !important;
+  }
+}
+
+/* Alert Mobile Adjustments */
+@media (max-width: 767.98px) {
+  .alert {
+    padding: 0.75rem !important;
+  }
+  
+  .alert .btn {
+    font-size: 0.75rem !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+}
+
+/* Button Groups for Mobile */
+@media (max-width: 767.98px) {
+  .btn-group {
+    display: flex;
+    overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  
+  .btn-group::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .btn-group .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 }
 
-/* ============================================
-   DARK MODE SUPPORT (Optional)
-============================================ */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text-primary: #f8f9fa;
-    --text-secondary: #adb5bd;
-    --bg-primary: #1a1d29;
-    --bg-secondary: #13141f;
-    --border-color: #2d3748;
+/* Filter Buttons Mobile */
+@media (max-width: 767.98px) {
+  .d-flex.gap-2 {
+    gap: 0.25rem !important;
   }
+  
+  .d-flex.gap-2 .btn {
+    padding: 0.375rem 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+}
 
-  .content-card,
-  .dashboard-card,
-  .alert-card,
-  .breakdown-section,
-  .performance-summary {
-    border: 1px solid var(--border-color);
+/* Card Body Padding Mobile */
+@media (max-width: 767.98px) {
+  .card-body {
+    padding: 1rem !important;
+  }
+  
+  .card-body h5 {
+    font-size: 1rem !important;
+  }
+}
+
+/* List Group Mobile */
+@media (max-width: 767.98px) {
+  .list-group-item {
+    padding: 0.75rem 0 !important;
+  }
+  
+  .list-group-item p {
+    font-size: 0.875rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+  
+  .list-group-item small {
+    font-size: 0.75rem !important;
+  }
+}
+
+/* Form Controls Mobile */
+@media (max-width: 767.98px) {
+  .form-control,
+  .form-select {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+    min-height: 44px !important;
+  }
+}
+
+/* Touch-friendly buttons */
+.btn {
+  min-height: 44px !important;
+  touch-action: manipulation;
+}
+
+/* Prevent text selection on interactive elements */
+.btn,
+.nav-link,
+.tab-link {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Loading states for better UX */
+@media (max-width: 767.98px) {
+  .skeleton-loader {
+    animation-duration: 1.2s !important;
+  }
+}
+
+/* Dark mode adjustments for mobile */
+@media (prefers-color-scheme: dark) and (max-width: 767.98px) {
+  .card {
+    background-color: #2d3748 !important;
+    border-color: #4a5568 !important;
+  }
+  
+  .table-responsive-stacked tr {
+    background-color: #2d3748 !important;
+    border-color: #4a5568 !important;
+  }
+  
+  .btn-outline-secondary {
+    border-color: #4a5568 !important;
+    color: #cbd5e0 !important;
+  }
+  
+  .btn-outline-secondary:hover {
+    background-color: #4a5568 !important;
+  }
+}
+
+/* Print styles for mobile */
+@media print {
+  .estate-dashboard-container {
+    background: white !important;
+  }
+  
+  .card {
+    border: 1px solid #dee2e6 !important;
+    box-shadow: none !important;
+  }
+  
+  .btn,
+  .modal,
+  .estate-nav {
+    display: none !important;
   }
 }

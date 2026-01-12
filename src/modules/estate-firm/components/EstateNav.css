@@ -1,149 +1,367 @@
-/* EstateNav.css */
-.estate-nav {
-  width: 280px;
-  background: white;
-  border-right: 1px solid #e5e7eb;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 1000;
-  transition: transform 0.3s ease;
+/* EstateNav.css - Mobile First Approach */
+:root {
+  --nav-width: 260px;
+  --nav-bg: #1e293b;
+  --nav-text: #f8fafc;
+  --nav-primary: #3b82f6;
+  --nav-hover: #334155;
+  --nav-active: #0f172a;
 }
 
-.nav-header {
-  padding: 24px 20px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.nav-header h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #111827;
-}
-
-.nav-subtitle {
-  margin: 4px 0 0;
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-.nav-menu {
-  flex: 1;
-  padding: 20px 0;
-  overflow-y: auto;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  color: #4b5563;
-  text-decoration: none;
-  transition: all 0.2s;
-  border-left: 3px solid transparent;
-}
-
-.nav-item:hover {
-  background-color: #f3f4f6;
-  color: #111827;
-}
-
-.nav-item.active {
-  background-color: #eff6ff;
-  color: #3b82f6;
-  border-left-color: #3b82f6;
-}
-
-.nav-item svg {
-  margin-right: 12px;
-}
-
-.nav-footer {
-  padding: 20px;
-  border-top: 1px solid #e5e7eb;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.nav-footer .btn {
-  width: 100%;
-  justify-content: center;
-}
-
-.logout-btn {
-  color: #ef4444;
-}
-
-.logout-btn:hover {
-  background-color: #fee2e2;
-}
-
-/* Mobile styles */
+/* Mobile Menu Button */
 .mobile-menu-btn {
-  display: none;
+  display: block;
   position: fixed;
   top: 20px;
   left: 20px;
-  z-index: 1100;
-  background: white;
-  border: 1px solid #e5e7eb;
+  z-index: 1001;
+  background: var(--nav-primary);
+  color: white;
+  border: none;
   border-radius: 8px;
-  padding: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  transition: all 0.3s ease;
 }
 
+.mobile-menu-btn:hover {
+  background: #2563eb;
+  transform: translateY(-2px);
+}
+
+/* Estate Navigation - MOBILE (Hidden by default) */
+.estate-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--nav-width);
+  height: 100vh;
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  transform: translateX(-100%);
+}
+
+/* When mobile menu is open */
+.estate-nav.mobile-open {
+  transform: translateX(0);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Desktop - Always visible */
+@media (min-width: 992px) {
+  .estate-nav {
+    position: relative;
+    transform: translateX(0);
+    box-shadow: none;
+  }
+  
+  .mobile-menu-btn {
+    display: none !important;
+  }
+  
+  .mobile-nav-overlay {
+    display: none !important;
+  }
+}
+
+/* Mobile Overlay */
 .mobile-nav-overlay {
-  display: none;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   z-index: 999;
+  animation: fadeIn 0.3s ease;
 }
 
-@media (max-width: 1024px) {
-  .mobile-menu-btn {
-    display: block;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Nav Header */
+.nav-header {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nav-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+.nav-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 0.875rem;
+  color: #94a3b8;
+  opacity: 0.9;
+}
+
+/* Nav Menu */
+.nav-menu {
+  flex: 1;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  color: #cbd5e1;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+  margin: 0 8px;
+  border-radius: 8px;
+}
+
+.nav-item:hover {
+  background: var(--nav-hover);
+  color: white;
+  transform: translateX(4px);
+}
+
+.nav-item.active {
+  background: var(--nav-active);
+  color: white;
+  border-left-color: var(--nav-primary);
+}
+
+.nav-item svg {
+  flex-shrink: 0;
+}
+
+.nav-item span {
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Nav Footer */
+.nav-footer {
+  padding: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Buttons */
+.btn {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.btn-primary {
+  background: var(--nav-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+  transform: translateY(-2px);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-text {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.btn-text:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.logout-btn {
+  margin-top: 8px;
+}
+
+/* Tablet adjustments */
+@media (min-width: 768px) and (max-width: 991.98px) {
+  :root {
+    --nav-width: 220px;
   }
   
+  .nav-item {
+    padding: 12px 16px;
+  }
+  
+  .nav-item span {
+    font-size: 0.9rem;
+  }
+}
+
+/* Prevent body scroll when menu is open */
+body.nav-open {
+  overflow: hidden;
+}
+
+/* Mobile Menu Button */
+.mobile-menu-btn {
+  display: block;
+  position: fixed;
+  top: 15px;
+  left: 15px;
+  z-index: 1001;
+  background: var(--nav-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+/* Desktop Collapse Button */
+.desktop-collapse-btn {
+  position: fixed;
+  top: 20px;
+  left: 260px;
+  z-index: 1002;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.desktop-collapse-btn:hover {
+  background: #f8f9fa;
+  transform: scale(1.1);
+}
+
+/* Estate Navigation */
+.estate-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 100vh;
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+/* Collapsed state */
+.estate-nav.collapsed {
+  width: 70px;
+}
+
+.estate-nav.collapsed .nav-header h3 {
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.estate-nav.collapsed .nav-item {
+  justify-content: center;
+  padding: 14px;
+}
+
+.estate-nav.collapsed .nav-item span {
+  display: none;
+}
+
+.estate-nav.collapsed .nav-footer button:not(.logout-btn) {
+  display: none;
+}
+
+.estate-nav.collapsed .logout-btn {
+  justify-content: center;
+  padding: 12px;
+}
+
+.estate-nav.collapsed .logout-btn span {
+  display: none;
+}
+
+/* Mobile state */
+@media (max-width: 767.98px) {
   .estate-nav {
     transform: translateX(-100%);
   }
   
   .estate-nav.mobile-open {
     transform: translateX(0);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
   }
   
-  .mobile-nav-overlay {
-    display: block;
+  .desktop-collapse-btn {
+    display: none !important;
+  }
+}
+
+/* Main content adjustment */
+.estate-main-content {
+  margin-left: 260px;
+  transition: margin-left 0.3s ease;
+  width: calc(100% - 260px);
+}
+
+/* Adjust for collapsed sidebar */
+.estate-nav.collapsed ~ .estate-main-content {
+  margin-left: 70px;
+  width: calc(100% - 70px);
+}
+
+/* Mobile full width */
+@media (max-width: 991.98px) {
+  .estate-main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
   }
   
-  .estate-dashboard-container .estate-dashboard {
-    margin-left: 0;
+  /* Add padding for mobile menu button */
+  .estate-main-content .p-3 {
+    padding-top: 70px !important;
   }
-}
-
-@media (min-width: 1025px) {
-  .estate-dashboard-container .estate-dashboard {
-    margin-left: 280px;
-  }
-}
-
-/* EstateDashboard container */
-.estate-dashboard-container {
-  display: flex;
-  min-height: 100vh;
-}
-
-.estate-dashboard {
-  flex: 1;
-  padding: 24px;
-  background-color: #f9fafb;
 }

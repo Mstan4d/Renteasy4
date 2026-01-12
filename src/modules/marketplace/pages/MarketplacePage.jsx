@@ -1,899 +1,699 @@
-// src/modules/marketplace/pages/MarketplacePage.jsx - ENHANCED VERSION
-import React, { useState, useEffect, useMemo } from 'react';
+// src/modules/marketplace/pages/MarketplacePage.jsx
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../../shared/context/AuthContext';
 import { 
   Search, Filter, Star, MapPin, Clock, CheckCircle, 
-  Users, TrendingUp, Download, Building, Home, Briefcase,
-  Award, Shield, ThumbsUp, Eye, MessageSquare, Phone
+  Users, TrendingUp, Building, Home, Briefcase, ToolCaseIcon,
+  Award, Shield, Eye, MessageSquare, Phone, Calendar,
+  DollarSign, Sparkles, AlertCircle, Zap, Crown, Settings, ToolCase
 } from 'lucide-react';
-import ProviderCard from '../components/ProviderCard';
-import FilterPanel from '../components/FilterPanel';
-import StatsOverview from '../components/StatsOverview';
-import ExportModal from '../components/ExportModal';
-import { serviceCategories, serviceTags } from '../data/serviceCategories';
 import './Marketplace.css';
 
-/**
- * MarketplacePage - Professional Service Provider Discovery
- * Includes Managers, Estate Firms, and Service Providers with reputation scoring
- */
 const MarketplacePage = () => {
-  // ================= STATE MANAGEMENT =================
   const navigate = useNavigate();
-  const { user } = useAuth();
-  
-  const [providers, setProviders] = useState([]);
-  const [filteredProviders, setFilteredProviders] = useState([]);
-  const [selectedProvider, setSelectedProvider] = useState(null);
-  const [activeView, setActiveView] = useState('grid'); // grid, list
-  const [activeTab, setActiveTab] = useState('all'); // all, estate-firms, property-managers, services
-  const [isLoading, setIsLoading] = useState(true);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  
-  // Search & Filter states
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'estate-firms', 'services'
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Correct filters according to business plan
   const [filters, setFilters] = useState({
     state: '',
     lga: '',
-    minRating: 4.0,
-    verifiedOnly: true,
-    priceRange: [0, 1000000],
-    services: [],
-    availability: 'all',
-    category: '',
+    minRating: 0,
+    verifiedOnly: false,
+    boostOnly: false,
     serviceType: '',
-    tags: [],
-    serviceArea: 'all',
-    providerType: 'all', // 'all', 'estate-firm', 'property-manager', 'service-provider'
-    minExperience: 0,
-    minReputation: 0,
-    sortBy: 'reputation' // reputation, rating, experience, newest, response-time
-  });
-  
-  // Analytics states
-  const [analytics, setAnalytics] = useState({
-    totalProviders: 0,
-    avgRating: 0,
-    verifiedCount: 0,
-    totalReputation: 0,
-    topServices: [],
-    monthlyGrowth: 0,
-    byType: {
-      estateFirms: 0,
-      propertyManagers: 0,
-      serviceProviders: 0
-    },
-    reputationDistribution: {
-      elite: 0,      // 90-100
-      excellent: 0,  // 80-89
-      good: 0,       // 70-79
-      average: 0     // Below 70
-    }
+    category: '',
+    sortBy: 'relevance' // 'relevance', 'rating', 'boosted', 'newest'
   });
 
-  // ================= REPUTATION CALCULATION FUNCTIONS =================
-  
-  const calculateReputationScore = (provider) => {
-    let score = 50; // Base score
-    
-    // Verification status (20 points)
-    if (provider.verified) score += 20;
-    if (provider.verificationLevel === 'verified') score += 10;
-    
-    // Experience (20 points)
-    if (provider.stats?.yearsExperience) {
-      if (provider.stats.yearsExperience >= 10) score += 20;
-      else if (provider.stats.yearsExperience >= 5) score += 15;
-      else if (provider.stats.yearsExperience >= 2) score += 10;
-      else score += 5;
-    }
-    
-    // Ratings and reviews (20 points)
-    if (provider.rating >= 4.5) score += 20;
-    else if (provider.rating >= 4.0) score += 15;
-    else if (provider.rating >= 3.5) score += 10;
-    else if (provider.rating > 0) score += 5;
-    
-    if (provider.reviews >= 50) score += 10;
-    else if (provider.reviews >= 20) score += 7;
-    else if (provider.reviews >= 10) score += 5;
-    else if (provider.reviews >= 5) score += 3;
-    
-    // Performance metrics (15 points)
-    if (provider.stats?.successRate >= 95) score += 15;
-    else if (provider.stats?.successRate >= 90) score += 12;
-    else if (provider.stats?.successRate >= 85) score += 9;
-    else if (provider.stats?.successRate >= 80) score += 6;
-    else if (provider.stats?.successRate >= 70) score += 3;
-    
-    // Response time (10 points)
-    if (provider.responseTime?.includes('Within 1 hour')) score += 10;
-    else if (provider.responseTime?.includes('Within 2 hours')) score += 8;
-    else if (provider.responseTime?.includes('Within 4 hours')) score += 6;
-    else if (provider.responseTime?.includes('Within 24 hours')) score += 4;
-    else score += 2;
-    
-    // Professional qualifications (15 points)
-    if (provider.qualifications?.includes('certified')) score += 5;
-    if (provider.qualifications?.includes('licensed')) score += 5;
-    if (provider.qualifications?.includes('insured')) score += 5;
-    
-    // Client portfolio (10 points)
-    if (provider.stats?.propertiesManaged >= 100) score += 10;
-    else if (provider.stats?.propertiesManaged >= 50) score += 8;
-    else if (provider.stats?.propertiesManaged >= 20) score += 6;
-    else if (provider.stats?.propertiesManaged >= 10) score += 4;
-    else if (provider.stats?.propertiesManaged >= 5) score += 2;
-    
-    // Ensure score is between 0-100
-    return Math.min(100, Math.max(0, score));
-  };
-  
-  const getReputationBadge = (score) => {
-    if (score >= 90) return { level: 'Elite', color: '#7C3AED', icon: '🏆' };
-    if (score >= 80) return { level: 'Excellent', color: '#10B981', icon: '⭐' };
-    if (score >= 70) return { level: 'Good', color: '#3B82F6', icon: '👍' };
-    return { level: 'Average', color: '#6B7280', icon: '📊' };
-  };
-  
-  const calculateAnalytics = (providers) => {
-    const total = providers.length;
-    const verifiedCount = providers.filter(p => p.verified).length;
-    const avgRating = providers.reduce((sum, p) => sum + p.rating, 0) / total || 0;
-    const avgReputation = providers.reduce((sum, p) => sum + (p.reputationScore || 0), 0) / total || 0;
-    
-    // Count by type
-    const estateFirmsCount = providers.filter(p => p.type === 'estate-firm').length;
-    const propertyManagersCount = providers.filter(p => p.type === 'property-manager').length;
-    const serviceProvidersCount = providers.filter(p => p.type === 'service-provider').length;
-    
-    // Reputation distribution
-    const reputationDistribution = {
-      elite: providers.filter(p => (p.reputationScore || 0) >= 90).length,
-      excellent: providers.filter(p => (p.reputationScore || 0) >= 80 && (p.reputationScore || 0) < 90).length,
-      good: providers.filter(p => (p.reputationScore || 0) >= 70 && (p.reputationScore || 0) < 80).length,
-      average: providers.filter(p => (p.reputationScore || 0) < 70).length
-    };
-    
-    // Count services frequency
-    const serviceCounts = {};
-    providers.forEach(p => {
-      p.services?.forEach(service => {
-        serviceCounts[service] = (serviceCounts[service] || 0) + 1;
-      });
-    });
-    
-    const topServices = Object.entries(serviceCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([service]) => service);
-    
-    setAnalytics({
-      totalProviders: total,
-      avgRating: parseFloat(avgRating.toFixed(1)),
-      verifiedCount,
-      totalReputation: parseFloat(avgReputation.toFixed(1)),
-      topServices,
-      monthlyGrowth: 15.2,
-      byType: {
-        estateFirms: estateFirmsCount,
-        propertyManagers: propertyManagersCount,
-        serviceProviders: serviceProvidersCount
-      },
-      reputationDistribution
-    });
-  };
-  
-  // ================= DATA LOADING & TRANSFORMATION =================
-  
+  // Sample data structure following business rules
+  const [marketplaceData, setMarketplaceData] = useState({
+    estateFirms: [],
+    serviceProviders: [],
+    allItems: []
+  });
+
+  // Load data according to business rules
   useEffect(() => {
-    const loadMarketplaceData = async () => {
+    const loadMarketplaceData = () => {
       setIsLoading(true);
       
-      try {
-        // Load all verified estate firms
-        const estateVerifications = JSON.parse(localStorage.getItem('estateVerifications') || '[]');
-        const approvedEstateFirms = estateVerifications.filter(firm => 
-          firm.status === 'approved' && firm.verificationStatus === 'approved'
-        );
-        
-        // Load managers
-        const managers = JSON.parse(localStorage.getItem('managers') || '[]');
-        const activeManagers = managers.filter(m => m.status === 'active');
-        
-        // Load service providers
-        const serviceProviders = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-        const approvedProviders = serviceProviders.filter(p => p.status === 'approved');
-        
-        // Transform estate firms with reputation scoring
-        const transformedEstateFirms = approvedEstateFirms.map(firm => {
-          const reputationScore = calculateReputationScore({
-            verified: true,
-            verificationLevel: 'verified',
-            stats: {
-              yearsExperience: firm.yearsInOperation || 3,
-              successRate: 92,
-              propertiesManaged: firm.propertiesCount || 15
-            },
-            rating: 4.7,
-            reviews: 24,
-            responseTime: 'Within 2 hours',
-            qualifications: firm.certifications || []
-          });
+      // ========== ESTATE FIRMS (Following Business Rules) ==========
+      // Rule: All estate firms appear immediately after registration
+      // Rule: Appear even if unverified or unsubscribed
+      const estateFirms = [
+        {
+          id: 1,
+          type: 'estate-firm',
+          name: 'Prime Properties Ltd',
+          description: 'Professional real estate management company with 15+ years experience',
+          logo: '🏢',
+          location: 'Lagos, Nigeria',
+          rating: 4.8,
+          reviews: 124,
+          services: ['Property Management', 'Sales & Rentals', 'Valuation'],
           
-          const reputationBadge = getReputationBadge(reputationScore);
+          // INDEPENDENT STATES (Critical Rule)
+          verificationState: 'verified', // 'unverified' | 'verified' (KYC by admin)
+          boostState: 'boosted',         // 'not-boosted' | 'boosted' (paid promotion)
+          subscriptionState: 'subscribed', // Only affects posting properties, NOT marketplace visibility
           
-          return {
-            id: firm.id || `estate-${Date.now()}`,
-            type: 'estate-firm',
-            name: firm.businessName,
-            company: firm.businessName,
-            description: firm.description || `Professional ${firm.businessType} serving ${firm.state || 'multiple'} areas.`,
-            logo: firm.logo || null,
-            
-            // Contact Info
-            contact: {
-              phone: firm.contactPhone,
-              email: firm.contactEmail,
-              website: firm.website,
-              address: firm.officeAddress
-            },
-            
-            // Location
-            location: `${firm.city}, ${firm.state}`,
-            state: firm.state,
-            lga: firm.lga || firm.city,
-            coverage: firm.coverageAreas || [{ state: firm.state, lgas: [firm.lga || firm.city] }],
-            
-            // Services
-            services: firm.servicesOffered || ['Property Management', 'Sales & Rentals', 'Property Valuation', 'Legal Services'],
-            categories: ['property-management', 'real-estate'],
-            tags: ['estate-firm', 'verified', 'professional'],
-            
-            // Ratings
-            rating: 4.7,
-            reviews: 24,
-            responseTime: 'Within 2 hours',
-            
-            // Stats
-            stats: {
-              yearsExperience: firm.yearsInOperation || 3,
-              successRate: 92,
-              propertiesManaged: firm.propertiesCount || 15,
-              clientsServed: 45,
-              responseRate: 98
-            },
-            
-            // Verification & Reputation
-            verified: true,
-            verificationLevel: 'verified',
-            verificationDate: firm.reviewDate || new Date().toISOString(),
-            reputationScore,
-            reputationBadge,
-            tier: reputationBadge.level,
-            
-            // Additional Info
-            specialties: firm.specialties || ['Residential', 'Commercial', 'Industrial'],
-            certifications: firm.certifications || ['CAC Registered', 'NIESV Member'],
-            languages: ['English', 'Yoruba', 'Hausa', 'Igbo'],
-            
-            // Pricing
-            pricing: {
-              consultationFee: 50000,
-              managementFee: '8-12%',
-              minContract: '6 months'
-            },
-            
-            // Performance Metrics
-            performance: {
-              onTimeDelivery: 95,
-              clientSatisfaction: 96,
-              repeatClients: 65,
-              avgResponseTime: '1.5 hours'
-            },
-            
-            // Social Proof
-            testimonials: [
-              { client: 'Mr. Ade Johnson', review: 'Professional and reliable. Managed my property portfolio excellently.', rating: 5 },
-              { client: 'TechCorp Ltd', review: 'Handled our corporate housing needs perfectly.', rating: 5 }
-            ]
-          };
-        });
-        
-        // Transform property managers
-        const transformedManagers = activeManagers.map(manager => {
-          const reputationScore = calculateReputationScore({
-            verified: true,
-            verificationLevel: 'verified',
-            stats: {
-              yearsExperience: 4,
-              successRate: 94,
-              propertiesManaged: manager.managedProperties?.length || 8
-            },
-            rating: 4.8,
-            reviews: 18,
-            responseTime: 'Within 1 hour'
-          });
+          // Badges based on independent states
+          badges: ['verified', 'boosted'],
           
-          return {
-            id: manager.id,
-            type: 'property-manager',
-            name: manager.name,
-            company: 'Property Manager',
-            description: 'Professional property manager specializing in residential and commercial properties.',
-            // ... rest of manager data with reputation
-            reputationScore,
-            reputationBadge: getReputationBadge(reputationScore)
-          };
-        });
+          // Performance metrics
+          yearsExperience: 15,
+          propertiesManaged: 245,
+          responseTime: '1-2 hours',
+          
+          // Contact (visible after verification)
+          contact: {
+            phone: '+2348012345678',
+            email: 'info@primeproperties.com'
+          }
+        },
+        {
+          id: 2,
+          type: 'estate-firm',
+          name: 'Urban Living Realty',
+          description: 'Specialized in commercial and residential properties',
+          logo: '🏘️',
+          location: 'Abuja, Nigeria',
+          rating: 4.5,
+          reviews: 89,
+          services: ['Commercial Leasing', 'Property Maintenance', 'Consultation'],
+          
+          // Different state combinations
+          verificationState: 'verified',
+          boostState: 'not-boosted',
+          subscriptionState: 'unsubscribed',
+          
+          badges: ['verified'],
+          yearsExperience: 8,
+          propertiesManaged: 120,
+          responseTime: '2-4 hours'
+        },
+        {
+          id: 3,
+          type: 'estate-firm',
+          name: 'New Horizon Properties',
+          description: 'New real estate startup focusing on modern apartments',
+          logo: '🌅',
+          location: 'Port Harcourt, Nigeria',
+          rating: 4.2,
+          reviews: 23,
+          services: ['Apartment Rentals', 'Property Sales'],
+          
+          // Unverified and not boosted
+          verificationState: 'unverified',
+          boostState: 'not-boosted',
+          subscriptionState: 'unsubscribed',
+          
+          badges: ['unverified'],
+          yearsExperience: 2,
+          propertiesManaged: 45,
+          responseTime: '4-6 hours'
+        }
+      ];
+
+      // ========== SERVICE PROVIDERS (Following Business Rules) ==========
+      // Rule: Automatically listed upon registering
+      // Rule: Free until booked 10 times, then ₦3000/month subscription
+      const serviceProviders = [
+        {
+          id: 101,
+          type: 'service-provider',
+          name: 'Mike Adekunle',
+          title: 'Professional Painter',
+          description: '15 years experience in residential and commercial painting',
+          profileImage: '👨‍🎨',
+          location: 'Lagos Island',
+          rating: 4.9,
+          reviews: 56,
+          services: ['Interior Painting', 'Exterior Painting', 'Wallpaper Installation'],
+          category: 'painting',
+          priceRange: '₦15,000 - ₦80,000',
+          
+          // Independent States
+          verificationState: 'verified',
+          boostState: 'boosted',
+          subscriptionState: 'free', // Free until 10 bookings
+          
+          badges: ['verified', 'boosted'],
+          
+          // Booking tracking for subscription
+          bookingsCount: 7, // Free bookings used
+          totalBookings: 243,
+          
+          // Performance metrics
+          yearsExperience: 15,
+          successRate: 98,
+          responseTime: 'Within 2 hours',
+          
+          // Service-specific details
+          availability: 'Mon-Sat, 8am-6pm',
+          areasServed: ['Lagos Island', 'Victoria Island', 'Ikoyi']
+        },
+        {
+          id: 102,
+          type: 'service-provider',
+          name: 'CleanPro Services',
+          title: 'Professional Cleaning Company',
+          description: 'Deep cleaning, move-in/move-out cleaning, office cleaning',
+          profileImage: '🧹',
+          location: 'Abuja Central',
+          rating: 4.7,
+          reviews: 134,
+          services: ['Deep Cleaning', 'Office Cleaning', 'Move-in Cleaning'],
+          category: 'cleaning',
+          priceRange: '₦8,000 - ₦35,000',
+          
+          verificationState: 'verified',
+          boostState: 'not-boosted',
+          subscriptionState: 'subscribed', // Already subscribed after 10+ bookings
+          
+          badges: ['verified'],
+          bookingsCount: 12,
+          totalBookings: 567,
+          yearsExperience: 8,
+          successRate: 96,
+          responseTime: 'Within 4 hours'
+        },
+        {
+          id: 103,
+          type: 'service-provider',
+          name: 'John Plumbing Works',
+          title: 'Licensed Plumber',
+          description: 'Emergency plumbing repairs and installations',
+          profileImage: '🔧',
+          location: 'Ikeja, Lagos',
+          rating: 4.6,
+          reviews: 78,
+          services: ['Pipe Repair', 'Drain Cleaning', 'Toilet Installation'],
+          category: 'plumbing',
+          priceRange: '₦5,000 - ₦50,000',
+          
+          verificationState: 'unverified',
+          boostState: 'not-boosted',
+          subscriptionState: 'free',
+          
+          badges: ['unverified'],
+          bookingsCount: 3,
+          totalBookings: 89,
+          yearsExperience: 12,
+          successRate: 94,
+          responseTime: 'Within 1 hour'
+        },
+        {
+          id: 104,
+          type: 'service-provider',
+          name: 'SafeLock Security',
+          title: 'Security Installation',
+          description: 'CCTV, alarm systems, and security consultations',
+          profileImage: '🔒',
+          location: 'Lekki, Lagos',
+          rating: 4.8,
+          reviews: 45,
+          services: ['CCTV Installation', 'Alarm Systems', 'Security Audit'],
+          category: 'security',
+          priceRange: '₦25,000 - ₦150,000',
+          
+          verificationState: 'verified',
+          boostState: 'boosted',
+          subscriptionState: 'free',
+          
+          badges: ['verified', 'boosted'],
+          bookingsCount: 9, // Almost reaching 10 free bookings limit
+          totalBookings: 156,
+          yearsExperience: 6,
+          successRate: 97,
+          responseTime: 'Within 3 hours'
+        }
+      ];
+
+      // Combine all items
+      const allItems = [...estateFirms, ...serviceProviders];
+      
+      // Sort: Boosted items first, then by rating
+      const sortedItems = allItems.sort((a, b) => {
+        // Boosted items go to top
+        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
         
-        // Combine all providers
-        const allProviders = [...transformedEstateFirms, ...transformedManagers];
-        
-        setProviders(allProviders);
-        setFilteredProviders(allProviders);
-        calculateAnalytics(allProviders);
-        
-      } catch (error) {
-        console.error('Error loading marketplace data:', error);
-      } finally {
-        setIsLoading(false);
-      }
+        // Then by rating
+        return b.rating - a.rating;
+      });
+
+      setMarketplaceData({
+        estateFirms,
+        serviceProviders,
+        allItems: sortedItems
+      });
+      
+      setIsLoading(false);
     };
-    
+
     loadMarketplaceData();
   }, []);
-  
-  // ================= FILTERING & SEARCH =================
-  
-  useEffect(() => {
-    if (!providers.length) return;
 
-    let filtered = providers;
+  // Filter items based on search and filters
+  const filteredItems = marketplaceData.allItems.filter(item => {
+    // Filter by tab
+    if (activeTab === 'estate-firms' && item.type !== 'estate-firm') return false;
+    if (activeTab === 'services' && item.type !== 'service-provider') return false;
     
-    // Apply provider type filter
-    if (filters.providerType && filters.providerType !== 'all') {
-      filtered = filtered.filter(provider => provider.type === filters.providerType);
-    }
-    
-    // Apply tab filter
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(provider => {
-        if (activeTab === 'estate-firms') return provider.type === 'estate-firm';
-        if (activeTab === 'property-managers') return provider.type === 'property-manager';
-        return true;
-      });
-    }
-    
-    // Apply search term
+    // Search term
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(provider =>
-        provider.name.toLowerCase().includes(term) ||
-        provider.company.toLowerCase().includes(term) ||
-        provider.description.toLowerCase().includes(term) ||
-        (provider.services && provider.services.some(service => 
-          service.toLowerCase().includes(term)
-        ))
-      );
+      const searchable = [
+        item.name,
+        item.description,
+        ...(item.services || []),
+        item.location
+      ].join(' ').toLowerCase();
+      
+      if (!searchable.includes(term)) return false;
     }
     
-    // Apply state filter
-    if (filters.state) {
-      filtered = filtered.filter(provider => {
-        const stateMatch = provider.state === filters.state;
-        const coverageMatch = provider.coverage?.some(area => area.state === filters.state);
-        return stateMatch || coverageMatch;
+    // Verified only filter
+    if (filters.verifiedOnly && item.verificationState !== 'verified') return false;
+    
+    // Boost only filter
+    if (filters.boostOnly && item.boostState !== 'boosted') return false;
+    
+    // Minimum rating
+    if (item.rating < filters.minRating) return false;
+    
+    // Service type filter
+    if (filters.serviceType && item.type === 'service-provider') {
+      if (!item.services.some(s => s.toLowerCase().includes(filters.serviceType.toLowerCase()))) {
+        return false;
+      }
+    }
+    
+    // Category filter
+    if (filters.category && item.type === 'service-provider') {
+      if (item.category !== filters.category) return false;
+    }
+    
+    return true;
+  });
+
+  // Apply sorting
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    switch (filters.sortBy) {
+      case 'rating':
+        return b.rating - a.rating;
+      case 'boosted':
+        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+        return 0;
+      case 'newest':
+        return b.id - a.id; // Using ID as proxy for newness
+      default:
+        // Relevance: Boosted first, then rating
+        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+        return b.rating - a.rating;
+    }
+  });
+
+  // Handle booking service provider
+  const handleBookService = (provider) => {
+    // Track booking count for subscription logic
+    const bookingsCount = provider.bookingsCount + 1;
+    
+    if (bookingsCount >= 10 && provider.subscriptionState === 'free') {
+      alert(`${provider.name} has reached 10 free bookings. They now require a ₦3,000 monthly subscription to continue receiving bookings.`);
+      // In real implementation, trigger subscription requirement
+    }
+    
+    // Navigate to booking page
+    navigate(`/dashboard/provider/booking/${provider.id}`);
+  };
+
+  // Handle contact estate firm
+  const handleContactEstateFirm = (firm) => {
+    if (firm.verificationState === 'verified') {
+      // Show contact info or open chat
+      alert(`Contact ${firm.name}:\nPhone: ${firm.contact?.phone || 'Available after verification'}\nEmail: ${firm.contact?.email || 'Available after verification'}`);
+    } else {
+      alert(`${firm.name} is not yet verified. Please check back later or contact RentEasy support.`);
+    }
+  };
+
+  // Render badge based on independent states
+  const renderBadges = (item) => {
+    const badges = [];
+    
+    // Verification Badge (ONLY for KYC approval)
+    if (item.verificationState === 'verified') {
+      badges.push({
+        type: 'verified',
+        label: item.type === 'estate-firm' ? 'Verified Estate Firm' : 'Verified Service Provider',
+        icon: <Shield size={12} />,
+        color: 'var(--badge-verified)'
+      });
+    } else {
+      badges.push({
+        type: 'unverified',
+        label: 'Unverified',
+        icon: <AlertCircle size={12} />,
+        color: 'var(--badge-unverified)'
       });
     }
     
-    // Apply rating filter
-    filtered = filtered.filter(provider => provider.rating >= filters.minRating);
-    
-    // Apply reputation filter
-    filtered = filtered.filter(provider => 
-      (provider.reputationScore || 0) >= filters.minReputation
-    );
-    
-    // Apply experience filter
-    filtered = filtered.filter(provider => 
-      (provider.stats?.yearsExperience || 0) >= filters.minExperience
-    );
-    
-    // Apply verification filter
-    if (filters.verifiedOnly) {
-      filtered = filtered.filter(provider => provider.verified);
+    // Boost Badge (Independent of verification)
+    if (item.boostState === 'boosted') {
+      badges.push({
+        type: 'boosted',
+        label: 'Boosted',
+        icon: <Zap size={12} />,
+        color: 'var(--badge-boosted)'
+      });
     }
     
-    // Apply service type filter
-    if (filters.serviceType) {
-      filtered = filtered.filter(provider => 
-        provider.services && provider.services.some(service => 
-          service.toLowerCase().includes(filters.serviceType.toLowerCase())
-        )
-      );
-    }
-    
-    // Apply sorting
-    filtered.sort((a, b) => {
-      switch (filters.sortBy) {
-        case 'reputation':
-          return (b.reputationScore || 0) - (a.reputationScore || 0);
-        case 'rating':
-          return b.rating - a.rating;
-        case 'experience':
-          return (b.stats?.yearsExperience || 0) - (a.stats?.yearsExperience || 0);
-        case 'newest':
-          return new Date(b.verificationDate || 0) - new Date(a.verificationDate || 0);
-        case 'response-time':
-          return a.responseTime.localeCompare(b.responseTime);
-        default:
-          return 0;
+    // Subscription status (Only for service providers, shown differently)
+    if (item.type === 'service-provider') {
+      if (item.subscriptionState === 'free') {
+        badges.push({
+          type: 'free-bookings',
+          label: `${10 - item.bookingsCount} free bookings left`,
+          icon: <Sparkles size={12} />,
+          color: 'var(--badge-free)'
+        });
       }
-    });
+    }
     
-    setFilteredProviders(filtered);
-  }, [providers, searchTerm, activeTab, filters]);
-  
-  // ================= EVENT HANDLERS =================
-  
-  const handleFilterChange = (newFilters) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
+    return badges;
   };
-  
-  const handleExport = (format) => {
-    console.log(`Exporting ${filteredProviders.length} providers as ${format}`);
-    // Implementation for export
-  };
-  
-  const handleContactProvider = (provider, method) => {
-    const lead = {
-      id: Date.now(),
-      providerId: provider.id,
-      providerName: provider.name,
-      providerType: provider.type,
-      providerReputation: provider.reputationScore,
-      contactedBy: user?.email || 'guest',
-      method: method,
-      timestamp: new Date().toISOString()
-    };
 
-    const leads = JSON.parse(localStorage.getItem("marketplaceLeads") || "[]");
-    leads.push(lead);
-    localStorage.setItem("marketplaceLeads", JSON.stringify(leads));
-    
-    if (method === 'hire') {
-      alert(`Hire request sent to ${provider.name}! They will contact you shortly.`);
-    } else {
-      alert(`Contact request sent to ${provider.name}!`);
-    }
-  };
-  
-  const handleBecomeProvider = () => {
-    if (!user) {
-      navigate('/signup', { state: { role: 'estate-firm' } });
-    } else if (user.role === 'estate-firm') {
-      navigate('/dashboard/estate-firm/verification');
-    } else {
-      alert('Please register as an estate firm first.');
-    }
-  };
-  
-  const renderReputationLegend = () => (
-    <div className="reputation-legend">
-      <h4>Reputation Levels</h4>
-      <div className="legend-items">
-        <div className="legend-item elite">
-          <span className="legend-icon">🏆</span>
-          <span className="legend-label">Elite (90-100)</span>
-          <span className="legend-count">{analytics.reputationDistribution.elite}</span>
-        </div>
-        <div className="legend-item excellent">
-          <span className="legend-icon">⭐</span>
-          <span className="legend-label">Excellent (80-89)</span>
-          <span className="legend-count">{analytics.reputationDistribution.excellent}</span>
-        </div>
-        <div className="legend-item good">
-          <span className="legend-icon">👍</span>
-          <span className="legend-label">Good (70-79)</span>
-          <span className="legend-count">{analytics.reputationDistribution.good}</span>
-        </div>
-        <div className="legend-item average">
-          <span className="legend-icon">📊</span>
-          <span className="legend-label">Average (Below 70)</span>
-          <span className="legend-count">{analytics.reputationDistribution.average}</span>
-        </div>
-      </div>
-    </div>
-  );
-  
-  // ================= RENDER LOADING STATE =================
   if (isLoading) {
     return (
       <div className="marketplace-loading">
         <div className="loading-spinner"></div>
-        <p>Loading professional service providers...</p>
+        <p>Loading marketplace...</p>
       </div>
     );
   }
-  
-  // ================= MAIN RENDER =================
+
   return (
-    <div className="marketplace">
-      {/* Header Section */}
-      <header className="marketplace-header">
+    <div className="marketplace-container">
+      {/* Header */}
+      <div className="marketplace-header">
         <div className="header-content">
-          <h1 className="page-title">
-            Professional <span className="highlight">Real Estate</span> Services
-          </h1>
-          <p className="page-subtitle">
-            Find verified estate firms, property managers, and service providers with reputation scoring
+          <h1>Professional Services Marketplace</h1>
+          <p className="subtitle">
+            Find trusted estate firms and service providers. <span className="highlight">Verified</span> and <span className="highlight">Boosted</span> listings highlighted.
           </p>
-          
-          {/* Quick Stats */}
-          <div className="header-stats">
-            <div className="header-stat">
-              <Building size={20} />
-              <div>
-                <span className="stat-number">{analytics.byType.estateFirms}</span>
-                <span className="stat-label">Estate Firms</span>
-              </div>
-            </div>
-            <div className="header-stat">
-              <Award size={20} />
-              <div>
-                <span className="stat-number">{analytics.totalReputation}</span>
-                <span className="stat-label">Avg. Reputation</span>
-              </div>
-            </div>
-            <div className="header-stat">
-              <Shield size={20} />
-              <div>
-                <span className="stat-number">{analytics.verifiedCount}</span>
-                <span className="stat-label">Verified</span>
-              </div>
-            </div>
+        </div>
+      </div>
+
+      {/* Search and Filter Bar */}
+      <div className="search-filter-bar">
+        <div className="search-container">
+          <div className="search-input-wrapper">
+            <Search size={20} className="search-icon" />
+            <input
+              type="text"
+              placeholder="Search estate firms, services, or providers..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input"
+            />
           </div>
         </div>
-        
-        <div className="header-actions">
-          <button 
-            className="btn btn-secondary"
-            onClick={() => setShowExportModal(true)}
-          >
-            <Download size={18} />
-            Export Results
-          </button>
-         
-        </div>
-      </header>
-      
-      {/* Main Content Area */}
-      <div className="marketplace-content">
-        {/* Left Sidebar - Filters & Legend */}
-        <aside className="filters-sidebar">
-          <div className="filters-header">
-            <h3><Filter size={18} /> Filters</h3>
-            <button 
-              className="btn-text"
-              onClick={() => setFilters({
-                state: '',
-                lga: '',
-                minRating: 4.0,
-                verifiedOnly: true,
-                priceRange: [0, 1000000],
-                services: [],
-                availability: 'all',
-                category: '',
-                serviceType: '',
-                tags: [],
-                serviceArea: 'all',
-                providerType: 'all',
-                minExperience: 0,
-                minReputation: 0,
-                sortBy: 'reputation'
-              })}
+
+        <div className="filter-controls">
+          <div className="filter-group">
+            <select 
+              value={filters.sortBy}
+              onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+              className="filter-select"
             >
-              Clear All
-            </button>
+              <option value="relevance">Sort by Relevance</option>
+              <option value="rating">Highest Rated</option>
+              <option value="boosted">Boosted First</option>
+              <option value="newest">Newest First</option>
+            </select>
           </div>
           
-          <div className="search-container">
-            <div className="search-box">
-              <Search size={18} />
-              <input
-                type="text"
-                placeholder="Search estate firms or services..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="search-input"
-              />
+          <button 
+            className={`filter-toggle ${filters.verifiedOnly ? 'active' : ''}`}
+            onClick={() => setFilters({...filters, verifiedOnly: !filters.verifiedOnly})}
+          >
+            <Shield size={16} />
+            <span>Verified Only</span>
+          </button>
+          
+          <button 
+            className={`filter-toggle ${filters.boostOnly ? 'active' : ''}`}
+            onClick={() => setFilters({...filters, boostOnly: !filters.boostOnly})}
+          >
+            <Zap size={16} />
+            <span>Boosted Only</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Category Tabs */}
+      <div className="category-tabs">
+        <button 
+          className={`tab ${activeTab === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveTab('all')}
+        >
+          <Briefcase size={18} />
+          <span>All Services</span>
+        </button>
+        <button 
+          className={`tab ${activeTab === 'estate-firms' ? 'active' : ''}`}
+          onClick={() => setActiveTab('estate-firms')}
+        >
+          <Building size={18} />
+          <span>Estate Firms</span>
+        </button>
+        <button 
+          className={`tab ${activeTab === 'services' ? 'active' : ''}`}
+          onClick={() => setActiveTab('services')}
+        >
+          <ToolCaseIcon size={18} />
+          <span>Service Providers</span>
+        </button>
+      </div>
+
+      {/* Results Count */}
+      <div className="results-info">
+        <p>{sortedItems.length} {activeTab === 'all' ? 'services' : activeTab.replace('-', ' ')} found</p>
+      </div>
+
+      {/* Marketplace Grid */}
+      <div className="marketplace-grid">
+        {sortedItems.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Search size={48} />
             </div>
+            <h3>No services found</h3>
+            <p>Try adjusting your search or filters</p>
           </div>
-          
-          <FilterPanel 
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            providerTypes={[
-              { value: 'all', label: 'All Providers' },
-              { value: 'estate-firm', label: 'Estate Firms' },
-              { value: 'property-manager', label: 'Property Managers' }
-            ]}
-            showReputationFilter={true}
-          />
-          
-          {renderReputationLegend()}
-        </aside>
-        
-        {/* Main Content */}
-        <main className="providers-main">
-          {/* Tabs & View Controls */}
-          <div className="content-controls">
-            <div className="service-tabs">
-              <button 
-                className={`tab-btn ${activeTab === 'all' ? 'active' : ''}`}
-                onClick={() => setActiveTab('all')}
-              >
-                <Building size={16} /> All Services
-              </button>
-              <button 
-                className={`tab-btn ${activeTab === 'estate-firms' ? 'active' : ''}`}
-                onClick={() => setActiveTab('estate-firms')}
-              >
-                <Home size={16} /> Estate Firms
-              </button>
-              <button 
-                className={`tab-btn ${activeTab === 'property-managers' ? 'active' : ''}`}
-                onClick={() => setActiveTab('property-managers')}
-              >
-                <Briefcase size={16} /> Property Managers
-              </button>
-            </div>
+        ) : (
+          sortedItems.map((item) => {
+            const badges = renderBadges(item);
             
-            <div className="view-controls">
-              <span className="results-count">
-                {filteredProviders.length} providers found
-                {filters.providerType === 'estate-firm' && ` • ${analytics.byType.estateFirms} estate firms`}
-              </span>
-              <div className="sort-options">
-                <select 
-                  value={filters.sortBy}
-                  onChange={(e) => handleFilterChange({ sortBy: e.target.value })}
-                  className="sort-select"
-                >
-                  <option value="reputation">Sort by Reputation</option>
-                  <option value="rating">Sort by Rating</option>
-                  <option value="experience">Sort by Experience</option>
-                  <option value="newest">Sort by Newest</option>
-                  <option value="response-time">Sort by Response Time</option>
-                </select>
-              </div>
-              <div className="view-toggle">
-                <button 
-                  className={`view-btn ${activeView === 'grid' ? 'active' : ''}`}
-                  onClick={() => setActiveView('grid')}
-                  title="Grid View"
-                >
-                  ▦ Grid
-                </button>
-                <button 
-                  className={`view-btn ${activeView === 'list' ? 'active' : ''}`}
-                  onClick={() => setActiveView('list')}
-                  title="List View"
-                >
-                  ≡ List
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          {/* Providers Grid/List */}
-          {filteredProviders.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <Building size={48} />
-              </div>
-              <h3>No estate firms found</h3>
-              <p>Try adjusting your search criteria or filters</p>
-              <button 
-                className="btn btn-primary"
-                onClick={handleBecomeProvider}
-              >
-                <Building size={18} /> Register as Estate Firm
-              </button>
-            </div>
-          ) : (
-            <div className={`providers-container ${activeView}-view`}>
-              {filteredProviders.map((provider) => {
-                const reputationBadge = getReputationBadge(provider.reputationScore || 0);
-                
-                return (
-                  <div key={provider.id} className="provider-card">
-                    {/* Card Header with Reputation Badge */}
-                    <div className="card-header">
-                      <div className="provider-type">
-                        {provider.type === 'estate-firm' ? (
-                          <span className="type-badge estate">
-                            <Building size={14} /> Estate Firm
-                          </span>
-                        ) : (
-                          <span className="type-badge manager">
-                            <Briefcase size={14} /> Property Manager
-                          </span>
-                        )}
-                      </div>
-                      <div className="reputation-badge" style={{ backgroundColor: reputationBadge.color }}>
-                        <span className="reputation-icon">{reputationBadge.icon}</span>
-                        <span className="reputation-level">{reputationBadge.level}</span>
-                        <span className="reputation-score">{provider.reputationScore || 0}</span>
-                      </div>
+            return (
+              <div key={item.id} className={`service-card ${item.boostState === 'boosted' ? 'boosted' : ''}`}>
+                {/* Card Header with Badges */}
+                <div className="card-header">
+                  <div className="provider-type">
+                    {item.type === 'estate-firm' ? (
+                      <span className="type-label">
+                        <Building size={14} /> Estate Firm
+                      </span>
+                    ) : (
+                      <span className="type-label">
+                        <ToolCaseIcon size={14} /> Service Provider
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="badges-container">
+                    {badges.map((badge, index) => (
+                      <span 
+                        key={index} 
+                        className="badge"
+                        style={{ backgroundColor: badge.color }}
+                        title={badge.label}
+                      >
+                        {badge.icon}
+                        <span className="badge-text">{badge.type === 'free-bookings' ? 'Free' : badge.type}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Provider Info */}
+                <div className="card-body">
+                  <div className="provider-info">
+                    <div className="provider-avatar">
+                      {item.logo || item.profileImage}
                     </div>
-                    
-                    {/* Provider Info */}
-                    <div className="provider-info">
-                      <div className="provider-logo">
-                        {provider.logo ? (
-                          <img src={provider.logo} alt={provider.name} />
-                        ) : (
-                          <div className="logo-placeholder">
-                            {provider.name.charAt(0)}
-                          </div>
-                        )}
-                      </div>
-                      <div className="provider-details">
-                        <h3 className="provider-name">{provider.name}</h3>
-                        <p className="provider-description">{provider.description}</p>
-                        
-                        <div className="provider-meta">
-                          <div className="meta-item">
-                            <MapPin size={14} />
-                            <span>{provider.location}</span>
-                          </div>
-                          <div className="meta-item">
-                            <Clock size={14} />
-                            <span>{provider.responseTime}</span>
-                          </div>
-                        </div>
-                        
-                        {/* Ratings */}
-                        <div className="provider-rating">
-                          <div className="stars">
-                            {[...Array(5)].map((_, i) => (
-                              <Star 
-                                key={i} 
-                                size={16} 
-                                className={i < Math.floor(provider.rating) ? 'filled' : 'empty'}
-                              />
-                            ))}
-                          </div>
-                          <span className="rating-text">{provider.rating} ({provider.reviews} reviews)</span>
-                        </div>
-                      </div>
+                    <div className="provider-details">
+                      <h3 className="provider-name">{item.name}</h3>
+                      {item.title && <p className="provider-title">{item.title}</p>}
+                      <p className="provider-description">{item.description}</p>
                     </div>
-                    
-                    {/* Services & Specialties */}
-                    <div className="provider-services">
-                      <h4>Services Offered</h4>
-                      <div className="services-tags">
-                        {provider?.services?.slice(0, 4).map((service, index) => (
-                          <span key={index} className="service-tag">{service}</span>
-                        ))}
-                        {provider?.services?.length > 4 && (
-                          <span className="service-tag more">+{provider.services.length - 4} more</span>
-                        )}
-                      </div>
+                  </div>
+
+                  {/* Rating */}
+                  <div className="rating-container">
+                    <div className="stars">
+                      {[...Array(5)].map((_, i) => (
+                        <Star 
+                          key={i}
+                          size={16}
+                          fill={i < Math.floor(item.rating) ? "currentColor" : "none"}
+                          className={i < Math.floor(item.rating) ? "filled" : "empty"}
+                        />
+                      ))}
                     </div>
-                    
-                    {/* Stats */}
-                    <div className="provider-stats">
-                      <div className="stat">
-                        <span className="stat-value">{provider.stats?.yearsExperience || 0}+</span>
-                        <span className="stat-label">Years</span>
-                      </div>
-                      <div className="stat">
-                        <span className="stat-value">{provider.stats?.propertiesManaged || 0}</span>
+                    <span className="rating-text">
+                      {item.rating} • {item.reviews} reviews
+                    </span>
+                  </div>
+
+                  {/* Location & Response */}
+                  <div className="provider-meta">
+                    <div className="meta-item">
+                      <MapPin size={14} />
+                      <span>{item.location}</span>
+                    </div>
+                    <div className="meta-item">
+                      <Clock size={14} />
+                      <span>{item.responseTime}</span>
+                    </div>
+                  </div>
+
+                  {/* Services Offered */}
+                  <div className="services-container">
+                    <h4>Services Offered:</h4>
+                    <div className="services-tags">
+                      {item.services.slice(0, 3).map((service, index) => (
+                        <span key={index} className="service-tag">
+                          {service}
+                        </span>
+                      ))}
+                      {item.services.length > 3 && (
+                        <span className="service-tag more">
+                          +{item.services.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="stats-grid">
+                    <div className="stat-item">
+                      <span className="stat-value">{item.yearsExperience}+</span>
+                      <span className="stat-label">Years</span>
+                    </div>
+                    {item.type === 'estate-firm' ? (
+                      <div className="stat-item">
+                        <span className="stat-value">{item.propertiesManaged}</span>
                         <span className="stat-label">Properties</span>
                       </div>
-                      <div className="stat">
-                        <span className="stat-value">{provider.stats?.successRate || 0}%</span>
-                        <span className="stat-label">Success Rate</span>
+                    ) : (
+                      <div className="stat-item">
+                        <span className="stat-value">{item.totalBookings}</span>
+                        <span className="stat-label">Bookings</span>
                       </div>
+                    )}
+                    <div className="stat-item">
+                      <span className="stat-value">{item.successRate || 95}%</span>
+                      <span className="stat-label">Success</span>
                     </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="card-actions">
+                  </div>
+                </div>
+
+                {/* Card Footer - Actions */}
+                <div className="card-footer">
+                  {item.type === 'estate-firm' ? (
+                    <>
                       <button 
                         className="btn btn-outline"
-                        onClick={() => {
-                          setSelectedProvider(provider);
-                          setShowDetailModal(true);
-                        }}
+                        onClick={() => handleContactEstateFirm(item)}
                       >
-                        <Eye size={16} /> View Details
+                        <Eye size={16} />
+                        <span>View Details</span>
                       </button>
                       <button 
                         className="btn btn-primary"
-                        onClick={() => handleContactProvider(provider, 'hire')}
+                        onClick={() => handleContactEstateFirm(item)}
+                        disabled={item.verificationState !== 'verified'}
                       >
-                        <MessageSquare size={16} /> Hire Now
+                        <MessageSquare size={16} />
+                        <span>Contact</span>
                       </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* How It Works Section */}
-          <div className="how-it-works">
-            <h3>How to Hire Estate Firms</h3>
-            <div className="steps">
-              <div className="step">
-                <div className="step-number">1</div>
-                <h4>Browse Verified Firms</h4>
-                <p>Filter by location, services, and reputation scores</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="price-info">
+                        <DollarSign size={16} />
+                        <span className="price-range">{item.priceRange}</span>
+                      </div>
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => handleBookService(item)}
+                      >
+                        <Calendar size={16} />
+                        <span>Book Now</span>
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="step">
-                <div className="step-number">2</div>
-                <h4>Review Profiles</h4>
-                <p>Check ratings, experience, and client testimonials</p>
-              </div>
-              <div className="step">
-                <div className="step-number">3</div>
-                <h4>Contact & Hire</h4>
-                <p>Send a hire request and discuss your property needs</p>
-              </div>
-            </div>
-          </div>
-        </main>
+            );
+          })
+        )}
       </div>
-      
-      {/* Export Modal */}
-      {showExportModal && (
-        <ExportModal
-          isOpen={showExportModal}
-          onClose={() => setShowExportModal(false)}
-          onExport={handleExport}
-          dataCount={filteredProviders.length}
-        />
-      )}
-      
-      {/* Provider Detail Modal */}
-      {showDetailModal && selectedProvider && (
-        <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{selectedProvider.name}</h2>
-              <button className="modal-close" onClick={() => setShowDetailModal(false)}>×</button>
+
+      {/* Business Rules Explanation */}
+      <div className="business-rules-info">
+        <div className="rules-header">
+          <Award size={24} />
+          <h3>Marketplace Rules</h3>
+        </div>
+        <div className="rules-grid">
+          <div className="rule-card">
+            <div className="rule-icon verified">
+              <Shield size={20} />
             </div>
-            <div className="modal-body">
-              {/* Detailed provider information */}
-              <div className="provider-full-details">
-                <h3>Contact Information</h3>
-                <p><strong>Phone:</strong> {selectedProvider.contact?.phone || 'Not provided'}</p>
-                <p><strong>Email:</strong> {selectedProvider.contact?.email}</p>
-                <p><strong>Location:</strong> {selectedProvider.location}</p>
-                
-                <h3>Services</h3>
-                <ul>
-                  {selectedProvider.services.map((service, index) => (
-                    <li key={index}>{service}</li>
-                  ))}
-                </ul>
-                
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => handleContactProvider(selectedProvider, 'hire')}
-                >
-                  <Phone size={16} /> Contact Now
-                </button>
-              </div>
+            <h4>Verification</h4>
+            <p>Verified badge means admin-approved KYC. Independent of subscription or boost.</p>
+          </div>
+          <div className="rule-card">
+            <div className="rule-icon boosted">
+              <Zap size={20} />
             </div>
+            <h4>Boosted Listings</h4>
+            <p>Paid promotion for better visibility. Does not imply verification.</p>
+          </div>
+          <div className="rule-card">
+            <div className="rule-icon free">
+              <Sparkles size={20} />
+            </div>
+            <h4>Free Bookings</h4>
+            <p>Service providers get 10 free bookings before requiring ₦3,000/month subscription.</p>
+          </div>
+          <div className="rule-card">
+            <div className="rule-icon visibility">
+              <Eye size={20} />
+            </div>
+            <h4>Always Visible</h4>
+            <p>All registered providers appear in marketplace, regardless of subscription status.</p>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

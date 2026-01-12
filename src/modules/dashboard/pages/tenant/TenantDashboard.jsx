@@ -1,4 +1,4 @@
-// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - CORRECTED VERSION
+// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - UPDATED POSTING RULES
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../../shared/context/AuthContext'
@@ -18,7 +18,9 @@ const TenantDashboard = () => {
       listedProperties: 0,
       savedProperties: 0,
       applications: 0,
-      unreadMessages: 0
+      unreadMessages: 0,
+      referralEarnings: 0,
+      commissionEarned: 0
     }
   })
 
@@ -34,7 +36,6 @@ const TenantDashboard = () => {
 
   const loadUserImages = () => {
     if (user?.id) {
-      // Load profile picture from localStorage (same key used in TenantProfile)
       const savedProfilePic = localStorage.getItem(`tenant_profile_pic_${user.id}`)
       const savedCoverPhoto = localStorage.getItem(`tenant_cover_photo_${user.id}`)
       
@@ -46,7 +47,7 @@ const TenantDashboard = () => {
   const loadDashboardData = () => {
     setLoading(true)
     
-    // Load data from localStorage (will be replaced with backend API)
+    // Load data from localStorage
     const allListings = JSON.parse(localStorage.getItem('listings') || '[]')
     const userListings = allListings.filter(listing => 
       listing.posterId === user?.id || listing.userId === user?.id
@@ -54,11 +55,19 @@ const TenantDashboard = () => {
     
     const savedProperties = JSON.parse(localStorage.getItem(`saved_properties_${user?.id}`) || '[]')
     const applications = JSON.parse(localStorage.getItem(`applications_${user?.id}`) || '[]')
-    
-    // Get user profile data from localStorage (same as TenantProfile)
     const savedProfile = JSON.parse(localStorage.getItem(`tenant_profile_${user?.id}`) || 'null')
     
-    // Get profile picture - priority: localStorage > user.profilePic > default avatar
+    // Calculate referral earnings (1% commission)
+    const chats = JSON.parse(localStorage.getItem('chats') || '[]')
+    const userChats = chats.filter(chat => chat.participants.tenant === user?.id)
+    let commissionEarned = 0
+    
+    userChats.forEach(chat => {
+      if (chat.commissionDetails?.referrerShare) {
+        commissionEarned += chat.commissionDetails.referrerShare
+      }
+    })
+    
     const userProfilePic = profilePic || user?.profilePic
     
     const mockUserData = {
@@ -71,7 +80,9 @@ const TenantDashboard = () => {
       trustScore: user?.isVerified ? 85 : 65,
       occupation: savedProfile?.occupation || 'Tenant',
       bio: savedProfile?.bio || 'A responsible tenant looking for comfortable accommodation.',
-      address: savedProfile?.address || ''
+      address: savedProfile?.address || '',
+      referralCode: user?.referralCode || `TEN-${Date.now().toString(36).toUpperCase()}`,
+      isVerified: user?.isVerified || false
     }
     
     setDashboardData({
@@ -83,42 +94,55 @@ const TenantDashboard = () => {
         listedProperties: userListings.length,
         savedProperties: savedProperties.length,
         applications: applications.length,
-        unreadMessages: 0
+        unreadMessages: 0,
+        referralEarnings: commissionEarned,
+        commissionEarned: commissionEarned
       }
     })
     
     setLoading(false)
   }
 
-  // Add this function to refresh dashboard when profile is updated
-  const refreshDashboard = () => {
-    loadUserImages()
-    loadDashboardData()
+  // FIXED: Allow unverified tenants to post
+  const handleListProperty = () => {
+    // BUSINESS RULE: Unverified tenants can post, but show warning
+    if (!isVerified) {
+      const confirmPost = window.confirm(
+        '⚠️ IMPORTANT: YOU ARE POSTING AS AN UNVERIFIED TENANT\n\n' +
+        'Your listing will show an "Unverified Tenant" badge.\n' +
+        'This may affect trust from incoming tenants.\n\n' +
+        'BUSINESS RULES:\n' +
+        '1. Your listing will be visible to incoming tenants\n' +
+        '2. Incoming tenants MUST communicate through RentEasy manager\n' +
+        '3. When rented, you earn 1% commission as referrer\n' +
+        '4. Manager earns 2.5%, RentEasy earns 4%\n\n' +
+        'Do you want to continue?'
+      )
+      
+      if (confirmPost) {
+        navigate('/dashboard/post-property?type=outgoing-tenant')
+      }
+    } else {
+      // Verified tenant posting
+      const confirmPost = window.confirm(
+        '⚠️ IMPORTANT BUSINESS RULES:\n\n' +
+        '1. Your listing will be visible to incoming tenants\n' +
+        '2. Incoming tenants MUST communicate through RentEasy manager\n' +
+        '3. When rented, you earn 1% commission as referrer\n' +
+        '4. Manager earns 2.5%, RentEasy earns 4%\n\n' +
+        'Do you understand and agree to these terms?'
+      )
+      
+      if (confirmPost) {
+        navigate('/dashboard/post-property?type=outgoing-tenant')
+      }
+    }
   }
 
-  // Listen for profile updates from other components
-  useEffect(() => {
-    const handleProfileUpdate = () => {
-      refreshDashboard()
-    }
-    
-    // Listen for custom event when profile is updated
-    window.addEventListener('profileUpdated', handleProfileUpdate)
-    
-    // Also listen for storage changes (when localStorage is updated)
-    window.addEventListener('storage', handleProfileUpdate)
-    
-    return () => {
-      window.removeEventListener('profileUpdated', handleProfileUpdate)
-      window.removeEventListener('storage', handleProfileUpdate)
-    }
-  }, [])
-
-  // Missing functions from original code
   const handleQuickAction = (action) => {
     switch(action) {
       case 'list_property':
-        navigate('/dashboard/post-property')
+        handleListProperty()
         break
       case 'browse_properties':
         navigate('/listings')
@@ -129,9 +153,28 @@ const TenantDashboard = () => {
       case 'get_verified':
         navigate('/verify')
         break
+      case 'referral_program':
+        setActiveTab('referral')
+        break
       default:
         break
     }
+  }
+
+  // BUSINESS RULE: Contact property through manager for tenant postings
+  const contactProperty = (property) => {
+    if (!user) {
+      navigate('/login', { state: { from: `/listings/${property.id}` } })
+      return
+    }
+    
+    // Check if user is the poster
+    if (user.id === property.posterId) {
+      alert('This is your own listing')
+      return
+    }
+    
+    navigate(`/dashboard/messages/${property.id}`)
   }
 
   const viewListingDetails = (listingId) => {
@@ -158,6 +201,22 @@ const TenantDashboard = () => {
     loadDashboardData()
   }
 
+  // Copy referral link
+  const copyReferralLink = () => {
+    const referralLink = `${window.location.origin}/signup?ref=${dashboardData.userInfo?.referralCode}`
+    navigator.clipboard.writeText(referralLink)
+      .then(() => alert('Referral link copied! Share with friends.'))
+      .catch(() => alert('Failed to copy referral link'))
+  }
+
+  // Get verification badge for listings
+  const getVerificationBadge = (listing) => {
+    if (listing.userVerified || listing.posterVerified) {
+      return <InlineVerifiedBadge type="tenant" compact />
+    }
+    return <span className="unverified-badge">⚠️ Unverified</span>
+  }
+
   if (loading) {
     return (
       <div className="dashboard-loading">
@@ -169,7 +228,6 @@ const TenantDashboard = () => {
 
   return (
     <div className="tenant-dashboard">
-      {/* Dashboard Header with Cover Photo Support */}
       <header className="dashboard-header">
         {coverPhoto && (
           <div className="dashboard-cover-photo">
@@ -192,6 +250,11 @@ const TenantDashboard = () => {
                 <VerifiedBadge type="tenant" size="small" />
               </div>
             )}
+            {!isVerified && (
+              <div className="unverified-badge-overlay">
+                <span className="unverified-icon">⚠️</span>
+              </div>
+            )}
             <button 
               className="change-profile-pic-btn"
               onClick={() => navigate('/dashboard/tenant/profile')}
@@ -205,15 +268,25 @@ const TenantDashboard = () => {
               <h1 className="greeting">
                 Welcome back, <span className="user-name">{dashboardData.userInfo?.name}</span>!
               </h1>
-              <button 
-                className="btn btn-sm btn-profile-edit"
-                onClick={() => navigate('/dashboard/tenant/profile')}
-              >
-                Edit Profile
-              </button>
+              <div className="user-status-badges">
+                {isVerified ? (
+                  <span className="status-badge verified">✅ Verified Tenant</span>
+                ) : (
+                  <span className="status-badge unverified">⚠️ Unverified</span>
+                )}
+                <button 
+                  className="btn btn-sm btn-profile-edit"
+                  onClick={() => navigate('/dashboard/tenant/profile')}
+                >
+                  Edit Profile
+                </button>
+              </div>
             </div>
             <p className="user-status">
-              {isVerified ? '✅ Verified Tenant Account' : '⚠️ Verification Required'}
+              {isVerified 
+                ? 'Your verified status helps build trust with other users.'
+                : 'Consider verifying your account to build trust with landlords and tenants.'
+              }
               {dashboardData.userInfo?.occupation && (
                 <span className="user-occupation">
                   • {dashboardData.userInfo?.occupation}
@@ -261,6 +334,9 @@ const TenantDashboard = () => {
           <div className="stat-content">
             <div className="stat-value">{dashboardData.stats.listedProperties}</div>
             <div className="stat-label">Listed</div>
+            <div className="stat-subtext">
+              {isVerified ? 'Verified' : 'Unverified'} Tenant
+            </div>
           </div>
         </div>
         
@@ -279,14 +355,15 @@ const TenantDashboard = () => {
         
         <div 
           className="stat-card" 
-          onClick={() => navigate('/dashboard/tenant/applications')}
+          onClick={() => setActiveTab('referral')}
           role="button"
           tabIndex={0}
         >
-          <div className="stat-icon">📋</div>
+          <div className="stat-icon">💰</div>
           <div className="stat-content">
-            <div className="stat-value">{dashboardData.stats.applications}</div>
-            <div className="stat-label">Applications</div>
+            <div className="stat-value">₦{dashboardData.stats.commissionEarned.toLocaleString()}</div>
+            <div className="stat-label">Commission</div>
+            <div className="stat-subtext">Earn 1% per rental</div>
           </div>
         </div>
         
@@ -338,14 +415,11 @@ const TenantDashboard = () => {
           </button>
           
           <button 
-            className="nav-tab"
-            onClick={() => navigate('/dashboard/tenant/applications')}
+            className={`nav-tab ${activeTab === 'referral' ? 'active' : ''}`}
+            onClick={() => setActiveTab('referral')}
           >
-            <span className="tab-icon">📋</span>
-            <span className="tab-label">Applications</span>
-            {dashboardData.stats.applications > 0 && (
-              <span className="tab-badge">{dashboardData.stats.applications}</span>
-            )}
+            <span className="tab-icon">💰</span>
+            <span className="tab-label">Referral</span>
           </button>
         </div>
       </nav>
@@ -355,6 +429,28 @@ const TenantDashboard = () => {
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="overview-content">
+            {/* Verification Status Banner */}
+            {!isVerified && (
+              <div className="verification-banner">
+                <div className="banner-content">
+                  <div className="banner-icon">⚠️</div>
+                  <div className="banner-text">
+                    <h4>Unverified Account</h4>
+                    <p>
+                      You can still post properties, but your listings will show an "Unverified Tenant" badge. 
+                      Verify your account to build more trust with other users.
+                    </p>
+                  </div>
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => navigate('/verify')}
+                  >
+                    Get Verified
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Quick Actions */}
             <div className="content-section">
               <h3 className="section-title">Quick Actions</h3>
@@ -364,7 +460,8 @@ const TenantDashboard = () => {
                   onClick={() => handleQuickAction('list_property')}
                 >
                   <span className="action-icon">➕</span>
-                  <span className="action-label">List Property</span>
+                  <span className="action-label">List Vacating Property</span>
+                  {!isVerified && <span className="action-badge">Unverified</span>}
                 </button>
                 
                 <button 
@@ -372,7 +469,7 @@ const TenantDashboard = () => {
                   onClick={() => handleQuickAction('browse_properties')}
                 >
                   <span className="action-icon">🔍</span>
-                  <span className="action-label">Browse</span>
+                  <span className="action-label">Browse Properties</span>
                 </button>
                 
                 <button 
@@ -389,9 +486,37 @@ const TenantDashboard = () => {
                     onClick={() => handleQuickAction('get_verified')}
                   >
                     <span className="action-icon">✅</span>
-                    <span className="action-label">Verify</span>
+                    <span className="action-label">Get Verified</span>
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Commission Notice for Tenant Listings */}
+            <div className="content-section">
+              <div className="commission-notice-card">
+                <div className="notice-icon">💡</div>
+                <div className="notice-content">
+                  <h4>Earn 1% Commission on Your Listings</h4>
+                  <p>
+                    When someone rents a property you listed, you earn <strong>1% commission</strong> as the referrer. 
+                    The incoming tenant will communicate through a RentEasy manager.
+                  </p>
+                  <div className="commission-breakdown">
+                    <div className="breakdown-item">
+                      <span className="label">Your Commission:</span>
+                      <span className="value">1%</span>
+                    </div>
+                    <div className="breakdown-item">
+                      <span className="label">Manager:</span>
+                      <span className="value">2.5%</span>
+                    </div>
+                    <div className="breakdown-item">
+                      <span className="label">RentEasy:</span>
+                      <span className="value">4%</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -399,7 +524,7 @@ const TenantDashboard = () => {
             {dashboardData.listedProperties.length > 0 && (
               <div className="content-section">
                 <div className="section-header">
-                  <h3 className="section-title">Recent Listings</h3>
+                  <h3 className="section-title">Your Listings</h3>
                   <button 
                     className="btn btn-link"
                     onClick={() => setActiveTab('listed')}
@@ -415,10 +540,19 @@ const TenantDashboard = () => {
                           src={listing.images?.[0] || 'https://via.placeholder.com/150'} 
                           alt={listing.title}
                         />
+                        <div className="property-badge">
+                          {listing.posterRole === 'tenant' ? '👤 Your Listing' : '🏠 Landlord'}
+                        </div>
+                        <div className="verification-badge-overlay">
+                          {getVerificationBadge(listing)}
+                        </div>
                       </div>
                       <div className="property-info">
                         <h4 className="property-title">{listing.title}</h4>
                         <p className="property-price">₦{listing.price?.toLocaleString()}/month</p>
+                        <p className="property-commission">
+                          You earn: ₦{(listing.price * 0.01).toLocaleString()} (1%)
+                        </p>
                         <div className="property-actions">
                           <button 
                             className="btn btn-sm btn-primary"
@@ -439,33 +573,6 @@ const TenantDashboard = () => {
                 </div>
               </div>
             )}
-
-            {/* Verification Status */}
-            <div className="content-section">
-              <h3 className="section-title">Verification Status</h3>
-              <div className={`verification-card ${isVerified ? 'verified' : 'pending'}`}>
-                <div className="verification-icon">
-                  {isVerified ? '✅' : '⚠️'}
-                </div>
-                <div className="verification-content">
-                  <h4>{isVerified ? 'Account Verified' : 'Verification Required'}</h4>
-                  <p>
-                    {isVerified 
-                      ? 'Your verified status helps build trust with landlords.'
-                      : 'Complete verification to unlock all features and build trust.'
-                    }
-                  </p>
-                  {!isVerified && (
-                    <button 
-                      className="btn btn-primary"
-                      onClick={() => navigate('/verify')}
-                    >
-                      Start Verification
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -476,11 +583,29 @@ const TenantDashboard = () => {
               <h3 className="section-title">Your Listed Properties</h3>
               <button 
                 className="btn btn-primary"
-                onClick={() => navigate('/dashboard/post-property')}
+                onClick={handleListProperty}
               >
-                + List New
+                + List Vacating Property
+                {!isVerified && <span className="btn-badge">Unverified</span>}
               </button>
             </div>
+            
+            {/* Verification Notice for Unverified Tenants */}
+            {!isVerified && dashboardData.listedProperties.length > 0 && (
+              <div className="verification-notice">
+                <div className="notice-icon">ℹ️</div>
+                <div className="notice-text">
+                  <strong>Note:</strong> Your listings show an "Unverified Tenant" badge. 
+                  Verify your account to build more trust with potential renters.
+                </div>
+                <button 
+                  className="btn btn-sm btn-outline"
+                  onClick={() => navigate('/verify')}
+                >
+                  Get Verified
+                </button>
+              </div>
+            )}
             
             {dashboardData.listedProperties.length > 0 ? (
               <div className="properties-list">
@@ -496,14 +621,27 @@ const TenantDashboard = () => {
                           {listing.status || 'Active'}
                         </span>
                       </div>
+                      <div className="verification-status-overlay">
+                        {getVerificationBadge(listing)}
+                      </div>
+                      <div className="commission-badge">
+                        Earn 1%: ₦{(listing.price * 0.01).toLocaleString()}
+                      </div>
                     </div>
                     <div className="property-card-content">
                       <div className="property-card-header">
                         <h4 className="property-title">{listing.title}</h4>
                         <div className="property-badges">
-                          {isVerified && (
+                          {listing.userVerified || listing.posterVerified ? (
                             <InlineVerifiedBadge type="tenant" compact />
+                          ) : (
+                            <span className="unverified-badge-inline">
+                              ⚠️ Unverified Tenant
+                            </span>
                           )}
+                          <span className="poster-badge">
+                            👤 Your Listing
+                          </span>
                         </div>
                       </div>
                       <p className="property-price">₦{listing.price?.toLocaleString()}/month</p>
@@ -520,6 +658,12 @@ const TenantDashboard = () => {
                         <div className="detail">
                           <span className="detail-label">Inquiries:</span>
                           <span className="detail-value">{listing.inquiries || 0}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="detail-label">Commission:</span>
+                          <span className="detail-value commission">
+                            ₦{(listing.price * 0.01).toLocaleString()} (1%)
+                          </span>
                         </div>
                       </div>
                       <div className="property-card-actions">
@@ -550,13 +694,18 @@ const TenantDashboard = () => {
               <div className="empty-state">
                 <div className="empty-icon">🏠</div>
                 <h4>No Properties Listed</h4>
-                <p>List your first property to get started</p>
+                <p>List your vacating property to earn 1% commission when it gets rented</p>
                 <button 
                   className="btn btn-primary"
-                  onClick={() => navigate('/dashboard/post-property')}
+                  onClick={handleListProperty}
                 >
-                  List Your First Property
+                  List Your Vacating Property
                 </button>
+                {!isVerified && (
+                  <p className="empty-note">
+                    <small>You can post as an unverified tenant. Your listing will show an "Unverified Tenant" badge.</small>
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -584,19 +733,33 @@ const TenantDashboard = () => {
                         src={property.image} 
                         alt={property.title}
                       />
+                      <div className="poster-verification-badge">
+                        {property.posterVerified ? (
+                          <InlineVerifiedBadge type={property.posterRole === 'landlord' ? 'landlord' : 'tenant'} compact />
+                        ) : (
+                          <span className="unverified-poster-badge">
+                            ⚠️ {property.posterRole === 'landlord' ? 'Unverified Landlord' : 'Unverified Tenant'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="property-card-content">
                       <div className="property-card-header">
                         <h4 className="property-title">{property.title}</h4>
                         <div className="poster-info">
                           <span className="poster-name">{property.posterName}</span>
-                          {property.posterVerified && (
-                            <InlineVerifiedBadge type={property.posterRole === 'landlord' ? 'landlord' : 'tenant'} compact />
-                          )}
+                          <span className={`poster-role ${property.posterRole}`}>
+                            {property.posterRole === 'tenant' ? '👤 Outgoing Tenant' : '🏠 Landlord'}
+                          </span>
                         </div>
                       </div>
                       <p className="property-price">₦{property.price?.toLocaleString()}/month</p>
                       <p className="property-location">{property.location}</p>
+                      <div className="property-note">
+                        {property.posterRole === 'tenant' 
+                          ? '⚠️ Contact through RentEasy Manager'
+                          : '✅ Contact directly'}
+                      </div>
                       <div className="property-card-actions">
                         <button 
                           className="btn btn-sm btn-primary"
@@ -606,9 +769,9 @@ const TenantDashboard = () => {
                         </button>
                         <button 
                           className="btn btn-sm btn-secondary"
-                          onClick={() => navigate(`/dashboard/messages?property=${property.id}`)}
+                          onClick={() => contactProperty(property)}
                         >
-                          Message {property.posterRole === 'landlord' ? 'Landlord' : 'Tenant'}
+                          {property.posterRole === 'tenant' ? 'Contact Manager' : 'Contact Landlord'}
                         </button>
                         <button 
                           className="btn btn-sm btn-danger"
@@ -634,6 +797,75 @@ const TenantDashboard = () => {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Referral Tab */}
+        {activeTab === 'referral' && (
+          <div className="referral-content">
+            <div className="content-section">
+              <h3 className="section-title">Your Referral Program</h3>
+              
+              <div className="referral-stats">
+                <div className="stat-card large">
+                  <div className="stat-value">₦{dashboardData.stats.commissionEarned.toLocaleString()}</div>
+                  <div className="stat-label">Total Commission Earned</div>
+                </div>
+                <div className="stat-card large">
+                  <div className="stat-value">1%</div>
+                  <div className="stat-label">Commission Rate</div>
+                </div>
+              </div>
+              
+              <div className="referral-info">
+                <h4>How It Works</h4>
+                <div className="how-it-works">
+                  <div className="step">
+                    <div className="step-number">1</div>
+                    <div className="step-content">
+                      <h5>Post Your Vacating Property</h5>
+                      <p>List properties you're vacating on RentEasy</p>
+                      <small className="step-note">
+                        {isVerified ? '✅ Verified listings build more trust' : '⚠️ Unverified listings are allowed'}
+                      </small>
+                    </div>
+                  </div>
+                  <div className="step">
+                    <div className="step-number">2</div>
+                    <div className="step-content">
+                      <h5>Incoming Tenant Rents It</h5>
+                      <p>Someone rents the property through RentEasy manager</p>
+                    </div>
+                  </div>
+                  <div className="step">
+                    <div className="step-number">3</div>
+                    <div className="step-content">
+                      <h5>Earn 1% Commission</h5>
+                      <p>You automatically earn 1% of the rental amount</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="referral-share">
+                <h4>Share Your Referral Code</h4>
+                <div className="referral-code-box">
+                  <div className="code-display">
+                    <span className="code-label">Your Code:</span>
+                    <code className="code-value">{dashboardData.userInfo?.referralCode}</code>
+                  </div>
+                  <button 
+                    className="btn btn-primary"
+                    onClick={copyReferralLink}
+                  >
+                    Copy Referral Link
+                  </button>
+                </div>
+                <p className="help-text">
+                  Share with friends who are looking for properties. When they use your code and rent a property, you earn additional rewards!
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </main>

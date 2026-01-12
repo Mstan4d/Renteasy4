@@ -1,13 +1,15 @@
+
 import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import PrivateRoute from './PrivateRoute';
 import DashboardLayout from '../shared/components/layout/DashboardLayout';
 import DashboardIndex from '../modules/dashboard/pages/DashboardIndex';
-
+import ManagerDashboard from '../modules/manager/pages/ManagerDashboard';
 // Public Pages
 import Home from '../modules/content/pages/Home';
 import Login from '../modules/auth/pages/Login';
 import Signup from '../modules/auth/pages/Signup';
+import ErrorBoundary from '../shared/components/ErrorBoundary';
 
 // Loading Components
 const DashboardLoading = () => (
@@ -33,6 +35,21 @@ const AdminLoading = () => (
   </div>
 );
 
+const SuperAdminLoading = () => (
+  <div style={{ 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    minHeight: '100vh',
+    flexDirection: 'column',
+    gap: '20px'
+  }}>
+    <div className="loading-spinner" style={{ width: '60px', height: '60px' }}></div>
+    <p style={{ fontSize: '18px', fontWeight: '500', color: '#333' }}>Loading Super Admin Console...</p>
+    <p style={{ fontSize: '14px', color: '#666' }}>Highest privilege level • Secure access</p>
+  </div>
+);
+
 // Lazy load components
 const AdminDashboard = lazy(() => import('../modules/admin/pages/AdminDashboard'));
 const AdminUsers = lazy(() => import('../modules/admin/pages/AdminUsers'));
@@ -48,12 +65,20 @@ const AdminRevenue = lazy(() => import('../modules/admin/pages/AdminRevenue'));
 const AdminSettings = lazy(() => import('../modules/admin/pages/AdminSettings'));
 
 // Manager Dashboard Components
-const ManagerDashboard = lazy(() => import('../modules/manager/pages/ManagerDashboard'));
 const ManagerProfile = lazy(() => import('../modules/profile/pages/ManagerProfile'));
 const ManagerCommission = lazy(() => import('../modules/manager/pages/ManagerCommission'));
 const ManagerAnalytics = lazy(() => import('../modules/manager/pages/ManagerAnalytics'));
 const ManagerSetup = lazy(() => import('../modules/manager/pages/ManagerSetup'));
-const ManagerVerification = lazy(() => import('../modules/manager/pages/ManagerVerification'));
+const ManagerNotifications = lazy(() => import('../modules/manager/pages/ManagerNotifications'));
+const ManagerChats = lazy(() => import('../modules/manager/pages/ManagerChats'));
+const ManagerProperties = lazy(() => import('../modules/manager/pages/ManagerProperties'));
+const ManagerPayments = lazy(() => import('../modules/manager/pages/ManagerPayments'));
+const ManagerKYC = lazy(() => import('../modules/manager/pages/ManagerKYC'));
+const ManagerRadius = lazy(() => import('../modules/manager/pages/ManagerRadius'));
+const ManagerChatMonitoring = lazy(() => import('../modules/manager/components/ManagerChatMonitoring'));
+const ManagerLayout = lazy(() => import('../modules/manager/components/ManagerLayout'));
+const ManagerSidebar = lazy(() => import('../modules/manager/components/ManagerSidebar'));
+const ManagerWithdrawal = lazy(() => import('../modules/manager/pages/ManagerWithdrawal'));
 
 // Tenant Dashboard Components
 const TenantDashboard = lazy(() => import('../modules/dashboard/pages/tenant/TenantDashboard'));
@@ -68,7 +93,6 @@ const TenantReferrals = lazy(() => import('../modules/dashboard/pages/tenant/Ten
 const TenantSettings = lazy(() => import('../modules/dashboard/pages/tenant/TenantSettings'));
 const TenantLeases = lazy(() => import('../modules/dashboard/pages/tenant/TenantLeases'));
 
-
 // Landlord Components
 const LandlordDashboard = lazy(() => import('../modules/dashboard/pages/landlord/LandlordDashboard'));
 const LandlordAnalytics = lazy(() => import('../modules/dashboard/components/landlord/Analytics'));
@@ -79,11 +103,9 @@ const EditProperty = lazy(() => import('../modules/dashboard/components/landlord
 const Support = lazy(() => import('../modules/dashboard/components/landlord/Support'));
 const Reports = lazy(() => import('../modules/dashboard/components/landlord/Reports'));
 const ReferralHistory = lazy(() => import('../modules/dashboard/components/landlord/ReferralHistory'));
-
-// Profile (from profile module)
 const LandlordProfile = lazy(() => import('../modules/profile/pages/LandlordProfile'));
 
-// Estate Firm Components - UPDATED WITH ALL YOUR COMPONENTS
+// Estate Firm Components
 const EstateDashboard = lazy(() => import('../modules/estate-firm/pages/EstateDashboard'));
 const EstateProfile = lazy(() => import('../modules/estate-firm/pages/EstateProfile'));
 const EstateProperties = lazy(() => import('../modules/estate-firm/pages/EstateProperties'));
@@ -98,18 +120,76 @@ const EstateServices = lazy(() => import('../modules/estate-firm/pages/EstateSer
 const EstatePostService = lazy(() => import('../modules/estate-firm/pages/EstatePostService'));
 const EstateAddExternalProperty = lazy(() => import('../modules/estate-firm/pages/EstateAddExternalProperty'));
 
+// === SUPER ADMIN IMPORTS ===
+const SuperAdminLayout = lazy(() => import('../modules/super-admin/components/SuperAdminLayout'));
+const CommandCenterPage = lazy(() => import('../modules/super-admin/pages/CommandCenterPage'));
+const AdminManagementPage = lazy(() => import('../modules/super-admin/pages/AdminManagementPage'));
+const GlobalListingsPage = lazy(() => import('../modules/super-admin/pages/GlobalListingsPage'));
+const GlobalManagersPage = lazy(() => import('../modules/super-admin/pages/GlobalManagersPage'));
+
+
+const ChatsOversightPage = lazy(() => import('../modules/super-admin/pages/ChatsOversightPage'));
+const PaymentsCommissionPage = lazy(() => import('../modules/super-admin/pages/PaymentsCommissionPage'));
+const DisputesPage = lazy(() => import('../modules/super-admin/pages/DisputesPage'));
+const VerificationAuthorityPage = lazy(() => import('../modules/super-admin/pages/VerificationAuthorityPage'));
+const SystemRulesPage = lazy(() => import('../modules/super-admin/pages/SystemRulesPage'));
+const AuditLogsPage = lazy(() => import('../modules/super-admin/pages/AuditLogsPage'));
+const EmergencyControlsPage = lazy(() => import('../modules/super-admin/pages/EmergencyControlsPage'));
+const SuperAdminLogin = lazy(() => import('../modules/super-admin/pages/SuperAdminLogin'));
+const TestPage = lazy(() => import('../modules/super-admin/pages/TestPage'));
+
+// ========== PROVIDER IMPORTS ==========
+const ProviderDashboard = lazy(() => import('../modules/providers/pages/ProviderDashboard'));
+//const ProviderRegistration = lazy(() => import('../modules/providers/pages/ProviderRegistration'));
+const ProviderProfile = lazy(() => import('../modules/providers/pages/ProviderProfile'));
+const ProviderServices = lazy(() => import('../modules/providers/pages/ProviderServices'));
+const ProviderSubscription = lazy(() => import('../modules/providers/pages/ProviderSubscription'));
+const ProviderSubscribe = lazy(() => import('../modules/providers/pages/ProviderSubscribe'));
+const ProviderBilling = lazy(() => import('../modules/providers/pages/ProviderBilling'));
+const ProviderLeads = lazy(() => import('../modules/providers/pages/ProviderLeads'));
+const ProviderBookings = lazy(() => import('../modules/providers/pages/ProviderBookings'));
+const ProviderBookingDetails = lazy(() => import('../modules/providers/pages/ProviderBookingDetails'));
+const ProviderCalendar = lazy(() => import('../modules/providers/pages/ProviderCalendar'));
+const ProviderEarnings = lazy(() => import('../modules/providers/pages/ProviderEarnings'));
+const ProviderPayouts = lazy(() => import('../modules/providers/pages/ProviderPayouts'));
+const ProviderWallet = lazy(() => import('../modules/providers/pages/ProviderWallet'));
+const ProviderTransactions = lazy(() => import('../modules/providers/pages/ProviderTransactions'));
+const ProviderAnalytics = lazy(() => import('../modules/providers/pages/ProviderAnalytics'));
+const ProviderVerify = lazy(() => import('../modules/providers/pages/ProviderVerify'));
+const ProviderVerificationStatus = lazy(() => import('../modules/providers/pages/ProviderVerificationStatus'));
+const ProviderSupport = lazy(() => import('../modules/providers/pages/ProviderSupport'));
+const ProviderSettings = lazy(() => import('../modules/providers/pages/ProviderSettings'));
+const ProviderNotifications = lazy(() => import('../modules/providers/pages/ProviderNotifications'));
+const ProviderBoost = lazy(() => import('../modules/providers/pages/ProviderBoost'));
+const ProviderBoostHistory = lazy(() => import('../modules/providers/pages/ProviderBoostHistory'));
+const ProviderPostService = lazy(() => import('../modules/providers/pages/ProviderPostService'));
+const ProviderServiceEdit = lazy(() => import('../modules/providers/pages/ProviderServiceEdit'));
+const ProviderServiceCategories = lazy(() => import('../modules/providers/pages/ProviderServiceCategories'));
+
+// New Provider Pages Based on Your Business Logic
+const ProviderMarketplaceProfile = lazy(() => import('../modules/providers/pages/ProviderMarketplaceProfile'));
+const ProviderLayout = lazy(() => import('../modules/providers/components/ProviderLayout'));
+const ProviderAvailability = lazy(() => import('../modules/providers/pages/ProviderAvailability'));
+const ProviderMessages = lazy(() => import('../modules/providers/pages/ProviderMessages'));
+const ProviderPortfolio = lazy(() => import('../modules/providers/pages/ProviderPortfolio'));
+const ProviderPricing = lazy(() => import('../modules/providers/pages/ProviderPricing'));
+const ProviderLocationSetup = lazy(() => import('../modules/providers/pages/ProviderLocationSetup'));
+const ProviderReferral = lazy(() => import('../modules/providers/pages/ProviderReferral'));
+const ProviderCompliance = lazy(() => import('../modules/providers/pages/ProviderCompliance'));
+const ProviderPerformance = lazy(() => import('../modules/providers/pages/ProviderPerformance'));
+const ProviderDocuments = lazy(() => import('../modules/providers/pages/ProviderDocuments'));
+const ProviderPaymentMethods = lazy(() => import('../modules/providers/pages/ProviderPaymentMethods'));
 
 // Other modules
 const PostPropertyPage = lazy(() => import('../modules/properties/pages/PostPropertyPage'));
 const Messages = lazy(() => import('../modules/messaging/pages/Messages'));
+const ChatListPage = lazy(() => import('../modules/messaging/pages/ChatListPage'));
 const ListingsPage = lazy(() => import('../modules/listings/pages/ListingsPage'));
 const MarketplacePage = lazy(() => import('../modules/marketplace/pages/MarketplacePage'));
 const VerificationHub = lazy(() => import('../modules/verification/pages/VerificationHub'));
 const VerificationForm = lazy(() => import('../modules/verification/pages/VerificationForm'));
 const VerificationStatus = lazy(() => import('../modules/verification/pages/VerificationStatus'));
-const ProviderDashboard = lazy(() => import('../modules/providers/pages/ProviderDashboard'));
 const ListingDetailsPage = lazy(() => import('../modules/listings/pages/ListingDetailsPage'));
-
 
 const AppRoutes = () => {
   return (
@@ -119,7 +199,44 @@ const AppRoutes = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
 
-      {/* =================== ADMIN ROUTES =================== */}
+
+      {/* Public Super Admin Login Route */}
+      <Route 
+        path="/super-admin/login" 
+        element={
+          <Suspense fallback={<SuperAdminLoading />}>
+            <SuperAdminLogin />
+          </Suspense>
+        }
+      />
+
+      {/* =================== SUPER ADMIN ROUTES =================== */}
+      <Route 
+        path="/super-admin/*"
+        element={
+          <PrivateRoute allowedRoles={['super-admin']} redirectTo="/super-admin/login">
+            <Suspense fallback={<SuperAdminLoading />}>
+              <SuperAdminLayout />
+            </Suspense>
+          </PrivateRoute>
+        }
+      >
+        <Route index element={<CommandCenterPage />} />
+        <Route path="command-center" element={<CommandCenterPage />} />
+        <Route path="admin-management" element={<AdminManagementPage />} />
+        <Route path="global-listings" element={<GlobalListingsPage />} />
+        <Route path="global-managers" element={<GlobalManagersPage />} />
+        <Route path="chats-oversight" element={<ChatsOversightPage />} />
+        <Route path="payments-commission" element={<PaymentsCommissionPage />} />
+        <Route path="disputes" element={<DisputesPage />} />
+        <Route path="verification-authority" element={<VerificationAuthorityPage />} />
+        <Route path="system-rules" element={<SystemRulesPage />} />
+        <Route path="audit-logs" element={<AuditLogsPage />} />
+        <Route path="emergency-controls" element={<EmergencyControlsPage />} />
+        <Route path="test" element={<TestPage />} />
+      </Route>
+
+{/* =================== ADMIN ROUTES =================== */}
       <Route 
         path="/admin/*"
         element={
@@ -145,302 +262,283 @@ const AppRoutes = () => {
 
       {/* =================== DASHBOARD ROUTES =================== */}
       <Route 
-        path="/dashboard"
+        path="/dashboard/*"
         element={
-          <PrivateRoute>
+          <PrivateRoute> 
+           <ErrorBoundary>
             <DashboardLayout />
+           </ErrorBoundary>
           </PrivateRoute>
         }
       >
         {/* Index route - Shows appropriate dashboard based on user role */}
-        <Route 
-          index 
-          element={
-            <PrivateRoute>
-              <DashboardIndex />
-            </PrivateRoute>
-          } 
-        />
+        <Route index element={<DashboardIndex />} />
 
         {/* ========== MANAGER ROUTES ========== */}
         <Route 
-          path="manager" 
+          path="manager/*"
           element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['manager']}>
-                <ManagerDashboard />
-              </PrivateRoute>
-            </Suspense>
-          } 
-        />
-
+            <PrivateRoute allowedRoles={['manager']}>
+              <Suspense fallback={<DashboardLoading />}>
+                <ManagerLayout />
+              </Suspense>
+            </PrivateRoute>
+          }
+        >
+          <Route index element={<ManagerDashboard />} />
+          <Route path="notifications" element={<ManagerNotifications />} />
+          <Route path="chats" element={<ManagerChats />} />
+          <Route path="properties" element={<ManagerProperties />} />
+          <Route path="payments" element={<ManagerPayments />} />
+          <Route path="kyc" element={<ManagerKYC />} />
+          <Route path="radius" element={<ManagerRadius />} />
+          <Route path="commission" element={<ManagerCommission />} />
+          <Route path="analytics" element={<ManagerAnalytics />} />
+          <Route path="setup" element={<ManagerSetup />} />
+          <Route path="sidebar" element={<ManagerSidebar />} />
+          <Route path="withdraw" element={<ManagerWithdrawal />} />
+        </Route>
+        
+        {/* Special route for manager chat monitoring */}
         <Route 
-          path="profile" 
+          path="manager/chat/:chatId/monitor" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['manager']}>
-                <ManagerProfile />
-              </PrivateRoute>
-            </Suspense>
-          } 
-        />
-
-        <Route 
-          path="manager/commission" 
-          element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['manager']}>
-                <ManagerCommission />
-              </PrivateRoute>
-            </Suspense>
-          } 
-        />
-
-        <Route 
-          path="manager/analytics" 
-          element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['manager']}>
-                <ManagerAnalytics />
-              </PrivateRoute>
-            </Suspense>
-          } 
-        />
-
-        <Route 
-          path="manager/setup" 
-          element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['manager']}>
-                <ManagerSetup />
-              </PrivateRoute>
-            </Suspense>
-          } 
-        />
-
-        <Route 
-          path="manager/verification" 
-          element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['manager']}>
-                <ManagerVerification />
-              </PrivateRoute>
+              <ManagerChatMonitoring />
             </Suspense>
           } 
         />
 
         {/* ========== SERVICE PROVIDER ROUTES ========== */}
         <Route 
-           path="provider" 
-            element={
-              <Suspense fallback={<DashboardLoading />}>
-                <PrivateRoute allowedRoles={['service-provider']}>
-                  <ProviderDashboard />
-                </PrivateRoute>
-              </Suspense>
-          } 
-        />
-        
+  path="provider/*"
+  element={
+    <PrivateRoute allowedRoles={['provider']}>
+      <Suspense fallback={<DashboardLoading />}>
+        <ProviderLayout />
+      </Suspense>
+    </PrivateRoute>
+  }
+>
+
+<Route 
+  path="provider/profile" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <ProviderProfile />
+    </Suspense>
+  } 
+/>
+  <Route index element={<ProviderDashboard />} />
+  <Route path="dashboard" element={<ProviderDashboard />} />
+
+  {/* Profile */}
+  <Route path="profile" element={<ProviderProfile />} />
+
+  {/* Subscription & Billing */}
+  <Route path="subscription" element={<ProviderSubscription />} />
+  <Route path="subscribe" element={<ProviderSubscribe />} />
+  <Route path="billing" element={<ProviderBilling />} />
+
+  {/* Leads & Bookings */}
+  <Route path="leads" element={<ProviderLeads />} />
+  <Route path="bookings" element={<ProviderBookings />} />
+  <Route path="bookings/:id" element={<ProviderBookingDetails />} />
+  <Route path="calendar" element={<ProviderCalendar />} />
+
+  {/* Finance */}
+  <Route path="earnings" element={<ProviderEarnings />} />
+  <Route path="payouts" element={<ProviderPayouts />} />
+  <Route path="wallet" element={<ProviderWallet />} />
+  <Route path="transactions" element={<ProviderTransactions />} />
+
+  {/* Services */}
+  <Route path="services" element={<ProviderServices />} />
+  <Route path="post-service" element={<ProviderPostService />} />
+  <Route path="services/:id/edit" element={<ProviderServiceEdit />} />
+  <Route path="service-categories" element={<ProviderServiceCategories />} />
+
+  {/* Analytics & Performance */}
+  <Route path="analytics" element={<ProviderAnalytics />} />
+  <Route path="performance" element={<ProviderPerformance />} />
+
+  {/* Verification */}
+  <Route path="verify" element={<ProviderVerify />} />
+  <Route path="verification-status" element={<ProviderVerificationStatus />} />
+  <Route path="compliance" element={<ProviderCompliance />} />
+
+  {/* Boost */}
+  <Route path="boost" element={<ProviderBoost />} />
+  <Route path="boost-history" element={<ProviderBoostHistory />} />
+
+  {/* Others */}
+  <Route path="portfolio" element={<ProviderPortfolio />} />
+  <Route path="pricing" element={<ProviderPricing />} />
+  <Route path="availability" element={<ProviderAvailability />} />
+  <Route path="location-setup" element={<ProviderLocationSetup />} />
+  <Route path="documents" element={<ProviderDocuments />} />
+  <Route path="referral" element={<ProviderReferral />} />
+  <Route path="messages" element={<ProviderMessages />} />
+  <Route path="support" element={<ProviderSupport />} />
+  <Route path="settings" element={<ProviderSettings />} />
+  <Route path="payment-methods" element={<ProviderPaymentMethods />} />
+  <Route path="notifications" element={<ProviderNotifications />} />
+</Route>
         {/* ========== ESTATE FIRM ROUTES ========== */}
-        {/* Main Estate Dashboard */}
         <Route 
           path="estate-firm" 
           element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
+            <PrivateRoute allowedRoles={['estate-firm', 'estate_firm']}>
+              <Suspense fallback={<DashboardLoading />}>
                 <EstateDashboard />
-              </PrivateRoute>
-            </Suspense>
+              </Suspense>
+            </PrivateRoute>
           } 
         />
 
-        {/* Estate Profile */}
         <Route 
-          path="estate-firm/estate-profile" 
+          path="estate-firm/profile" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateProfile />
-              </PrivateRoute>
+              <EstateProfile />
             </Suspense>
           } 
         />
 
-        {/* Estate Properties Management */}
         <Route 
           path="estate-firm/properties" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateProperties />
-              </PrivateRoute>
+              <EstateProperties />
             </Suspense>
           } 
         />
 
-        {/* Estate Clients Management */}
         <Route 
           path="estate-firm/clients" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateClients />
-              </PrivateRoute>
+              <EstateClients />
             </Suspense>
           } 
         />
 
-        {/* Estate Analytics */}
         <Route 
           path="estate-firm/analytics" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateAnalytics />
-              </PrivateRoute>
+              <EstateAnalytics />
             </Suspense>
           } 
         />
 
-        {/* Estate Reports */}
         <Route 
           path="estate-firm/reports" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateReports />
-              </PrivateRoute>
+              <EstateReports />
             </Suspense>
           } 
         />
 
-        {/* Estate Bulk Upload */}
         <Route 
           path="estate-firm/bulk-upload" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateBulkUpload />
-              </PrivateRoute>
+              <EstateBulkUpload />
             </Suspense>
           } 
         />
 
-        {/* Estate Verification */}
         <Route 
           path="estate-firm/verification" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateVerification />
-              </PrivateRoute>
+              <EstateVerification />
             </Suspense>
           } 
         />
 
-        {/* Estate Settings */}
         <Route 
           path="estate-firm/settings" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateSettings />
-              </PrivateRoute>
+              <EstateSettings />
             </Suspense>
           } 
         />
 
-        {/* Estate Documents */}
         <Route 
           path="estate-firm/documents" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateDocuments />
-              </PrivateRoute>
+              <EstateDocuments />
             </Suspense>
           } 
         />
 
-        {/* Estate Services */}
         <Route 
           path="estate-firm/services" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstateServices />
-              </PrivateRoute>
+              <EstateServices />
             </Suspense>
           } 
         />
 
-        {/* Estate Post Service */}
         <Route 
           path="estate-firm/post-service" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['estate-firm']}>
-                <EstatePostService />
-              </PrivateRoute>
+              <EstatePostService />
             </Suspense>
           } 
         />
 
-<Route 
-  path="estate-firm/add-external-property" 
-  element={
-    <Suspense fallback={<DashboardLoading />}>
-      <PrivateRoute allowedRoles={['estate-firm']}>
-        <EstateAddExternalProperty />
-      </PrivateRoute>
-    </Suspense>
-  } 
-/>
+        <Route 
+          path="estate-firm/add-external-property" 
+          element={
+            <Suspense fallback={<DashboardLoading />}>
+              <EstateAddExternalProperty />
+            </Suspense>
+          } 
+        />
 
-        {/* ========== LANDLORD ROUTES ========== */}
+{/* ========== LANDLORD ROUTES ========== */}
         <Route 
           path="landlord" 
           element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
+            <PrivateRoute allowedRoles={['landlord']}>
+              <Suspense fallback={<DashboardLoading />}>
                 <LandlordDashboard />
-              </PrivateRoute>
-            </Suspense>
+              </Suspense>
+            </PrivateRoute>
           } 
         />
 
-        {/* Landlord Profile */}
         <Route 
           path="landlord/profile" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <LandlordProfile />
-              </PrivateRoute>
+              <LandlordProfile />
             </Suspense>
           } 
         />
 
-        {/* Landlord Analytics */}
         <Route 
           path="landlord/analytics" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <LandlordAnalytics />
-              </PrivateRoute>
+              <LandlordAnalytics />
             </Suspense>
           } 
         />
 
-        {/* Wallet Routes */}
         <Route 
           path="landlord/wallet/withdraw" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <WithdrawFunds />
-              </PrivateRoute>
+              <WithdrawFunds />
             </Suspense>
           } 
         />
@@ -449,21 +547,16 @@ const AppRoutes = () => {
           path="landlord/wallet/history" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <WalletHistory />
-              </PrivateRoute>
+              <WalletHistory />
             </Suspense>
           } 
         />
 
-        {/* Property Routes */}
         <Route 
           path="landlord/properties/:propertyId" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <PropertyDetail />
-              </PrivateRoute>
+              <PropertyDetail />
             </Suspense>
           } 
         />
@@ -472,45 +565,34 @@ const AppRoutes = () => {
           path="landlord/properties/:propertyId/edit" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <EditProperty />
-              </PrivateRoute>
+              <EditProperty />
             </Suspense>
           } 
         />
 
-        {/* Referral Routes */}
         <Route 
           path="landlord/referral/history" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <ReferralHistory />
-              </PrivateRoute>
+              <ReferralHistory />
             </Suspense>
           } 
         />
 
-        {/* Support */}
         <Route 
           path="landlord/support" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <Support />
-              </PrivateRoute>
+              <Support />
             </Suspense>
           } 
         />
 
-        {/* Reports */}
         <Route 
           path="landlord/reports" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord']}>
-                <Reports />
-              </PrivateRoute>
+              <Reports />
             </Suspense>
           } 
         />
@@ -519,143 +601,139 @@ const AppRoutes = () => {
         <Route 
           path="tenant" 
           element={
-            <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
+            <PrivateRoute allowedRoles={['tenant']}>
+              <Suspense fallback={<DashboardLoading />}>
                 <TenantDashboard />
-              </PrivateRoute>
-            </Suspense>
+              </Suspense>
+            </PrivateRoute>
           } 
         />
 
-        {/* Tenant Profile */}
         <Route 
           path="tenant/profile" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantProfile />
-              </PrivateRoute>
+              <TenantProfile />
             </Suspense>
           } 
         />
 
-        {/* Tenant Applications */}
         <Route 
           path="tenant/applications" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantApplications />
-              </PrivateRoute>
+              <TenantApplications />
             </Suspense>
           } 
         />
 
-        {/* Tenant Saved Properties */}
         <Route 
           path="tenant/saved" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantSavedProperties />
-              </PrivateRoute>
+              <TenantSavedProperties />
             </Suspense>
           } 
         />
 
-        {/* Tenant Rental History */}
         <Route 
           path="tenant/rental-history" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantRentalHistory />
-              </PrivateRoute>
+              <TenantRentalHistory />
             </Suspense>
           } 
         />
 
-        {/* Tenant Payments */}
         <Route 
           path="tenant/payments" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantPayments />
-              </PrivateRoute>
+              <TenantPayments />
             </Suspense>
           } 
         />
 
-        {/* Tenant Maintenance Requests */}
         <Route 
           path="tenant/maintenance" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantMaintenance />
-              </PrivateRoute>
+              <TenantMaintenance />
             </Suspense>
           } 
         />
 
-        {/* Tenant Documents */}
         <Route 
           path="tenant/documents" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantDocuments />
-              </PrivateRoute>
+              <TenantDocuments />
             </Suspense>
           } 
         />
-
-        {/* Tenant Referrals */}
-        <Route 
+<Route 
           path="tenant/referrals" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantReferrals />
-              </PrivateRoute>
+              <TenantReferrals />
             </Suspense>
           } 
         />
 
-        {/* Tenant Settings */}
         <Route 
           path="tenant/settings" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['tenant']}>
-                <TenantSettings />
-              </PrivateRoute>
+              <TenantSettings />
             </Suspense>
           } 
         />
 
         {/* ========== COMMON ROUTES ========== */}
+        {/* Profile route for all */}
+        <Route 
+          path="profile" 
+          element={
+            <Suspense fallback={<DashboardLoading />}>
+              <ManagerProfile />
+            </Suspense>
+          } 
+        />
+
         {/* Post Property route */}
         <Route 
           path="post-property" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute allowedRoles={['landlord', 'estate-firm', 'tenant', 'manager']}>
-                <PostPropertyPage />
-              </PrivateRoute>
+              <PostPropertyPage />
             </Suspense>
           } 
         />
 
-        {/* Messages */}
+        {/* =================== MESSAGING ROUTES =================== */}
+        <Route 
+          path="messages/:listingId" 
+          element={
+            <Suspense fallback={<DashboardLoading />}>
+              <Messages />
+            </Suspense>
+          } 
+        />
+
+        <Route 
+          path="messages/chat/:chatId" 
+          element={
+            <Suspense fallback={<DashboardLoading />}>
+              <Messages />
+            </Suspense>
+          } 
+        />
+
         <Route 
           path="messages" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute>
-                <Messages />
-              </PrivateRoute>
+              <ChatListPage />
             </Suspense>
           } 
         />
@@ -665,23 +743,21 @@ const AppRoutes = () => {
           path="support" 
           element={
             <Suspense fallback={<DashboardLoading />}>
-              <PrivateRoute>
-                <Support />
-              </PrivateRoute>
+              <Support />
             </Suspense>
           } 
         />
       </Route>
 
       {/* =================== OTHER PUBLIC ROUTES =================== */}
-     <Route 
-         path="/listings/:id" 
-         element={
-        <Suspense fallback={<DashboardLoading />}>
-         <ListingDetailsPage />
-        </Suspense>
+      <Route 
+        path="/listings/:id" 
+        element={
+          <Suspense fallback={<DashboardLoading />}>
+            <ListingDetailsPage />
+          </Suspense>
         } 
-       />
+      />
       
       <Route 
         path="/listings" 
@@ -710,7 +786,6 @@ const AppRoutes = () => {
         } 
       />
       
-
       {/* =================== VERIFICATION ROUTES =================== */}
       <Route 
         path="/verify" 

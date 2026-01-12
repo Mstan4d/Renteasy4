@@ -1,8 +1,7 @@
-// src/modules/properties/pages/PostPropertyPage.jsx
+// src/modules/properties/pages/PostPropertyPage.jsx - FIXED COMMISSION LOGIC
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
-// REMOVE THIS: import Header from '../../../shared/components/Header';
 import ProgressIndicator from '../components/ProgressIndicator';
 import BasicInfoStep from '../components/steps/BasicInfoStep';
 import LocationStep from '../components/steps/LocationStep';
@@ -46,7 +45,7 @@ const PostPropertyPage = () => {
     // Meta
     status: 'draft',
     hasLandlordConsent: false,
-    referralCode: '',
+    referralCode: '', // This is for the ₦5000 user referral bonus, NOT for commission
     
     // User info (will be populated from auth)
     userId: '',
@@ -68,7 +67,7 @@ const PostPropertyPage = () => {
         userEmail: user.email || '',
         contactPhone: user.phone || '',
         contactEmail: user.email || '',
-        verified: user.verified || false // Add user verification status
+        verified: user.verified || false
       }));
     }
   }, [user]);
@@ -121,33 +120,65 @@ const PostPropertyPage = () => {
     setFormData(prev => ({ ...prev, ...updates }));
   };
 
-  // Calculate commission for all posts
-  // Fix commission calculation
-const calculateCommission = () => {
-  const listingPrice = parseFloat(formData.price) || 0;
-  
-  // Ensure we have a valid price
-  if (listingPrice <= 0) {
-    alert('Please enter a valid price');
-    return null;
-  }
-  
-  const totalCommission = listingPrice * 0.075; // 7.5%
-  
-  const commissionBreakdown = {
-    total: totalCommission,
-    rentEasy: listingPrice * 0.04, // Fixed: 4%
-    manager: listingPrice * 0.025, // Fixed: 2.5%
-    referral: formData.referralCode ? listingPrice * 0.01 : 0 // 1%
+  // FIXED: Calculate commission based on business rules
+  const calculateCommission = () => {
+    const listingPrice = parseFloat(formData.price) || 0;
+    
+    // Ensure we have a valid price
+    if (listingPrice <= 0) {
+      alert('Please enter a valid price');
+      return null;
+    }
+    
+    const posterRole = formData.userRole || '';
+    
+    // BUSINESS RULE 1: Estate firms get ZERO RentEasy commission (subscription model)
+    if (posterRole === 'estate_firm') {
+      return {
+        listingPrice,
+        totalPrice: listingPrice, // No commission added
+        breakdown: {
+          total: 0,
+          rentEasy: 0,    // Estate firms pay subscription, not commission
+          manager: 0,     // Managers don't get commission from estate firm posts
+          referrer: 0,    // No referrer commission
+          poster: 0       // Estate firm doesn't get commission as poster
+        },
+        isEstateFirm: true,
+        note: 'Estate firm listing: No RentEasy commission (monthly subscription model)'
+      };
+    }
+    
+    // BUSINESS RULE 2: Tenant and Landlord posts ALWAYS have 7.5% commission
+    const totalCommission = listingPrice * 0.075; // ALWAYS 7.5% for tenants/landlords
+    
+    const commissionBreakdown = {
+      total: totalCommission,
+      rentEasy: listingPrice * 0.04,      // ALWAYS 4% for RentEasy platform
+      manager: listingPrice * 0.025,      // ALWAYS 2.5% for manager
+      referrer: listingPrice * 0.01,      // ALWAYS 1% for referrer (poster themselves!)
+      poster: listingPrice * 0.01         // ALWAYS 1% for poster
+    };
+    
+    // Determine who the referrer/poster is
+    let referrerType = '';
+    if (posterRole === 'tenant') {
+      referrerType = 'Outgoing Tenant';
+    } else if (posterRole === 'landlord') {
+      referrerType = 'Landlord';
+    }
+    
+    return {
+      listingPrice,
+      totalPrice: listingPrice + totalCommission,
+      breakdown: commissionBreakdown,
+      referrerType,
+      isEstateFirm: false,
+      note: `Total commission: 7.5% (${referrerType}: 1%, Manager: 2.5%, RentEasy: 4%)`
+    };
   };
-  
-  return {
-    listingPrice,
-    totalPrice: listingPrice + totalCommission,
-    breakdown: commissionBreakdown
-  };
-};
-  // Submit the listing - UPDATED TO USE createNewListing FUNCTION
+
+  // Submit the listing
   const submitListing = async () => {
     // Validate form data first
     if (!validateCurrentStep()) {
@@ -192,7 +223,7 @@ const calculateCommission = () => {
         requiresLandlordVerification: formData.userRole === 'tenant',
         landlordConsent: formData.userRole === 'tenant' ? formData.hasLandlordConsent : true,
         
-        // Referral
+        // Referral code for ₦5000 user referral bonus (separate from commission)
         referralCode: formData.referralCode,
         
         // Additional details
@@ -217,14 +248,38 @@ const calculateCommission = () => {
   
       // Use the createNewListing function
       const newListing = createNewListing(listingData, currentUser);
-  
-      // Show success message
-      alert(`✅ Listing submitted successfully!\n\n` +
-        `📋 Listing Price: ₦${listingPrice.toLocaleString()}\n` +
-        `📊 Commission (7.5%): ₦${commission.breakdown.total.toLocaleString()}\n` +
-        `💵 Total Payable: ₦${commission.totalPrice.toLocaleString()}\n\n` +
-        `🔄 Status: Pending admin verification`
-      );
+      
+      // Save commission info to the listing
+      newListing.commissionInfo = {
+        totalRate: commission.isEstateFirm ? 0 : 0.075,
+        breakdown: commission.breakdown,
+        referrer: {
+          id: currentUser.id,
+          name: currentUser.name,
+          role: formData.userRole,
+          commissionRate: commission.isEstateFirm ? 0 : 0.01,
+          commissionAmount: commission.breakdown.poster
+        }
+      };
+
+      // Show success message based on user role
+      let successMessage = `✅ Listing submitted successfully!\n\n`;
+      successMessage += `📋 Listing Price: ₦${listingPrice.toLocaleString()}\n`;
+      
+      if (commission.isEstateFirm) {
+        successMessage += `🏢 Estate Firm: No RentEasy commission (monthly subscription)\n`;
+        successMessage += `💼 Total Payable: ₦${listingPrice.toLocaleString()}\n`;
+      } else {
+        successMessage += `📊 Total Commission (7.5%): ₦${commission.breakdown.total.toLocaleString()}\n`;
+        successMessage += `   • ${commission.referrerType} (1%): ₦${commission.breakdown.poster.toLocaleString()}\n`;
+        successMessage += `   • Manager (2.5%): ₦${commission.breakdown.manager.toLocaleString()}\n`;
+        successMessage += `   • RentEasy (4%): ₦${commission.breakdown.rentEasy.toLocaleString()}\n`;
+        successMessage += `💵 Total Payable by Tenant: ₦${commission.totalPrice.toLocaleString()}\n`;
+      }
+      
+      successMessage += `\n🔄 Status: Pending admin verification`;
+      
+      alert(successMessage);
   
       // Navigate to listings page
       navigate('/listings');
@@ -236,6 +291,7 @@ const calculateCommission = () => {
       setIsSubmitting(false);
     }
   };
+
   // Request verification (for landlords/managers) - You can keep this if needed
   const requestVerification = () => {
     const adminQueue = JSON.parse(localStorage.getItem('adminListings') || '[]');
@@ -297,10 +353,7 @@ const calculateCommission = () => {
   };
 
   return (
-    // REMOVE the Header wrapper and just use the main content
     <div className="post-property-container">
-      {/* REMOVE THIS: <Header /> */}
-      
       <main className="post-property-main">
         <div className="container">
           <h1 className="page-title">Post a Property</h1>
@@ -315,7 +368,6 @@ const calculateCommission = () => {
           <CommissionNotice 
             price={formData.price}
             userRole={formData.userRole}
-            hasReferral={!!formData.referralCode}
           />
           
           {/* Current Step */}

@@ -65,10 +65,40 @@ export const AdminProvider = ({ children }) => {
       totalProviders: providers.length,
       verifiedUsers: users.filter(u => u.verified).length,
       verifiedListings: listings.filter(l => l.verified).length,
-      monthlyGrowth: calculateGrowthRate(users),
+      //monthlyGrowth: calculateGrowthRate(users),
       revenue: calculateRevenue(listings)
     };
   };
+
+  // Add this function to AdminContext.jsx
+const calculateRevenue = () => {
+  // Mock revenue calculation
+  const listings = JSON.parse(localStorage.getItem('listings') || '[]');
+  const rentedListings = listings.filter(l => l.status === 'rented');
+  
+  let totalRevenue = 0;
+  let commissionRevenue = 0;
+  
+  rentedListings.forEach(listing => {
+    const price = listing.price || 0;
+    totalRevenue += price;
+    
+    // Apply 7.5% commission for non-estate firm listings
+    if (listing.posterRole !== 'estate_firm') {
+      commissionRevenue += price * 0.075;
+    }
+  });
+  
+  return {
+    total: totalRevenue,
+    commission: commissionRevenue,
+    breakdown: {
+      manager: commissionRevenue * 0.333, // 2.5% of 7.5%
+      referrer: commissionRevenue * 0.133, // 1% of 7.5%
+      platform: commissionRevenue * 0.534  // 4% of 7.5%
+    }
+  };
+};
 
   // ... More admin-specific functions
 

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../../../shared/context/AuthContext';
+// src/modules/estate-firm/pages/EstateDashboard.jsx
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
 import { 
-    Home, Building, Users, DollarSign, FileText, 
+    Building, Users, DollarSign, FileText, 
     AlertCircle, Calendar, TrendingUp, PlusCircle,
     Upload, Briefcase, Wallet, BarChart,
     ExternalLink, Shield, Clock, Filter,
@@ -10,9 +11,10 @@ import {
     Download, Eye, Edit, Trash2,
     CreditCard, Receipt, PieChart, Target,
     ChevronRight, Phone, Mail, MapPin,
-    CheckCircle, XCircle, UserPlus, Search
+    CheckCircle, Home, XCircle, UserPlus, Search,
+    Check, X, ShieldCheck, Crown
 } from 'lucide-react';
-// Import components
+import { Container, Row, Col, Card, Button, Badge, Modal, Form, Table, ProgressBar, Alert } from 'react-bootstrap';
 import DashboardCard from '../../../shared/components/ui/DashboardCard';
 import RentCountdownTimer from '../components/RentCountdownTimer';
 import PropertyHealthScore from '../components/PropertyHealthScore';
@@ -27,16 +29,36 @@ import './EstateDashboard.css';
 const EstateDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  
+  // State for estate firm specific data
+  const [estateFirmData, setEstateFirmData] = useState({
+    isVerified: false,
+    verificationStatus: 'pending', // pending, verified, rejected
+    freePostsUsed: 0,
+    freePostsRemaining: 10,
+    hasActiveSubscription: false,
+    subscriptionEndDate: null,
+    subscriptionType: null,
+    isInMarketplace: true, // Always true per your doc
+    marketplaceBoost: false,
+    commissionRate: 0, // Estate firms pay 0% commission
+    subscriptionFee: 10000, // Monthly fee
+  });
+
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [propertyFormData, setPropertyFormData] = useState({
     name: '',
     address: '',
     propertyType: 'residential',
     clientName: '',
-    commissionRate: 10,
+    commissionRate: 0, // Always 0 for estate firms
     rentAmount: '',
     rentFrequency: 'monthly',
-    managementType: 'full'
+    managementType: 'full',
+    isOnRentEasy: true,
+    tags: ['verified-estate-firm'] // Tag for verified estate firm posts
   });
 
   const [dashboardStats, setDashboardStats] = useState({
@@ -52,7 +74,11 @@ const EstateDashboard = () => {
     maintenanceRequests: 0,
     expiringLeases: 0,
     totalClients: 0,
-    portfolioValue: 0
+    portfolioValue: 0,
+    // Estate firm specific
+    postsThisMonth: 0,
+    commissionSaved: 0, // Money saved from 0% commission
+    subscriptionSavings: 0 // If subscribed, show savings
   });
 
   const [criticalAlerts, setCriticalAlerts] = useState([]);
@@ -62,8 +88,26 @@ const EstateDashboard = () => {
   const [filter, setFilter] = useState('all');
   const [showAddExternalModal, setShowAddExternalModal] = useState(false);
 
-  // Mock data for development
+  // Load estate firm data
   useEffect(() => {
+    // In real app, this would come from API
+    const mockEstateFirm = {
+      isVerified: true, // Change based on KYC status
+      verificationStatus: 'verified',
+      freePostsUsed: 3,
+      freePostsRemaining: 7,
+      hasActiveSubscription: false,
+      subscriptionEndDate: null,
+      subscriptionType: null,
+      isInMarketplace: true,
+      marketplaceBoost: false,
+      commissionRate: 0,
+      subscriptionFee: 10000,
+    };
+
+    setEstateFirmData(mockEstateFirm);
+
+    // Mock properties data
     const mockProperties = [
       {
         id: 'prop_001',
@@ -74,7 +118,7 @@ const EstateDashboard = () => {
         managementType: 'full',
         clientId: 'client_001',
         clientName: 'Mr. Johnson Ade',
-        commissionRate: 10,
+        commissionRate: 0, // Estate firm gets 0%
         rentAmount: 2500000,
         rentFrequency: 'yearly',
         rentDueDate: '2024-12-25',
@@ -85,7 +129,9 @@ const EstateDashboard = () => {
         nextMaintenance: '2024-12-15',
         address: 'Lekki Phase 1, Lagos',
         category: 'residential',
-        addedDate: '2024-01-15'
+        addedDate: '2024-01-15',
+        postedBy: 'estate-firm',
+        tags: ['verified-estate-firm', 'zero-commission']
       },
       {
         id: 'prop_002',
@@ -96,7 +142,7 @@ const EstateDashboard = () => {
         managementType: 'rent-only',
         clientId: 'client_002',
         clientName: 'Mrs. Bola Ahmed',
-        commissionRate: 8,
+        commissionRate: 0,
         rentAmount: 1200000,
         rentFrequency: 'yearly',
         rentDueDate: '2024-11-30',
@@ -107,9 +153,11 @@ const EstateDashboard = () => {
         nextMaintenance: '2024-11-20',
         address: 'Ikeja GRA, Lagos',
         category: 'residential',
-        addedDate: '2024-02-20'
+        addedDate: '2024-02-20',
+        postedBy: 'estate-firm',
+        tags: ['verified-estate-firm']
       },
-      // External Properties (not on Rent Easy)
+      // External Properties
       {
         id: 'prop_003',
         name: 'Office Space, Victoria Island',
@@ -130,52 +178,8 @@ const EstateDashboard = () => {
         address: 'Adeola Odeku, VI, Lagos',
         category: 'commercial',
         addedDate: '2023-11-15',
+        postedBy: 'estate-firm',
         notes: 'Long-term corporate lease'
-      },
-      {
-        id: 'prop_004',
-        name: '4-Bedroom Detached, Abuja',
-        type: 'external-property',
-        source: 'csv-import',
-        managementType: 'full',
-        clientId: 'client_004',
-        clientName: 'Alhaji Musa Ibrahim',
-        commissionRate: 10,
-        rentAmount: 3500000,
-        rentFrequency: 'yearly',
-        rentDueDate: '2025-01-15',
-        rentEndDate: '2025-01-15',
-        status: 'occupied',
-        tenant: { name: 'Expat Family', phone: '+2348045678901', email: 'expat@email.com' },
-        healthScore: 90,
-        nextMaintenance: '2024-12-30',
-        address: 'Maitama, Abuja',
-        category: 'residential',
-        addedDate: '2024-03-10',
-        notes: 'Diplomatic tenant'
-      },
-      // Managed only (not owner, just managing)
-      {
-        id: 'prop_005',
-        name: 'Shopping Complex, Surulere',
-        type: 'managed-property',
-        source: 'manual',
-        managementType: 'maintenance-only',
-        clientId: 'client_005',
-        clientName: 'Surulere Properties Ltd',
-        commissionRate: 5,
-        rentAmount: 8000000,
-        rentFrequency: 'yearly',
-        rentDueDate: '2024-12-20',
-        rentEndDate: '2025-12-20',
-        status: 'occupied',
-        tenant: { name: 'Various Shop Owners', phone: 'N/A', email: 'N/A' },
-        healthScore: 75,
-        nextMaintenance: '2024-12-05',
-        address: 'Bode Thomas, Surulere, Lagos',
-        category: 'commercial',
-        addedDate: '2024-04-05',
-        notes: 'Multi-tenant commercial space'
       }
     ];
 
@@ -192,176 +196,207 @@ const EstateDashboard = () => {
       },
       {
         id: 2,
-        type: 'payment_due',
-        message: 'Rent payment due in 7 days for 2-Bedroom Flat, Ikeja',
-        propertyId: 'prop_002',
-        propertyName: '2-Bedroom Flat, Ikeja',
+        type: 'subscription_expiry',
+        message: 'Free posts remaining: 7. Subscribe to continue posting',
         priority: 'medium',
-        date: '2024-11-23',
-        action: 'send_reminder'
+        action: 'subscribe'
       },
       {
         id: 3,
-        type: 'maintenance',
-        message: 'Scheduled maintenance due for Office Space, VI',
-        propertyId: 'prop_003',
-        propertyName: 'Office Space, Victoria Island',
+        type: 'verification_pending',
+        message: 'Complete KYC verification to get verified badge',
         priority: 'low',
-        date: '2024-12-01',
-        action: 'schedule_maintenance'
+        action: 'verify',
+        show: !mockEstateFirm.isVerified
       }
     ];
 
     const mockActivities = [
-      { id: 1, action: 'External property added', property: '4-Bedroom Detached, Abuja', time: '2 hours ago' },
-      { id: 2, action: 'Rent payment received', amount: '₦2,500,000', client: 'Mr. Johnson Ade', time: '1 day ago' },
-      { id: 3, action: 'Maintenance completed', property: 'Shopping Complex, Surulere', time: '2 days ago' },
-      { id: 4, action: 'New client onboarded', client: 'Surulere Properties Ltd', time: '3 days ago' },
-      { id: 5, action: 'Lease renewed', property: 'Office Space, VI', time: '5 days ago' }
+      { id: 1, action: 'Property posted on Rent Easy', property: '4-Bedroom Detached, Abuja', time: '2 hours ago' },
+      { id: 2, action: 'Rent payment collected', amount: '₦2,500,000', client: 'Mr. Johnson Ade', time: '1 day ago' },
+      { id: 3, action: 'Maintenance completed', property: 'Office Space, VI', time: '2 days ago' },
+      { id: 4, action: 'New client onboarded', client: 'Surulere Properties Ltd', time: '3 days ago' }
     ];
 
     setAllProperties(mockProperties);
-    setCriticalAlerts(mockAlerts);
+    setCriticalAlerts(mockAlerts.filter(alert => alert.show !== false));
     setRecentActivities(mockActivities);
 
-    // Calculate comprehensive dashboard stats
+    // Calculate stats
     const totalProperties = mockProperties.length;
     const rentEasyListings = mockProperties.filter(p => p.type === 'rent-easy-listing').length;
     const externalProperties = mockProperties.filter(p => p.type === 'external-property').length;
-    const managedProperties = mockProperties.filter(p => p.type === 'managed-property').length;
     const occupiedProperties = mockProperties.filter(p => p.status === 'occupied').length;
-    const vacantProperties = totalProperties - occupiedProperties;
-    
-    const uniqueClients = [...new Set(mockProperties.map(p => p.clientId))].length;
     
     const monthlyRevenue = mockProperties
       .filter(p => p.status === 'occupied')
       .reduce((sum, p) => sum + (p.rentAmount / 12), 0);
     
-    const pendingPayments = mockProperties.filter(p => {
-      const dueDate = new Date(p.rentDueDate);
-      const today = new Date();
-      return dueDate < today && p.status === 'occupied';
-    }).length;
-    
-    const expiringLeases = mockProperties.filter(p => {
-      const endDate = new Date(p.rentEndDate);
-      const today = new Date();
-      const daysDiff = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-      return daysDiff <= 30 && p.status === 'occupied';
-    }).length;
-
-    const portfolioValue = mockProperties.reduce((sum, p) => {
-      // Simplified valuation: 5 years of rent
-      return sum + (p.rentAmount * 5);
-    }, 0);
+    // Calculate commission savings (7.5% saved on each RentEasy listing)
+    const commissionSaved = mockProperties
+      .filter(p => p.type === 'rent-easy-listing')
+      .reduce((sum, p) => sum + (p.rentAmount * 0.075), 0);
 
     setDashboardStats({
       totalProperties,
-      managedProperties,
+      managedProperties: mockProperties.filter(p => p.type === 'managed-property').length,
       rentEasyListings,
       externalProperties,
       occupiedProperties,
-      vacantProperties,
-      totalTenants: occupiedProperties, // Each occupied property has tenant(s)
+      vacantProperties: totalProperties - occupiedProperties,
+      totalTenants: occupiedProperties,
       monthlyRevenue,
-      pendingPayments,
-      maintenanceRequests: 3, // Mock value
-      expiringLeases,
-      totalClients: uniqueClients,
-      portfolioValue
+      pendingPayments: mockProperties.filter(p => {
+        const dueDate = new Date(p.rentDueDate);
+        const today = new Date();
+        return dueDate < today && p.status === 'occupied';
+      }).length,
+      maintenanceRequests: 2,
+      expiringLeases: mockProperties.filter(p => {
+        const endDate = new Date(p.rentEndDate);
+        const today = new Date();
+        const daysDiff = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+        return daysDiff <= 30 && p.status === 'occupied';
+      }).length,
+      totalClients: [...new Set(mockProperties.map(p => p.clientId))].length,
+      portfolioValue: mockProperties.reduce((sum, p) => sum + (p.rentAmount * 5), 0),
+      postsThisMonth: mockProperties.filter(p => {
+        const addedDate = new Date(p.addedDate);
+        const today = new Date();
+        return addedDate.getMonth() === today.getMonth() && 
+               addedDate.getFullYear() === today.getFullYear();
+      }).length,
+      commissionSaved,
+      subscriptionSavings: mockEstateFirm.hasActiveSubscription ? 10000 : 0
     });
   }, []);
 
-   // Add to EstateDashboard.jsx for swipe functionality
-const [activeSwipeIndex, setActiveSwipeIndex] = useState(0);
+  // Check if user can post (free posts remaining or has subscription)
+  const canPostProperty = () => {
+    if (estateFirmData.hasActiveSubscription) return true;
+    if (estateFirmData.freePostsRemaining > 0) return true;
+    return false;
+  };
 
-const handleSwipe = (direction) => {
-  const panels = ['overview', 'portfolio', 'clients', 'financial'];
-  const currentIndex = panels.indexOf(activeTab);
-  
-  if (direction === 'right' && currentIndex > 0) {
-    setActiveTab(panels[currentIndex - 1]);
-  } else if (direction === 'left' && currentIndex < panels.length - 1) {
-    setActiveTab(panels[currentIndex + 1]);
-  }
-};
-
-// Add touch event listeners for swipe detection
-
-  // Navigation functions
+  // Handle posting property - FIXED ROUTING
   const handleAddProperty = (type) => {
+    if (!canPostProperty()) {
+      setShowSubscriptionModal(true);
+      return;
+    }
+
     if (type === 'rent-easy') {
-      navigate('/dashboard/post-property');
+      if (estateFirmData.freePostsRemaining > 0 && !estateFirmData.hasActiveSubscription) {
+        // Use one free post
+        setEstateFirmData(prev => ({
+          ...prev,
+          freePostsUsed: prev.freePostsUsed + 1,
+          freePostsRemaining: prev.freePostsRemaining - 1
+        }));
+      }
+      
+      // Navigate to post property with estate-firm type
+      navigate('/dashboard/post-property?type=estate-firm');
+      
     } else if (type === 'external') {
-      setShowAddExternalModal(true);
+      navigate('/dashboard/estate-firm/add-external-property');
     }
   };
 
-  const handleBulkUpload = (file) => {
-    console.log('Bulk upload file:', file);
-    // Process CSV/Excel file for external properties
-    alert(`Uploaded ${file.name} successfully!`);
+  // Handle subscription purchase
+  const handleSubscribe = () => {
+    // In real app, integrate payment gateway
+    setEstateFirmData(prev => ({
+      ...prev,
+      hasActiveSubscription: true,
+      subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+      subscriptionType: 'monthly'
+    }));
+    setShowSubscriptionModal(false);
+    alert('Subscription activated! You can now post unlimited properties.');
   };
 
-  const handleRenewLease = (property) => {
-    alert(`Renewing lease for: ${property.name}`);
-    // In real app, open modal or navigate to renewal page
+  // Handle verification application
+  const handleApplyVerification = () => {
+    setEstateFirmData(prev => ({
+      ...prev,
+      verificationStatus: 'pending'
+    }));
+    setShowVerificationModal(false);
+    alert('Verification application submitted! Admin will review your KYC documents.');
   };
 
-  const handleViewDetails = (property) => {
-    alert(`Viewing details for: ${property.name}\n\nAddress: ${property.address}\nClient: ${property.clientName}\nRent: ₦${property.rentAmount.toLocaleString()}/${property.rentFrequency}`);
+  // Get property source badge with Bootstrap
+  const getPropertySourceBadge = (property) => {
+    switch(property.type) {
+      case 'rent-easy-listing':
+        return <Badge bg="primary" className="me-1">Rent Easy</Badge>;
+      case 'external-property':
+        return <Badge bg="secondary" className="me-1">External</Badge>;
+      case 'managed-property':
+        return <Badge bg="info" className="me-1">Managed</Badge>;
+      default:
+        return null;
+    }
   };
 
-  const handleCallTenant = (phoneNumber) => {
-    if (phoneNumber && phoneNumber !== 'N/A') {
-      // Copy to clipboard
-      navigator.clipboard.writeText(phoneNumber)
-        .then(() => {
-          alert(`Tenant's phone number (${phoneNumber}) copied to clipboard! Opening phone app...`);
-          // Open phone app
-          window.open(`tel:${phoneNumber}`);
-        })
-        .catch(err => {
-          console.error('Failed to copy:', err);
-          alert(`Tenant's phone: ${phoneNumber}`);
-        });
+  // Get estate firm status badge
+  const getEstateFirmBadge = () => {
+    if (estateFirmData.isVerified) {
+      return <Badge bg="success" className="ms-2"><ShieldCheck size={12} /> Verified</Badge>;
+    } else if (estateFirmData.verificationStatus === 'pending') {
+      return <Badge bg="warning" className="ms-2"><Clock size={12} /> Pending Verification</Badge>;
+    }
+    return <Badge bg="danger" className="ms-2"><X size={12} /> Unverified</Badge>;
+  };
+
+  // Get subscription badge
+  const getSubscriptionBadge = () => {
+    if (estateFirmData.hasActiveSubscription) {
+      return <Badge bg="success" className="ms-2"><Crown size={12} /> Subscribed</Badge>;
+    }
+    return <Badge bg="warning" className="ms-2">Free Plan</Badge>;
+  };
+
+  // Handle messaging for a property
+  const handleMessageProperty = (property) => {
+    if (!property.listingId) {
+      // For external properties without listingId, create a chat or navigate to chat list
+      navigate('/dashboard/messages');
+      return;
+    }
+    
+    // Check if chat already exists for this listing
+    const chats = JSON.parse(localStorage.getItem('chats') || '[]');
+    const existingChat = chats.find(c => c.listingId === property.listingId);
+    
+    if (existingChat) {
+      navigate(`/dashboard/messages/chat/${existingChat.id}`);
     } else {
-      alert('No phone number available for this tenant');
+      navigate(`/dashboard/messages/${property.listingId}`);
     }
   };
 
-  const handleCollectRent = (property) => {
-    alert(`Collect rent for: ${property.name}\n\nAmount: ₦${property.rentAmount.toLocaleString()}\nDue: ${property.rentDueDate}`);
+  // Handle view property details
+  const handleViewProperty = (property) => {
+    if (property.listingId) {
+      navigate(`/listings/${property.listingId}`);
+    } else {
+      // For external properties, navigate to estate firm property detail
+      navigate(`/dashboard/estate-firm/properties/${property.id}`);
+    }
   };
 
-  const handleSendReminder = (property) => {
-    alert(`Sending reminder to tenant of: ${property.name}\n\nNext payment due: ${property.rentDueDate}`);
+  // Handle rent payment
+  const handleRentPayment = (property) => {
+    alert(`Processing rent payment for ${property.name}`);
+    // In real app, integrate payment gateway
   };
 
-  const handleEditProperty = (property) => {
-    alert(`Editing property: ${property.name}`);
-    // In real app, navigate to edit page or open modal
-  };
-
-  const handleAddExternalProperty = () => {
-    setShowAddPropertyModal(true);
-  };
-
-  const handleSubmitExternalProperty = (e) => {
-    e.preventDefault();
-    alert(`External property added successfully!\n\nName: ${propertyFormData.name}\nAddress: ${propertyFormData.address}\nClient: ${propertyFormData.clientName}`);
-    setShowAddPropertyModal(false);
-    setPropertyFormData({
-      name: '',
-      address: '',
-      propertyType: 'residential',
-      clientName: '',
-      commissionRate: 10,
-      rentAmount: '',
-      rentFrequency: 'monthly',
-      managementType: 'full'
-    });
+  // Handle lease renewal
+  const handleLeaseRenewal = (property) => {
+    alert(`Initiating lease renewal for ${property.name}`);
+    // In real app, open lease renewal modal or page
   };
 
   const filteredProperties = allProperties.filter(property => {
@@ -372,620 +407,635 @@ const handleSwipe = (direction) => {
     return true;
   });
 
-  const getPropertySourceBadge = (property) => {
-    switch(property.type) {
-      case 'rent-easy-listing':
-        return <span className="badge badge-rent-easy">Rent Easy</span>;
-      case 'external-property':
-        return <span className="badge badge-external">External</span>;
-      case 'managed-property':
-        return <span className="badge badge-managed">Managed</span>;
-      default:
-        return null;
-    }
-  };
-
-  // Quick action handlers
-  const handleQuickAction = (action) => {
-    switch(action) {
-      case 'collect-rent':
-        alert('Opening rent collection...');
-        break;
-      case 'generate-invoice':
-        alert('Generating invoice...');
-        break;
-      case 'add-client':
-        navigate('/dashboard/estate-firm/clients');
-        break;
-      case 'report-maintenance':
-        alert('Reporting maintenance issue...');
-        break;
-      case 'verify-property':
-        navigate('/dashboard/estate-firm/verification');
-        break;
-      case 'view-analytics':
-        navigate('/dashboard/estate-firm/analytics');
-        break;
-      default:
-        break;
-    }
-  };
-
   return (
     <div className="estate-dashboard-container">
-      {/* Side Navigation */}
+      {/* Estate Navigation - Now handles its own visibility */}
       <EstateNav />
       
-      <div className="estate-dashboard">
-        {/* Welcome Header */}
-        <div className="dashboard-header">
-          <div className="welcome-section">
-            <h1>Property Portfolio Dashboard</h1>
-            <p className="subtitle">
-              Welcome back, {user?.name || 'Estate Firm'}! 
-              Managing {dashboardStats.totalProperties} properties across your portfolio
+      {/* Main Content Area */}
+      <div className="estate-main-content">
+        <div className="p-3 p-md-4 pt-5 pt-md-4">
+          {/* Welcome Header with Estate Firm Status */}
+          <Card className="mb-4 border-0 shadow-sm">
+            <Card.Body>
+              <Row className="align-items-center">
+                <Col xs={12} md={8}>
+                  <div className="d-flex align-items-center mb-2">
+                    <h1 className="h4 h-md-3 mb-0">Estate Firm Dashboard</h1>
+                    {getEstateFirmBadge()}
+                    {getSubscriptionBadge()}
+                  </div>
+                  <p className="text-muted mb-0">
+                    Welcome back, {user?.name || 'Estate Firm'}! 
+                    Managing {dashboardStats.totalProperties} properties
+                  </p>
+                  
+                  {/* Free Posts Counter */}
+                  {!estateFirmData.hasActiveSubscription && (
+                    <div className="mt-2">
+                      <div className="d-flex align-items-center">
+                        <span className="text-sm text-muted me-2">
+                          Free posts: {estateFirmData.freePostsRemaining} remaining
+                        </span>
+                        <ProgressBar 
+                          now={(estateFirmData.freePostsUsed / 10) * 100} 
+                          className="flex-grow-1"
+                          style={{ height: '8px' }}
+                        />
+                      </div>
+                      <small className="text-muted">
+                        {estateFirmData.freePostsUsed}/10 free posts used
+                      </small>
+                    </div>
+                  )}
+                </Col>
+                
+                <Col xs={12} md={4} className="mt-3 mt-md-0">
+                  <div className="d-flex flex-column flex-md-row gap-2">
+                    <Button 
+                      variant="primary" 
+                      className="d-flex align-items-center justify-content-center"
+                      onClick={() => handleAddProperty('rent-easy')}
+                    >
+                      <PlusCircle size={18} className="me-2" />
+                      {estateFirmData.hasActiveSubscription ? 'Post Property' : `Post (${estateFirmData.freePostsRemaining} left)`}
+                    </Button>
+                    
+                    {!estateFirmData.hasActiveSubscription && (
+                      <Button 
+                        variant="outline-success" 
+                        size="sm"
+                        onClick={() => setShowSubscriptionModal(true)}
+                      >
+                        <Crown size={16} className="me-1" />
+                        Subscribe
+                      </Button>
+                    )}
+                  </div>
+                </Col>
+              </Row>
+            </Card.Body>
+          </Card>
+
+          {/* Dashboard Tabs */}
+          <Card className="mb-4">
+            <Card.Body className="p-0">
+              <div className="d-flex overflow-auto">
+                <Button 
+                  variant="link" 
+                  className={`text-decoration-none px-3 py-3 ${activeTab === 'overview' ? 'border-bottom border-primary text-primary' : 'text-muted'}`}
+                  onClick={() => setActiveTab('overview')}
+                >
+                  <BarChart size={18} className="me-2" />
+                  Overview
+                </Button>
+                <Button 
+                  variant="link" 
+                  className={`text-decoration-none px-3 py-3 ${activeTab === 'portfolio' ? 'border-bottom border-primary text-primary' : 'text-muted'}`}
+                  onClick={() => setActiveTab('portfolio')}
+                >
+                  <Briefcase size={18} className="me-2" />
+                  Portfolio
+                </Button>
+                <Button 
+                  variant="link" 
+                  className={`text-decoration-none px-3 py-3 ${activeTab === 'clients' ? 'border-bottom border-primary text-primary' : 'text-muted'}`}
+                  onClick={() => setActiveTab('clients')}
+                >
+                  <Users size={18} className="me-2" />
+                  Clients
+                </Button>
+                <Button 
+                  variant="link" 
+                  className={`text-decoration-none px-3 py-3 ${activeTab === 'financial' ? 'border-bottom border-primary text-primary' : 'text-muted'}`}
+                  onClick={() => setActiveTab('financial')}
+                >
+                  <Wallet size={18} className="me-2" />
+                  Financial
+                </Button>
+              </div>
+            </Card.Body>
+          </Card>
+
+          {/* Critical Alerts */}
+          {criticalAlerts.length > 0 && activeTab === 'overview' && (
+            <Alert variant="warning" className="mb-4">
+              <Alert.Heading className="h6">
+                <AlertCircle size={20} className="me-2" />
+                Important Notifications
+              </Alert.Heading>
+              <div className="mt-2">
+                {criticalAlerts.map(alert => (
+                  <div key={alert.id} className="d-flex justify-content-between align-items-center mb-2">
+                    <span>{alert.message}</span>
+                    <Button 
+                      variant="outline-warning" 
+                      size="sm"
+                      onClick={() => {
+                        if (alert.action === 'subscribe') setShowSubscriptionModal(true);
+                        if (alert.action === 'verify') setShowVerificationModal(true);
+                        if (alert.action === 'renew_lease') handleLeaseRenewal(allProperties.find(p => p.id === alert.propertyId));
+                      }}
+                    >
+                      {alert.action.replace('_', ' ')}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </Alert>
+          )}
+
+          {/* Dashboard Stats - Overview Tab */}
+          {activeTab === 'overview' && (
+            <>
+              {/* Quick Stats */}
+              <Row className="g-3 mb-4">
+                <Col xs={6} md={3}>
+                  <Card className="h-100">
+                    <Card.Body>
+                      <div className="d-flex justify-content-between align-items-start">
+                        <div>
+                          <h6 className="text-muted mb-1">Total Properties</h6>
+                          <h3 className="mb-0">{dashboardStats.totalProperties}</h3>
+                        </div>
+                        <Building size={24} className="text-primary" />
+                      </div>
+                      <small className="text-muted">
+                        {dashboardStats.rentEasyListings} Rent Easy • {dashboardStats.externalProperties} External
+                      </small>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                
+                <Col xs={6} md={3}>
+                  <Card className="h-100">
+                    <Card.Body>
+                      <div className="d-flex justify-content-between align-items-start">
+                        <div>
+                          <h6 className="text-muted mb-1">Occupancy</h6>
+                          <h3 className="mb-0">
+                            {dashboardStats.totalProperties > 0 
+                              ? `${Math.round((dashboardStats.occupiedProperties / dashboardStats.totalProperties) * 100)}%`
+                              : '0%'
+                            }
+                          </h3>
+                        </div>
+                        <Home size={24} className="text-success" />
+                      </div>
+                      <small className="text-muted">
+                        {dashboardStats.occupiedProperties} occupied • {dashboardStats.vacantProperties} vacant
+                      </small>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                
+                <Col xs={6} md={3}>
+                  <Card className="h-100">
+                    <Card.Body>
+                      <div className="d-flex justify-content-between align-items-start">
+                        <div>
+                          <h6 className="text-muted mb-1">Monthly Revenue</h6>
+                          <h3 className="mb-0">
+                            ₦{(dashboardStats.monthlyRevenue / 1000000).toFixed(1)}M
+                          </h3>
+                        </div>
+                        <DollarSign size={24} className="text-purple" />
+                      </div>
+                      <small className="text-muted">
+                        From {dashboardStats.occupiedProperties} properties
+                      </small>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                
+                <Col xs={6} md={3}>
+                  <Card className="h-100">
+                    <Card.Body>
+                      <div className="d-flex justify-content-between align-items-start">
+                        <div>
+                          <h6 className="text-muted mb-1">Commission Saved</h6>
+                          <h3 className="mb-0">
+                            ₦{(dashboardStats.commissionSaved / 1000000).toFixed(1)}M
+                          </h3>
+                        </div>
+                        <Shield size={24} className="text-warning" />
+                      </div>
+                      <small className="text-muted">
+                        0% commission on {dashboardStats.rentEasyListings} listings
+                      </small>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+
+              {/* Properties Table - Mobile Responsive */}
+<Card className="mb-4">
+  <Card.Body>
+    <div className="d-flex justify-content-between align-items-center mb-3">
+      <h5 className="mb-0 d-none d-md-block">Property Portfolio</h5>
+      <h5 className="mb-0 d-md-none">Properties</h5>
+      <div className="d-flex flex-wrap gap-2">
+        <Button 
+          variant={filter === 'all' ? 'primary' : 'outline-secondary'} 
+          size="sm"
+          onClick={() => setFilter('all')}
+          className="flex-shrink-0"
+        >
+          All
+        </Button>
+        <Button 
+          variant={filter === 'rent-easy' ? 'primary' : 'outline-secondary'} 
+          size="sm"
+          onClick={() => setFilter('rent-easy')}
+          className="flex-shrink-0"
+        >
+          <span className="d-none d-sm-inline">Rent Easy</span>
+          <span className="d-sm-none">Rent</span>
+        </Button>
+        <Button 
+          variant={filter === 'external' ? 'primary' : 'outline-secondary'} 
+          size="sm"
+          onClick={() => setFilter('external')}
+          className="flex-shrink-0"
+        >
+          <span className="d-none d-sm-inline">External</span>
+          <span className="d-sm-none">Ext</span>
+        </Button>
+      </div>
+    </div>
+
+    {/* Desktop Table */}
+    <div className="d-none d-md-block">
+      <div className="table-responsive">
+        <Table hover className="mb-0">
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th>Client</th>
+              <th>Rent</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredProperties.map(property => (
+              <tr key={property.id}>
+                <td>
+                  <div className="d-flex flex-column">
+                    <strong className="mb-1">{property.name}</strong>
+                    <div className="d-flex align-items-center flex-wrap">
+                      {getPropertySourceBadge(property)}
+                      {property.postedBy === 'estate-firm' && (
+                        <Badge bg="info" className="ms-1">Estate Firm</Badge>
+                      )}
+                      <small className="text-muted ms-2 text-truncate">{property.address}</small>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div className="d-flex flex-column">
+                    <strong>{property.clientName}</strong>
+                    <small className="text-muted">{property.commissionRate}% commission</small>
+                  </div>
+                </td>
+                <td>
+                  <div className="d-flex flex-column">
+                    <strong>₦{property.rentAmount.toLocaleString()}</strong>
+                    <small className="text-muted">/{property.rentFrequency}</small>
+                  </div>
+                </td>
+                <td>
+                  <Badge bg={property.status === 'occupied' ? 'success' : 'danger'}>
+                    {property.status}
+                  </Badge>
+                </td>
+                <td>
+                  <div className="d-flex gap-1 flex-wrap">
+                    <Button 
+                      size="sm" 
+                      variant="outline-primary"
+                      onClick={() => handleViewProperty(property)}
+                      title="View Property"
+                    >
+                      <ExternalLink size={14} />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline-success"
+                      onClick={() => handleMessageProperty(property)}
+                      title="Message"
+                    >
+                      <MessageSquare size={14} />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline-warning"
+                      onClick={() => handleLeaseRenewal(property)}
+                      title="Renew Lease"
+                    >
+                      <Clock size={14} />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline-info"
+                      onClick={() => handleRentPayment(property)}
+                      title="Rent Payment"
+                    >
+                      <DollarSign size={14} />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+    </div>
+
+    {/* Mobile Cards Layout */}
+    <div className="d-md-none">
+      {filteredProperties.map(property => (
+        <Card key={property.id} className="mb-3 shadow-sm">
+          <Card.Body>
+            <div className="d-flex justify-content-between align-items-start mb-2">
+              <div className="flex-grow-1">
+                <h6 className="mb-1 fw-bold">{property.name}</h6>
+                <div className="d-flex flex-wrap align-items-center gap-1 mb-2">
+                  {getPropertySourceBadge(property)}
+                  {property.postedBy === 'estate-firm' && (
+                    <Badge bg="info">Estate Firm</Badge>
+                  )}
+                </div>
+                <small className="text-muted d-block mb-2">{property.address}</small>
+              </div>
+              <Badge bg={property.status === 'occupied' ? 'success' : 'danger'} className="flex-shrink-0">
+                {property.status}
+              </Badge>
+            </div>
+            
+            <div className="row g-2 mb-3">
+              <div className="col-6">
+                <div className="bg-light p-2 rounded">
+                  <small className="text-muted d-block">Client</small>
+                  <strong className="d-block text-truncate">{property.clientName}</strong>
+                </div>
+              </div>
+              <div className="col-6">
+                <div className="bg-light p-2 rounded">
+                  <small className="text-muted d-block">Rent</small>
+                  <strong className="d-block">₦{property.rentAmount.toLocaleString()}</strong>
+                  <small className="text-muted">/{property.rentFrequency}</small>
+                </div>
+              </div>
+              <div className="col-12">
+                <div className="bg-light p-2 rounded">
+                  <small className="text-muted d-block">Commission</small>
+                  <strong className="d-block">{property.commissionRate}%</strong>
+                </div>
+              </div>
+            </div>
+            
+            <div className="d-flex gap-2 justify-content-center">
+              <Button 
+                size="sm" 
+                variant="outline-primary"
+                onClick={() => handleViewProperty(property)}
+                className="flex-fill"
+              >
+                <ExternalLink size={14} className="me-1" />
+                <span className="d-none d-sm-inline">View</span>
+              </Button>
+              <Button 
+                size="sm" 
+                variant="outline-success"
+                onClick={() => handleMessageProperty(property)}
+                className="flex-fill"
+              >
+                <MessageSquare size={14} className="me-1" />
+                <span className="d-none d-sm-inline">Message</span>
+              </Button>
+              <Button 
+                size="sm" 
+                variant="outline-warning"
+                onClick={() => handleLeaseRenewal(property)}
+                className="flex-fill"
+              >
+                <Clock size={14} className="me-1" />
+                <span className="d-none d-sm-inline">Renew</span>
+              </Button>
+            </div>
+          </Card.Body>
+        </Card>
+      ))}
+    </div>
+
+    {filteredProperties.length === 0 && (
+      <div className="text-center py-5">
+        <Building size={48} className="text-muted mb-3" />
+        <h5>No Properties Found</h5>
+        <p className="text-muted">Try changing your filter or add a new property</p>
+        <Button 
+          variant="primary"
+          onClick={() => handleAddProperty('rent-easy')}
+        >
+          Add Property
+        </Button>
+      </div>
+    )}
+  </Card.Body>
+</Card>
+
+              {/* Quick Stats Row */}
+              <Row className="g-3 mb-4">
+                <Col xs={12} md={6}>
+                  <Card>
+                    <Card.Body>
+                      <h5 className="mb-3">Recent Activity</h5>
+                      <div className="list-group list-group-flush">
+                        {recentActivities.map(activity => (
+                          <div key={activity.id} className="list-group-item border-0 px-0 py-2">
+                            <div className="d-flex justify-content-between">
+                              <div>
+                                <p className="mb-1">{activity.action}</p>
+                                {activity.property && <small className="text-muted">{activity.property}</small>}
+                              </div>
+                              <small className="text-muted">{activity.time}</small>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                
+                <Col xs={12} md={6}>
+                  <Card>
+                    <Card.Body>
+                      <h5 className="mb-3">Quick Actions</h5>
+                      <Row className="g-2">
+                        <Col xs={6}>
+                          <Button 
+                            variant="outline-primary" 
+                            className="w-100 h-100 d-flex flex-column align-items-center justify-content-center p-3"
+                            onClick={() => handleAddProperty('rent-easy')}
+                          >
+                            <PlusCircle size={24} className="mb-2" />
+                            <span>Add Property</span>
+                          </Button>
+                        </Col>
+                        <Col xs={6}>
+                          <Button 
+                            variant="outline-success" 
+                            className="w-100 h-100 d-flex flex-column align-items-center justify-content-center p-3"
+                            onClick={() => navigate('/dashboard/messages')}
+                          >
+                            <MessageSquare size={24} className="mb-2" />
+                            <span>Messages</span>
+                          </Button>
+                        </Col>
+                        <Col xs={6}>
+                          <Button 
+                            variant="outline-warning" 
+                            className="w-100 h-100 d-flex flex-column align-items-center justify-content-center p-3"
+                            onClick={() => navigate('/dashboard/estate-firm/documents')}
+                          >
+                            <FileText size={24} className="mb-2" />
+                            <span>Documents</span>
+                          </Button>
+                        </Col>
+                        <Col xs={6}>
+                          <Button 
+                            variant="outline-info" 
+                            className="w-100 h-100 d-flex flex-column align-items-center justify-content-center p-3"
+                            onClick={() => navigate('/marketplace')}
+                          >
+                            <Globe size={24} className="mb-2" />
+                            <span>Marketplace</span>
+                          </Button>
+                        </Col>
+                      </Row>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+            </>
+          )}
+
+          {/* Portfolio Management Tab */}
+          {activeTab === 'portfolio' && (
+            <PortfolioManager 
+              properties={allProperties}
+              onAddProperty={handleAddProperty}
+              canPost={canPostProperty()}
+              onMessageProperty={handleMessageProperty}
+              onViewProperty={handleViewProperty}
+            />
+          )}
+
+          {/* Clients Management Tab */}
+          {activeTab === 'clients' && (
+            <ClientManager 
+              properties={allProperties}
+              clients={[...new Set(allProperties.map(p => ({id: p.clientId, name: p.clientName})))]}
+              onMessageProperty={handleMessageProperty}
+            />
+          )}
+
+          {/* Financial Tab */}
+          {activeTab === 'financial' && (
+            <FinancialOverview 
+              properties={allProperties}
+              dashboardStats={dashboardStats}
+              estateFirmData={estateFirmData}
+              onMessageProperty={handleMessageProperty}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Subscription Modal */}
+      <Modal show={showSubscriptionModal} onHide={() => setShowSubscriptionModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Subscribe to Premium</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="text-center mb-4">
+            <Crown size={48} className="text-warning mb-3" />
+            <h4>Unlock Unlimited Posting</h4>
+            <p className="text-muted">
+              Subscribe to post unlimited properties on RentEasy with 0% commission
             </p>
           </div>
           
-          <div className="header-actions">
-            <div className="action-buttons">
-              <button 
-                className="btn btn-primary" 
-                onClick={() => handleAddProperty('rent-easy')}
-              >
-                <PlusCircle size={18} />
-                Post on Rent Easy
-              </button>
-              <button 
-                className="btn btn-outline" 
-                onClick={() => handleAddProperty('/dashboard/estate-firm/add-external-property')}
-              >
-                <Building size={18} />
-                Add External Property
-              </button>
-              <BulkPropertyUpload onUpload={handleBulkUpload} />
-            </div>
+          <Card className="border-primary">
+            <Card.Body>
+              <h5 className="text-center">Monthly Subscription</h5>
+              <h2 className="text-center text-primary">₦10,000</h2>
+              <ul className="list-unstyled mt-3">
+                <li className="mb-2"><Check size={16} className="text-success me-2" /> Unlimited property posts</li>
+                <li className="mb-2"><Check size={16} className="text-success me-2" /> 0% commission on all listings</li>
+                <li className="mb-2"><Check size={16} className="text-success me-2" /> Verified Estate Firm badge</li>
+                <li className="mb-2"><Check size={16} className="text-success me-2" /> Priority in marketplace</li>
+                <li><Check size={16} className="text-success me-2" /> Advanced analytics</li>
+              </ul>
+            </Card.Body>
+          </Card>
+          
+          <div className="alert alert-info mt-3">
+            <small>
+              <strong>Note:</strong> You have {estateFirmData.freePostsRemaining} free posts remaining. 
+              Subscription will reset your post count immediately.
+            </small>
           </div>
-        </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowSubscriptionModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleSubscribe}>
+            Subscribe Now
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
-        {/* Dashboard Tabs */}
-        <div className="dashboard-tabs">
-          <button 
-            className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            <BarChart size={18} />
-            Overview
-          </button>
-          <button 
-            className={`tab ${activeTab === 'portfolio' ? 'active' : ''}`}
-            onClick={() => setActiveTab('portfolio')}
-          >
-            <Briefcase size={18} />
-            Portfolio
-          </button>
-          <button 
-            className={`tab ${activeTab === 'clients' ? 'active' : ''}`}
-            onClick={() => setActiveTab('clients')}
-          >
-            <Users size={18} />
-            Clients
-          </button>
-          <button 
-            className={`tab ${activeTab === 'financial' ? 'active' : ''}`}
-            onClick={() => setActiveTab('financial')}
-          >
-            <Wallet size={18} />
-            Financial
-          </button>
-          <button 
-            className={`tab ${activeTab === 'services' ? 'active' : ''}`}
-            onClick={() => navigate('/dashboard/estate-firm/services')}
-          >
-            <Briefcase size={18} />
-            Services
-          </button>
-          <button 
-            className={`tab ${activeTab === 'documents' ? 'active' : ''}`}
-            onClick={() => navigate('/dashboard/estate-firm/documents')}
-          >
-            <FileText size={18} />
-            Documents
-          </button>
-        </div>
-
-        {/* Critical Alerts */}
-        {criticalAlerts.length > 0 && activeTab === 'overview' && (
-          <div className="alerts-section">
-            <div className="section-header">
-              <AlertCircle size={20} color="#ef4444" />
-              <h3>Critical Alerts</h3>
-            </div>
-            <div className="alerts-grid">
-              {criticalAlerts.map(alert => (
-                <div key={alert.id} className={`alert-card ${alert.priority}`}>
-                  <div className="alert-content">
-                    <div className="alert-header">
-                      <span className="alert-type">{alert.type.replace('_', ' ')}</span>
-                      {getPropertySourceBadge(allProperties.find(p => p.id === alert.propertyId))}
-                    </div>
-                    <p>{alert.message}</p>
-                    <small>Due: {alert.date}</small>
-                  </div>
-                  <div className="alert-actions">
-                    <button className="btn btn-sm" onClick={() => alert.action === 'renew_lease' ? handleRenewLease(allProperties.find(p => p.id === alert.propertyId)) : null}>
-                      {alert.action.replace('_', ' ')}
-                    </button>
-                    <button 
-                      className="btn btn-sm btn-outline"
-                      onClick={() => handleViewDetails(allProperties.find(p => p.id === alert.propertyId))}
-                    >
-                      View Property
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* Verification Modal */}
+      <Modal show={showVerificationModal} onHide={() => setShowVerificationModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Get Verified</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="text-center mb-4">
+            <ShieldCheck size={48} className="text-success mb-3" />
+            <h4>Verify Your Estate Firm</h4>
+            <p className="text-muted">
+              Complete KYC verification to get the "Verified Estate Firm" badge
+            </p>
           </div>
-        )}
-
-        {/* Dashboard Stats - Overview Tab */}
-        {activeTab === 'overview' && (
-          <>
-            {/* Portfolio Summary Stats */}
-            <div className="stats-grid">
-              <DashboardCard
-                title="Total Portfolio"
-                value={dashboardStats.totalProperties}
-                icon={<Building size={24} />}
-                subtitle={`${dashboardStats.rentEasyListings} Rent Easy | ${dashboardStats.externalProperties} External`}
-                color="blue"
-                onClick={() => navigate('/dashboard/estate-firm/properties')}
-              />
-              
-              <DashboardCard
-                title="Occupancy Rate"
-                value={`${((dashboardStats.occupiedProperties / dashboardStats.totalProperties) * 100).toFixed(1)}%`}
-                icon={<Home size={24} />}
-                subtitle={`${dashboardStats.occupiedProperties} occupied | ${dashboardStats.vacantProperties} vacant`}
-                color="green"
-              />
-              
-              <DashboardCard
-                title="Monthly Revenue"
-                value={`₦${dashboardStats.monthlyRevenue.toLocaleString()}`}
-                icon={<DollarSign size={24} />}
-                subtitle={`From ${dashboardStats.occupiedProperties} properties`}
-                color="purple"
-                onClick={() => navigate('/dashboard/estate-firm/analytics')}
-              />
-              
-              <DashboardCard
-                title="Active Clients"
-                value={dashboardStats.totalClients}
-                icon={<Users size={24} />}
-                subtitle={`${dashboardStats.managedProperties} managed properties`}
-                color="orange"
-                onClick={() => navigate('/dashboard/estate-firm/clients')}
-              />
-            </div>
-
-            {/* Property Source Breakdown */}
-            <div className="breakdown-section">
-              <div className="content-card">
-                <div className="card-header">
-                  <h3>Property Portfolio Breakdown</h3>
-                  <div className="filter-buttons">
-                    <button 
-                      className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-                      onClick={() => setFilter('all')}
-                    >
-                      All Properties
-                    </button>
-                    <button 
-                      className={`filter-btn ${filter === 'rent-easy' ? 'active' : ''}`}
-                      onClick={() => setFilter('rent-easy')}
-                    >
-                      Rent Easy Listings
-                    </button>
-                    <button 
-                      className={`filter-btn ${filter === 'external' ? 'active' : ''}`}
-                      onClick={() => setFilter('external')}
-                    >
-                      External Properties
-                    </button>
-                    <button 
-                      className={`filter-btn ${filter === 'managed' ? 'active' : ''}`}
-                      onClick={() => setFilter('managed')}
-                    >
-                      Managed Only
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="properties-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Property Name</th>
-                        <th>Type</th>
-                        <th>Client</th>
-                        <th>Rent Amount</th>
-                        <th>Status</th>
-                        <th>Next Payment</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredProperties.map(property => (
-                        <tr key={property.id}>
-                          <td>
-                            <div className="property-info">
-                              <strong>{property.name}</strong>
-                              <div className="property-meta">
-                                {getPropertySourceBadge(property)}
-                                <span className="property-address">{property.address}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`property-type ${property.category}`}>
-                              {property.category}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="client-info">
-                              <strong>{property.clientName}</strong>
-                              <small>{property.commissionRate}% commission</small>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="rent-amount">
-                              <strong>₦{property.rentAmount.toLocaleString()}</strong>
-                              <small>/{property.rentFrequency}</small>
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`status-badge ${property.status}`}>
-                              {property.status}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="payment-due">
-                              <Calendar size={14} />
-                              <span>{property.rentDueDate}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="action-buttons">
-                              <button 
-                                className="btn-icon" 
-                                title="View Details"
-                                onClick={() => handleViewDetails(property)}
-                              >
-                                <ExternalLink size={16} />
-                              </button>
-                              <button 
-                                className="btn-icon" 
-                                title="Collect Rent"
-                                onClick={() => handleCollectRent(property)}
-                              >
-                                <DollarSign size={16} />
-                              </button>
-                              <button 
-                                className="btn-icon" 
-                                title="Send Reminder"
-                                onClick={() => handleSendReminder(property)}
-                              >
-                                <Clock size={16} />
-                              </button>
-                              {property.tenant?.phone && property.tenant.phone !== 'N/A' && (
-                                <button 
-                                  className="btn-icon" 
-                                  title="Call Tenant"
-                                  onClick={() => handleCallTenant(property.tenant.phone)}
-                                >
-                                  <Phone size={16} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            {/* Main Content Grid */}
-            <div className="main-content-grid">
-              {/* Rent Expiry Countdown */}
-              <div className="content-card">
-                <div className="card-header">
-                  <Calendar size={20} />
-                  <h3>Upcoming Rent Expirations</h3>
-                </div>
-                <div className="countdown-list">
-                  {allProperties
-                    .filter(p => p.status === 'occupied')
-                    .slice(0, 5)
-                    .map(property => (
-                      <RentCountdownTimer
-                        key={property.id}
-                        property={property}
-                        showSource={true}
-                        onRenew={() => handleRenewLease(property)}
-                        onView={() => handleViewDetails(property)}
-                      />
-                    ))}
-                </div>
-              </div>
-
-              {/* Property Health Scores */}
-              <div className="content-card">
-                <div className="card-header">
-                  <TrendingUp size={20} />
-                  <h3>Property Health Scores</h3>
-                </div>
-                <div className="health-scores">
-                  {allProperties.slice(0, 4).map(property => (
-                    <PropertyHealthScore
-                      key={property.id}
-                      property={property}
-                      score={property.healthScore}
-                      showSource={true}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Recent Activity */}
-              <div className="content-card">
-                <div className="card-header">
-                  <Users size={20} />
-                  <h3>Recent Activity</h3>
-                </div>
-                <div className="activity-list">
-                  {recentActivities.map(activity => (
-                    <div key={activity.id} className="activity-item">
-                      <div className="activity-dot"></div>
-                      <div className="activity-content">
-                        <p>{activity.action}</p>
-                        {activity.property && <small>{activity.property}</small>}
-                        {activity.client && <small>Client: {activity.client}</small>}
-                        {activity.amount && <small>{activity.amount}</small>}
-                      </div>
-                      <span className="activity-time">{activity.time}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="content-card">
-                <div className="card-header">
-                  <h3>Quick Actions</h3>
-                </div>
-                <div className="quick-actions-grid">
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction('collect-rent')}
-                  >
-                    <DollarSign size={20} />
-                    <span>Collect Rent</span>
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction('generate-invoice')}
-                  >
-                    <FileText size={20} />
-                    <span>Generate Invoice</span>
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction('add-client')}
-                  >
-                    <Users size={20} />
-                    <span>Add Client</span>
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction('report-maintenance')}
-                  >
-                    <AlertCircle size={20} />
-                    <span>Report Maintenance</span>
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction('verify-property')}
-                  >
-                    <Shield size={20} />
-                    <span>Verify Property</span>
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction('view-analytics')}
-                  >
-                    <BarChart size={20} />
-                    <span>View Analytics</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Portfolio Performance */}
-            <div className="performance-summary">
-              <h3>Portfolio Performance</h3>
-              <div className="performance-stats">
-                <div className="performance-stat">
-                  <span className="stat-label">Portfolio Value</span>
-                  <span className="stat-value">
-                    ₦{(dashboardStats.portfolioValue / 1000000).toFixed(1)}M
-                  </span>
-                </div>
-                <div className="performance-stat">
-                  <span className="stat-label">Average Rent Yield</span>
-                  <span className="stat-value">8.2%</span>
-                </div>
-                <div className="performance-stat">
-                  <span className="stat-label">Client Satisfaction</span>
-                  <span className="stat-value">4.7/5</span>
-                </div>
-                <div className="performance-stat">
-                  <span className="stat-label">On-time Rent Collection</span>
-                  <span className="stat-value">94%</span>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Portfolio Management Tab */}
-        {activeTab === 'portfolio' && (
-          <PortfolioManager 
-            properties={allProperties}
-            onAddProperty={handleAddProperty}
-            onBulkUpload={handleBulkUpload}
-            onEditProperty={handleEditProperty}
-          />
-        )}
-
-        {/* Clients Management Tab */}
-        {activeTab === 'clients' && (
-          <ClientManager 
-            properties={allProperties}
-            clients={[...new Set(allProperties.map(p => ({id: p.clientId, name: p.clientName})))]}
-          />
-        )}
-
-        {/* Financial Tab */}
-        {activeTab === 'financial' && (
-          <FinancialOverview 
-            properties={allProperties}
-            dashboardStats={dashboardStats}
-          />
-        )}
-
-        {/* Add External Property Modal */}
-        {showAddExternalModal && (
-          <div className="modal-overlay">
-            <div className="modal">
-              <div className="modal-header">
-                <h3>Add External Property</h3>
-                <button 
-                  className="modal-close"
-                  onClick={() => setShowAddExternalModal(false)}
-                >
-                  ×
-                </button>
-              </div>
-              
-              <form onSubmit={handleSubmitExternalProperty}>
-                <div className="modal-body">
-                  <div className="form-group">
-                    <label>Property Name *</label>
-                    <input
-                      type="text"
-                      value={propertyFormData.name}
-                      onChange={(e) => setPropertyFormData({...propertyFormData, name: e.target.value})}
-                      placeholder="e.g., 3-Bedroom Duplex, Lekki"
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  
-                  <div className="form-group">
-                    <label>Address *</label>
-                    <input
-                      type="text"
-                      value={propertyFormData.address}
-                      onChange={(e) => setPropertyFormData({...propertyFormData, address: e.target.value})}
-                      placeholder="Full address"
-                      className="form-input"
-                      required
-                    />
-                  </div>
-                  
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Property Type</label>
-                      <select
-                        value={propertyFormData.propertyType}
-                        onChange={(e) => setPropertyFormData({...propertyFormData, propertyType: e.target.value})}
-                        className="form-select"
-                      >
-                        <option value="residential">Residential</option>
-                        <option value="commercial">Commercial</option>
-                        <option value="industrial">Industrial</option>
-                        <option value="land">Land</option>
-                      </select>
-                    </div>
-                    
-                    <div className="form-group">
-                      <label>Client Name</label>
-                      <input
-                        type="text"
-                        value={propertyFormData.clientName}
-                        onChange={(e) => setPropertyFormData({...propertyFormData, clientName: e.target.value})}
-                        placeholder="Property owner/client"
-                        className="form-input"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Commission Rate (%)</label>
-                      <input
-                        type="number"
-                        value={propertyFormData.commissionRate}
-                        onChange={(e) => setPropertyFormData({...propertyFormData, commissionRate: e.target.value})}
-                        min="1"
-                        max="100"
-                        className="form-input"
-                      />
-                    </div>
-                    
-                    <div className="form-group">
-                      <label>Rent Amount (₦)</label>
-                      <input
-                        type="number"
-                        value={propertyFormData.rentAmount}
-                        onChange={(e) => setPropertyFormData({...propertyFormData, rentAmount: e.target.value})}
-                        placeholder="e.g., 2500000"
-                        className="form-input"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="form-group">
-                    <label>Management Type</label>
-                    <select
-                      value={propertyFormData.managementType}
-                      onChange={(e) => setPropertyFormData({...propertyFormData, managementType: e.target.value})}
-                      className="form-select"
-                    >
-                      <option value="full">Full Management</option>
-                      <option value="rent-only">Rent Collection Only</option>
-                      <option value="maintenance-only">Maintenance Only</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-outline" onClick={() => setShowAddExternalModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    Add Property
-                  </button>
-                </div>
-              </form>
-            </div>
+          
+          <div className="alert alert-warning">
+            <h6>Documents Required:</h6>
+            <ul className="mb-0">
+              <li>Company registration certificate</li>
+              <li>Valid ID of director(s)</li>
+              <li>Utility bill (not older than 3 months)</li>
+              <li>Tax clearance certificate</li>
+            </ul>
           </div>
-        )}
-      </div>
+          
+          <p className="text-muted small">
+            Verification usually takes 24-48 hours. Once verified, you'll get the verified badge 
+            on all your listings and in the marketplace.
+          </p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowVerificationModal(false)}>
+            Later
+          </Button>
+          <Button variant="success" onClick={handleApplyVerification}>
+            Start Verification
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

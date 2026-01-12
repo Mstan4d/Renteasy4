@@ -12,6 +12,12 @@ import { nigerianStates, getLGAsForState } from '../../../shared/data/nigerianLo
 import { Search, Filter, Bell, Shield, UserCheck, Building, Home, AlertCircle, Clock, CheckCircle } from 'lucide-react';
 import './ListingsPage.css';
 
+// Mock geolib function (you should install actual geolib package)
+const getDistance = (coord1, coord2) => {
+  // Mock distance calculation - replace with actual geolib implementation
+  return Math.random() * 2000; // Returns distance between 0-2000 meters
+};
+
 const ListingsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -50,9 +56,13 @@ const ListingsPage = () => {
     unverifiedUsers: 0
   });
 
+  // Managers state
+  const [managers, setManagers] = useState([]);
+
   // Initialize data
   useEffect(() => {
     loadListings();
+    loadManagers();
     
     // Check for listing from home page
     const homeSelectedListing = JSON.parse(localStorage.getItem('currentListing') || 'null');
@@ -101,6 +111,12 @@ const ListingsPage = () => {
     }
   };
 
+  // Load managers from localStorage
+  const loadManagers = () => {
+    const storedManagers = JSON.parse(localStorage.getItem('managers') || '[]');
+    setManagers(storedManagers);
+  };
+
   const calculateStats = (listingsData) => {
     const total = listingsData.length;
     const verified = listingsData.filter(l => l.verified && l.status === 'approved').length;
@@ -142,108 +158,142 @@ const ListingsPage = () => {
     return 'unknown';
   };
 
+  // BUSINESS RULE: Check if manager can verify (must have KYC)
+  const canManagerVerify = (managerId) => {
+    if (!managerId) return false;
+    const manager = managers.find(m => m.userId === managerId || m.id === managerId);
+    return manager?.kycVerified && manager?.status === 'active';
+  };
+
+  // BUSINESS RULE: Check if manager can accept to manage (must have KYC)
+  const canManagerAccept = (managerId) => {
+    if (!managerId) return false;
+    const manager = managers.find(m => m.userId === managerId || m.id === managerId);
+    return manager?.kycVerified && manager?.status === 'active';
+  };
+
+  // BUSINESS RULE: Get nearby managers for a listing (within 1km)
+  const getNearbyManagers = (listing) => {
+    if (!listing?.coordinates) return [];
+    
+    return managers.filter(manager => {
+      // Only consider KYC-verified active managers
+      if (!(manager?.kycVerified && manager?.status === 'active')) return false;
+      
+      // Check if manager has location
+      if (!manager.location?.coordinates) return false;
+      
+      // Calculate distance (in meters)
+      const distance = getDistance(
+        listing.coordinates,
+        manager.location.coordinates
+      );
+      
+      // Return managers within 1km radius (1000 meters)
+      return distance <= 1000;
+    });
+  };
+
   // Apply filters
-const applyFilters = useCallback(() => {
-  let filtered = [...listings];
+  const applyFilters = useCallback(() => {
+    let filtered = [...listings];
 
-  // REMOVED the user role filter that hides unverified listings
-  
-  // Apply state filter
-  if (filters.state) {
-    filtered = filtered.filter(listing => listing.state === filters.state);
-  }
+    // Apply state filter
+    if (filters.state) {
+      filtered = filtered.filter(listing => listing.state === filters.state);
+    }
 
-  // Apply LGA filter
-  if (filters.lga) {
-    filtered = filtered.filter(listing => listing.lga === filters.lga);
-  }
+    // Apply LGA filter
+    if (filters.lga) {
+      filtered = filtered.filter(listing => listing.lga === filters.lga);
+    }
 
-  // Apply property type filter
-  if (filters.propertyType) {
-    filtered = filtered.filter(listing => listing.propertyType === filters.propertyType);
-  }
+    // Apply property type filter
+    if (filters.propertyType) {
+      filtered = filtered.filter(listing => listing.propertyType === filters.propertyType);
+    }
 
-  // Apply user role filter (for filtering by poster's role, not viewing permissions)
-  if (filters.userRole && filters.userRole !== 'all') {
-    filtered = filtered.filter(listing => listing.userRole === filters.userRole);
-  }
+    // Apply user role filter
+    if (filters.userRole && filters.userRole !== 'all') {
+      filtered = filtered.filter(listing => listing.userRole === filters.userRole);
+    }
 
-  // Apply search query filter
-  if (filters.searchQuery) {
-    const query = filters.searchQuery.toLowerCase();
-    filtered = filtered.filter(listing =>
-      (listing.title?.toLowerCase().includes(query)) ||
-      (listing.description?.toLowerCase().includes(query)) ||
-      (listing.address?.toLowerCase().includes(query)) ||
-      (listing.posterName?.toLowerCase().includes(query)) ||
-      (listing.state?.toLowerCase().includes(query)) ||
-      (listing.lga?.toLowerCase().includes(query))
-    );
-  }
+    // Apply search query filter
+    if (filters.searchQuery) {
+      const query = filters.searchQuery.toLowerCase();
+      filtered = filtered.filter(listing =>
+        (listing.title?.toLowerCase().includes(query)) ||
+        (listing.description?.toLowerCase().includes(query)) ||
+        (listing.address?.toLowerCase().includes(query)) ||
+        (listing.posterName?.toLowerCase().includes(query)) ||
+        (listing.state?.toLowerCase().includes(query)) ||
+        (listing.lga?.toLowerCase().includes(query))
+      );
+    }
 
-  // Apply price filters
-  if (filters.minPrice) {
-    filtered = filtered.filter(listing => 
-      parseFloat(listing.price) >= parseFloat(filters.minPrice)
-    );
-  }
-  if (filters.maxPrice) {
-    filtered = filtered.filter(listing => 
-      parseFloat(listing.price) <= parseFloat(filters.maxPrice)
-    );
-  }
+    // Apply price filters
+    if (filters.minPrice) {
+      filtered = filtered.filter(listing => 
+        parseFloat(listing.price) >= parseFloat(filters.minPrice)
+      );
+    }
+    if (filters.maxPrice) {
+      filtered = filtered.filter(listing => 
+        parseFloat(listing.price) <= parseFloat(filters.maxPrice)
+      );
+    }
 
-  // Apply verification status filter (if user specifically wants to filter by status)
-  if (filters.status === 'verified') {
-    filtered = filtered.filter(listing => listing.verified && listing.status === 'approved');
-  } else if (filters.status === 'pending') {
-    filtered = filtered.filter(listing => listing.status === 'pending' || (!listing.verified && !listing.rejected));
-  } else if (filters.status === 'rejected') {
-    filtered = filtered.filter(listing => listing.rejected);
-  }
+    // Apply verification status filter
+    if (filters.status === 'verified') {
+      filtered = filtered.filter(listing => listing.verified && listing.status === 'approved');
+    } else if (filters.status === 'pending') {
+      filtered = filtered.filter(listing => listing.status === 'pending' || (!listing.verified && !listing.rejected));
+    } else if (filters.status === 'rejected') {
+      filtered = filtered.filter(listing => listing.rejected);
+    }
 
-  // Apply verified only filter (if user checks "verified only" checkbox)
-  if (filters.verifiedOnly) {
-    filtered = filtered.filter(listing => listing.verified && listing.status === 'approved');
-  }
+    // Apply verified only filter
+    if (filters.verifiedOnly) {
+      filtered = filtered.filter(listing => listing.verified && listing.status === 'approved');
+    }
 
-  // Apply sorting
-  switch (filters.sortBy) {
-    case 'price_low':
-      filtered.sort((a, b) => (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0));
-      break;
-    case 'price_high':
-      filtered.sort((a, b) => (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0));
-      break;
-    case 'verified':
-      filtered.sort((a, b) => {
-        const aVerified = (a.verified && a.status === 'approved') ? 1 : 0;
-        const bVerified = (b.verified && b.status === 'approved') ? 1 : 0;
-        return bVerified - aVerified;
-      });
-      break;
-    case 'pending':
-      filtered.sort((a, b) => {
-        const aPending = (a.status === 'pending' || (!a.verified && !a.rejected)) ? 1 : 0;
-        const bPending = (b.status === 'pending' || (!b.verified && !b.rejected)) ? 1 : 0;
-        return bPending - aPending;
-      });
-      break;
-    case 'user_verified':
-      filtered.sort((a, b) => {
-        const aUserVerified = a.userVerified ? 1 : 0;
-        const bUserVerified = b.userVerified ? 1 : 0;
-        return bUserVerified - aUserVerified;
-      });
-      break;
-    case 'newest':
-    default:
-      filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      break;
-  }
+    // Apply sorting
+    switch (filters.sortBy) {
+      case 'price_low':
+        filtered.sort((a, b) => (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0));
+        break;
+      case 'price_high':
+        filtered.sort((a, b) => (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0));
+        break;
+      case 'verified':
+        filtered.sort((a, b) => {
+          const aVerified = (a.verified && a.status === 'approved') ? 1 : 0;
+          const bVerified = (b.verified && b.status === 'approved') ? 1 : 0;
+          return bVerified - aVerified;
+        });
+        break;
+      case 'pending':
+        filtered.sort((a, b) => {
+          const aPending = (a.status === 'pending' || (!a.verified && !a.rejected)) ? 1 : 0;
+          const bPending = (b.status === 'pending' || (!b.verified && !b.rejected)) ? 1 : 0;
+          return bPending - aPending;
+        });
+        break;
+      case 'user_verified':
+        filtered.sort((a, b) => {
+          const aUserVerified = a.userVerified ? 1 : 0;
+          const bUserVerified = b.userVerified ? 1 : 0;
+          return bUserVerified - aUserVerified;
+        });
+        break;
+      case 'newest':
+      default:
+        filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        break;
+    }
 
-  setFilteredListings(filtered);
-}, [filters, listings]);
+    setFilteredListings(filtered);
+  }, [filters, listings]);
 
   // Handle filter changes
   const handleFilterChange = (name, value) => {
@@ -287,6 +337,14 @@ const applyFilters = useCallback(() => {
     const newListings = currentListings.filter(l => !previousIds.includes(l.id));
     
     if (newListings.length > 0) {
+      // BUSINESS RULE: Send proximity notifications to managers for new listings
+      newListings.forEach(listing => {
+        // Only send notifications for tenant and landlord listings (not estate firms)
+        if (listing.userRole !== 'estate-firm') {
+          sendProximityNotification(listing);
+        }
+      });
+      
       // Play notification sound (only for admin/manager)
       if (user?.role === 'admin' || user?.role === 'manager') {
         const audio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg');
@@ -295,6 +353,88 @@ const applyFilters = useCallback(() => {
       
       // Reload listings
       loadListings();
+    }
+  };
+
+  // BUSINESS RULE: Send proximity notification to nearby managers
+  const sendProximityNotification = (listing) => {
+    const nearbyManagers = getNearbyManagers(listing);
+    
+    if (nearbyManagers.length === 0) return;
+    
+    const notifications = JSON.parse(localStorage.getItem('managerNotifications') || '[]');
+    
+    nearbyManagers.forEach(manager => {
+      const newNotification = {
+        id: `notif_${Date.now()}_${Math.random()}`,
+        managerId: manager.userId || manager.id,
+        type: 'new_listing',
+        message: `New ${listing.userRole} listing nearby: "${listing.title}"`,
+        listingId: listing.id,
+        listingTitle: listing.title,
+        listingType: listing.userRole,
+        location: listing.coordinates,
+        price: listing.price,
+        timestamp: new Date().toISOString(),
+        read: false,
+        actionUrl: `/listings/${listing.id}`,
+        proximity: true
+      };
+      
+      notifications.push(newNotification);
+    });
+    
+    localStorage.setItem('managerNotifications', JSON.stringify(notifications));
+  };
+
+  // BUSINESS RULE: Notify other managers that listing is taken
+  const notifyOtherManagers = (listing, assignedManagerId) => {
+    const nearbyManagers = getNearbyManagers(listing);
+    const otherManagers = nearbyManagers.filter(m => 
+      (m.userId !== assignedManagerId) && (m.id !== assignedManagerId)
+    );
+    
+    const notifications = JSON.parse(localStorage.getItem('managerNotifications') || '[]');
+    
+    otherManagers.forEach(manager => {
+      notifications.push({
+        id: Date.now() + Math.random(),
+        managerId: manager.userId || manager.id,
+        type: 'listing_taken',
+        message: `Listing "${listing.title}" has been assigned to another manager`,
+        listingId: listing.id,
+        timestamp: new Date().toISOString(),
+        read: false
+      });
+    });
+    
+    localStorage.setItem('managerNotifications', JSON.stringify(notifications));
+  };
+
+  // BUSINESS RULE: Setup manager chat for tenant listings
+  const setupManagerChat = (listingId, managerId) => {
+    const listing = listings.find(l => l.id === listingId);
+    const chats = JSON.parse(localStorage.getItem('chats') || '[]');
+    
+    // Check if chat already exists
+    const existingChat = chats.find(c => c.listingId === listingId);
+    
+    if (!existingChat) {
+      const newChat = {
+        id: `chat_${Date.now()}`,
+        listingId,
+        participants: {
+          tenant: listing.posterId,
+          manager: managerId,
+          admin: null // Admin can join if needed
+        },
+        messages: [],
+        type: 'tenant_manager_chat',
+        createdAt: new Date().toISOString(),
+        status: 'active'
+      };
+      
+      localStorage.setItem('chats', JSON.stringify([...chats, newChat]));
     }
   };
 
@@ -308,26 +448,118 @@ const applyFilters = useCallback(() => {
     setSelectedListing(null);
   };
 
-  // Handle contact button
+  // BUSINESS RULE: Handle contact button with proper routing
   const handleContact = (listing) => {
-    const contactData = {
-      listingId: listing.id,
-      title: listing.title,
-      posterName: listing.posterName || 'Unknown',
-      price: listing.price,
-      state: listing.state,
-      lga: listing.lga,
-      type: listing.userRole || 'landlord',
-      userVerified: listing.userVerified,
-      posterId: listing.posterId
-    };
+    if (!user) {
+      navigate('/login', { state: { from: `/listings/${listing.id}` } });
+      return;
+    }
+
+    // BUSINESS RULE 1: If tenant posts, incoming tenants must go through manager
+    if (listing.userRole === 'tenant') {
+      // Check if user is the outgoing tenant themselves
+      if (user.id === listing.posterId) {
+        alert('You cannot contact yourself for your own listing');
+        return;
+      }
+      
+      // BUSINESS RULE: Incoming tenants go through manager
+      // Check if manager is assigned
+      if (listing.managedById) {
+        const contactData = {
+          listingId: listing.id,
+          title: listing.title,
+          posterName: listing.posterName,
+          posterId: listing.posterId,
+          managerId: listing.managedById,
+          managerName: listing.managedBy,
+          type: 'tenant_listing',
+          userVerified: listing.userVerified,
+          price: listing.price,
+          state: listing.state,
+          lga: listing.lga
+        };
+        
+        localStorage.setItem('activeContact', JSON.stringify(contactData));
+        navigate(`/dashboard/messages?listing=${encodeURIComponent(listing.id)}&type=tenant_listing`);
+      } else {
+        alert('This listing is being assigned to a manager. Please check back soon.');
+      }
+      return;
+    }
     
-    localStorage.setItem('activeContact', JSON.stringify(contactData));
-    navigate(`/messages?listing=${encodeURIComponent(listing.id)}`);
+    // BUSINESS RULE 2: Landlord listings - direct contact with manager monitoring
+    if (listing.userRole === 'landlord') {
+      // Check if user is the landlord themselves
+      if (user.id === listing.posterId) {
+        alert('You cannot contact yourself for your own listing');
+        return;
+      }
+      
+      const contactData = {
+        listingId: listing.id,
+        title: listing.title,
+        posterName: listing.posterName,
+        posterId: listing.posterId,
+        type: 'landlord_listing',
+        userVerified: listing.userVerified,
+        price: listing.price,
+        state: listing.state,
+        lga: listing.lga,
+        // Include manager info if assigned
+        managerId: listing.managedById,
+        managerName: listing.managedBy
+      };
+      
+      localStorage.setItem('activeContact', JSON.stringify(contactData));
+      navigate(`/dashboard/messages?listing=${encodeURIComponent(listing.id)}&type=landlord_listing`);
+      return;
+    }
+    
+    // BUSINESS RULE 3: Estate Firm listings - direct contact, NO manager involvement
+    if (listing.userRole === 'estate-firm') {
+      // Check if user is from the same estate firm
+      if (user.id === listing.posterId) {
+        alert('You cannot contact your own estate firm listing');
+        return;
+      }
+      
+      const contactData = {
+        listingId: listing.id,
+        title: listing.title,
+        posterName: listing.posterName,
+        posterId: listing.posterId,
+        type: 'estate_firm_listing',
+        userVerified: listing.userVerified,
+        price: listing.price,
+        state: listing.state,
+        lga: listing.lga,
+        commissionRate: 0 // Estate firm listings have 0% commission
+      };
+      
+      localStorage.setItem('activeContact', JSON.stringify(contactData));
+      navigate(`/dashboard/messages?listing=${encodeURIComponent(listing.id)}&type=estate_firm_listing`);
+      return;
+    }
   };
 
-  // Handle verify button (admin/manager)
+  // BUSINESS RULE: Handle verify button with KYC check
   const handleVerify = (listingId) => {
+    // BUSINESS RULE: Managers must have KYC to verify
+    if (user?.role === 'manager') {
+      if (!canManagerVerify(user.id)) {
+        alert('You must complete KYC verification before you can verify listings.');
+        return;
+      }
+      
+      // BUSINESS RULE: Managers can only verify listings they manage
+      const listingToVerify = listings.find(l => l.id === listingId);
+      if (listingToVerify.managedById !== user.id) {
+        alert('You can only verify listings that you are managing.');
+        return;
+      }
+    }
+    
     const listingToVerify = listings.find(l => l.id === listingId);
     const updatedListings = listings.map(listing => 
       listing.id === listingId ? { 
@@ -336,7 +568,13 @@ const applyFilters = useCallback(() => {
         status: 'approved',
         approvedAt: new Date().toISOString(),
         approvedBy: user?.name,
-        approvedById: user?.id
+        approvedById: user?.id,
+        // BUSINESS RULE: If manager verifies, they become permanently assigned
+        ...(user?.role === 'manager' && {
+          managedBy: user?.name,
+          managedById: user?.id,
+          isManaged: true
+        })
       } : listing
     );
     
@@ -422,49 +660,90 @@ const applyFilters = useCallback(() => {
     alert('Listing rejected!');
   };
 
-  // Handle accept to manage (manager)
+  // BUSINESS RULE: Handle accept to manage with KYC and proximity checks
   const handleAcceptToManage = (listingId) => {
-    const listingToManage = listings.find(l => l.id === listingId);
-    
-    // Get current managed listings
-    const managedListings = JSON.parse(localStorage.getItem('managedListings') || '[]');
-    const alreadyManaged = managedListings.find(l => l.listingId === listingId);
-    
-    if (alreadyManaged) {
-      alert('You are already managing this listing!');
-      return;
+    // BUSINESS RULE: Managers must have KYC
+    if (user?.role === 'manager') {
+      if (!canManagerAccept(user.id)) {
+        alert('You must complete KYC verification before you can manage listings.');
+        return;
+      }
+      
+      const listingToManage = listings.find(l => l.id === listingId);
+      
+      // BUSINESS RULE: Check proximity (1km radius)
+      const nearbyManagers = getNearbyManagers(listingToManage);
+      const isNearby = nearbyManagers.some(m => 
+        (m.userId === user.id) || (m.id === user.id)
+      );
+      
+      if (!isNearby) {
+        alert('You must be within 1km radius of the property to manage it.');
+        return;
+      }
+      
+      // BUSINESS RULE: Only for tenant and landlord listings, NOT estate firm
+      if (listingToManage.userRole === 'estate-firm') {
+        alert('Estate firm listings do not require manager management.');
+        return;
+      }
+      
+      // Get current managed listings
+      const managedListings = JSON.parse(localStorage.getItem('managedListings') || '[]');
+      const alreadyManaged = managedListings.find(l => l.listingId === listingId);
+      
+      if (alreadyManaged) {
+        alert('This listing is already being managed!');
+        return;
+      }
+      
+      // BUSINESS RULE: Send notification to other nearby managers that this listing is taken
+      notifyOtherManagers(listingToManage, user.id);
+      
+      // Add to managed listings
+      const newManagedListing = {
+        listingId,
+        title: listingToManage.title,
+        state: listingToManage.state,
+        lga: listingToManage.lga,
+        price: listingToManage.price,
+        acceptedAt: new Date().toISOString(),
+        managerName: user?.name,
+        managerId: user?.id,
+        status: 'active',
+        posterRole: listingToManage.userRole,
+        commissionRate: 7.5, // BUSINESS RULE: Always 7.5% commission
+        managerCommission: 2.5, // BUSINESS RULE: Manager gets 2.5%
+        rentEasyCommission: 4 // BUSINESS RULE: RentEasy gets 4%
+      };
+      
+      localStorage.setItem('managedListings', JSON.stringify([...managedListings, newManagedListing]));
+      
+      // Update listing
+      const updatedListings = listings.map(listing => 
+        listing.id === listingId ? { 
+          ...listing, 
+          isManaged: true,
+          managedBy: user?.name,
+          managedById: user?.id,
+          managedAt: new Date().toISOString(),
+          managerAssigned: true,
+          commissionRate: 7.5,
+          managerCommission: 2.5,
+          rentEasyCommission: 4
+        } : listing
+      );
+      
+      localStorage.setItem('listings', JSON.stringify(updatedListings));
+      setListings(updatedListings);
+      
+      // BUSINESS RULE: If this is a tenant listing, add manager to chat
+      if (listingToManage.userRole === 'tenant') {
+        setupManagerChat(listingId, user.id);
+      }
+      
+      alert('You are now managing this listing!');
     }
-    
-    // Add to managed listings
-    const newManagedListing = {
-      listingId,
-      title: listingToManage.title,
-      state: listingToManage.state,
-      lga: listingToManage.lga,
-      price: listingToManage.price,
-      acceptedAt: new Date().toISOString(),
-      managerName: user?.name,
-      managerId: user?.id,
-      status: 'active'
-    };
-    
-    localStorage.setItem('managedListings', JSON.stringify([...managedListings, newManagedListing]));
-    
-    // Update listing to show it's being managed
-    const updatedListings = listings.map(listing => 
-      listing.id === listingId ? { 
-        ...listing, 
-        isManaged: true,
-        managedBy: user?.name,
-        managedById: user?.id,
-        managedAt: new Date().toISOString()
-      } : listing
-    );
-    
-    localStorage.setItem('listings', JSON.stringify(updatedListings));
-    setListings(updatedListings);
-    
-    alert('You are now managing this listing!');
   };
 
   // Render loading state
@@ -608,7 +887,7 @@ const applyFilters = useCallback(() => {
                     const isManaged = listing.isManaged;
                     
                     return (
-                      <div key={listing.id} className={`listing-card-enhanced ${listingStatus} ${isManaged ? 'managed' : ''}`}>
+                      <div key={listing.id} className={`listing-card-enhanced ${listingStatus} ${isManaged ? 'managed' : ''} ${listing.userRole === 'estate-firm' ? 'estate-firm' : ''}`}>
                         {/* Image Container */}
                         <div className="listing-image-container">
                           <img 
@@ -672,6 +951,16 @@ const applyFilters = useCallback(() => {
                                 </span>
                               </div>
                             )}
+                            
+                            {/* Estate Firm Commission Badge */}
+                            {listing.userRole === 'estate-firm' && (
+                              <div className="commission-badge-overlay">
+                                <span className="commission-badge">
+                                  <span className="commission-icon">💰</span>
+                                  <span className="commission-text">0% Commission</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
                           
                           {/* User Role Indicator */}
@@ -722,6 +1011,13 @@ const applyFilters = useCallback(() => {
                                  listingStatus === 'rejected' ? '✗ Rejected' : 'Unknown'}
                               </span>
                             </div>
+                            {/* Commission Info */}
+                            <div className="detail-row">
+                              <span className="detail-label">Commission:</span>
+                              <span className={`detail-value commission ${listing.userRole === 'estate-firm' ? 'no-commission' : 'with-commission'}`}>
+                                {listing.userRole === 'estate-firm' ? '0% (Estate Firm)' : '7.5%'}
+                              </span>
+                            </div>
                           </div>
                           
                           <div className="listing-footer">
@@ -752,19 +1048,26 @@ const applyFilters = useCallback(() => {
                               {/* Admin/Manager Actions */}
                               {(user?.role === 'admin' || user?.role === 'manager') && (
                                 <div className="admin-actions">
+                                  {user?.role === 'manager' && !canManagerVerify(user.id) && (
+                                    <div className="kyc-warning">
+                                      Complete KYC to verify listings
+                                    </div>
+                                  )}
+                                  
                                   {!isListingVerified && !isRejected && (
                                     <button 
                                       className="btn-verify-listing"
                                       onClick={() => handleVerify(listing.id)}
+                                      disabled={user?.role === 'manager' && !canManagerVerify(user.id)}
                                     >
-                                      Verify Listing
+                                      {user?.role === 'manager' ? 'Verify (KYC Required)' : 'Verify Listing'}
                                     </button>
                                   )}
                                   
                                   {user?.role === 'admin' && !isUserVerified && (
                                     <button 
                                       className="btn-verify-user"
-                                       onClick={() => handleVerifyUser(listing.id)}
+                                      onClick={() => handleVerifyUser(listing.id)}
                                     >
                                       Verify User
                                     </button>
@@ -779,12 +1082,15 @@ const applyFilters = useCallback(() => {
                                     </button>
                                   )}
                                   
-                                  {user?.role === 'manager' && !isManaged && (
+                                  {user?.role === 'manager' && !isManaged && listing.userRole !== 'estate-firm' && (
                                     <button 
                                       className="btn-accept-manage"
                                       onClick={() => handleAcceptToManage(listing.id)}
+                                      disabled={!canManagerAccept(user.id)}
                                     >
-                                      Accept to Manage
+                                      {canManagerAccept(user.id) 
+                                        ? 'Accept to Manage' 
+                                        : 'Complete KYC to Manage'}
                                     </button>
                                   )}
                                 </div>
@@ -833,6 +1139,10 @@ const applyFilters = useCallback(() => {
               <span className="managed-legend">🏢 Managed</span>
               <span>Property Manager Assigned</span>
             </div>
+            <div className="legend-item">
+              <span className="commission-legend">💰 0% Commission</span>
+              <span>Estate Firm Listing</span>
+            </div>
           </div>
         </div>
       </main>
@@ -866,7 +1176,15 @@ const getSampleListings = () => {
       approvedBy: 'Admin User',
       views: 45,
       inquiries: 12,
-      needsAdminApproval: false
+      needsAdminApproval: false,
+      // BUSINESS RULE: Commission rates
+      commissionRate: 7.5,
+      managerCommission: 2.5,
+      referrerCommission: 1,
+      rentEasyCommission: 4,
+      isManaged: true,
+      managedBy: 'Manager Jane',
+      managedById: 'manager_001'
     },
     {
       id: '2',
@@ -890,7 +1208,13 @@ const getSampleListings = () => {
       views: 32,
       inquiries: 8,
       needsAdminApproval: true,
-      postedDate: '2024-01-10'
+      postedDate: '2024-01-10',
+      // BUSINESS RULE: Commission rates
+      commissionRate: 7.5,
+      managerCommission: 2.5,
+      referrerCommission: 1,
+      rentEasyCommission: 4,
+      isManaged: false // No manager assigned yet
     },
     {
       id: '3',
@@ -916,9 +1240,13 @@ const getSampleListings = () => {
       views: 56,
       inquiries: 15,
       needsAdminApproval: false,
-      isManaged: true,
-      managedBy: 'Manager Joe',
-      managedAt: '2024-01-14'
+      // BUSINESS RULE: Estate firm has 0% commission
+      commissionRate: 0,
+      managerCommission: 0,
+      referrerCommission: 0,
+      rentEasyCommission: 0,
+      subscriptionActive: true,
+      isManaged: false // Estate firm listings don't need manager
     },
     {
       id: '4',
@@ -942,7 +1270,13 @@ const getSampleListings = () => {
       views: 18,
       inquiries: 3,
       needsAdminApproval: true,
-      postedDate: '2024-01-14'
+      postedDate: '2024-01-14',
+      // BUSINESS RULE: Commission rates
+      commissionRate: 7.5,
+      managerCommission: 2.5,
+      referrerCommission: 1,
+      rentEasyCommission: 4,
+      isManaged: false
     },
     {
       id: '5',
@@ -967,7 +1301,15 @@ const getSampleListings = () => {
       approvedBy: 'Admin User',
       views: 27,
       inquiries: 6,
-      needsAdminApproval: false
+      needsAdminApproval: false,
+      // BUSINESS RULE: Commission rates
+      commissionRate: 7.5,
+      managerCommission: 2.5,
+      referrerCommission: 1,
+      rentEasyCommission: 4,
+      isManaged: true,
+      managedBy: 'Manager Mike',
+      managedById: 'manager_002'
     },
     {
       id: '6',
@@ -993,7 +1335,12 @@ const getSampleListings = () => {
       rejectionReason: 'Low quality photos, needs better images',
       views: 5,
       inquiries: 0,
-      needsAdminApproval: false
+      needsAdminApproval: false,
+      // BUSINESS RULE: Commission rates
+      commissionRate: 7.5,
+      managerCommission: 2.5,
+      referrerCommission: 1,
+      rentEasyCommission: 4
     },
     {
       id: '7',
@@ -1016,11 +1363,15 @@ const getSampleListings = () => {
       views: 0,
       inquiries: 0,
       needsAdminApproval: true,
-      postedDate: new Date().toISOString().split('T')[0]
+      postedDate: new Date().toISOString().split('T')[0],
+      // BUSINESS RULE: Estate firm has 0% commission
+      commissionRate: 0,
+      managerCommission: 0,
+      referrerCommission: 0,
+      rentEasyCommission: 0,
+      subscriptionActive: false // New estate firm might not have subscription yet
     }
   ];
 };
-
-
 
 export default ListingsPage;

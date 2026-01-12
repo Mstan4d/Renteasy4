@@ -20,7 +20,9 @@ const EstatePostService = () => {
   };
 
   return (
+    
     <div className="estate-post-service">
+      <EstateNav />
       <ServicePostForm 
         firmDetails={firmDetails}
         onSuccess={handleSuccess}

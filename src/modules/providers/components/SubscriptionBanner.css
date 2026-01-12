@@ -1,0 +1,111 @@
+/* src/modules/providers/components/SubscriptionBanner.css */
+.subscription-banner {
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    transition: all 0.3s ease;
+  }
+  
+  .subscription-banner.free {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    border: 1px solid #93c5fd;
+  }
+  
+  .subscription-banner.subscribed {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border: 1px solid #6ee7b7;
+  }
+  
+  .subscription-banner.required {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #fbbf24;
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0);
+    }
+  }
+  
+  .banner-content {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 12px;
+  }
+  
+  .banner-content svg {
+    flex-shrink: 0;
+  }
+  
+  .banner-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .banner-text strong {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+  
+  .banner-text span {
+    font-size: 14px;
+    color: #6b7280;
+  }
+  
+  .subscription-banner .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  
+  .subscription-banner .btn-small {
+    padding: 6px 12px;
+    font-size: 13px;
+    height: auto;
+  }
+  
+  .subscription-banner.free .banner-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  
+  .subscription-banner.free .progress-bar {
+    height: 6px;
+    background-color: #e5e7eb;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  
+  .subscription-banner.free .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  
+  /* Responsive */
+  @media (max-width: 768px) {
+    .subscription-banner .banner-content {
+      flex-wrap: wrap;
+    }
+    
+    .subscription-banner .btn {
+      width: 100%;
+      margin-top: 8px;
+    }
+    
+    .subscription-banner.free .banner-content {
+      flex-wrap: nowrap;
+    }
+  }

@@ -14,7 +14,7 @@ const DashboardIndex = () => {
       navigate('/dashboard/tenant', { replace: true });
     } else if (user?.role === 'estate-firm') {
       navigate('/dashboard/estate-firm', { replace: true });
-    } else if (user?.role === 'service-provider') {
+    } else if (user?.role === 'provider') {
         navigate('/dashboard/provider', { replace: true });
     } else if (user?.role === 'manager') {
         navigate('/dashboard/manager', { replace: true });

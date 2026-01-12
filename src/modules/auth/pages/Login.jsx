@@ -82,46 +82,41 @@ const Login = () => {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // ========== ADMIN LOGIN CHECK ==========
-      // Special admin login for testing (only in development)
       if (process.env.NODE_ENV === 'development' && 
           formData.email === 'admin@renteasy.com' && 
           formData.password === 'admin123' && 
           formData.role === 'admin') {
         
-        // Create admin user if doesn't exist
-        const users = JSON.parse(localStorage.getItem('renteasy_users') || '[]');
-        let adminUser = users.find(u => u.email === 'admin@renteasy.com' && u.role === 'admin');
+        const adminUser = {
+          id: 'admin_001',
+          email: 'admin@renteasy.com',
+          fullName: 'RentEasy Admin',
+          username: 'admin',
+          role: 'admin',
+          isVerified: true,
+          isCEO: true,
+        };
         
-        if (!adminUser) {
-          adminUser = {
-            id: 'admin_001',
-            email: 'admin@renteasy.com',
-            fullName: 'RentEasy Admin',
-            username: 'admin',
-            phone: '+234 800 000 0000',
-            role: 'admin',
-            referralCode: 'ADMIN001',
-            isVerified: true,
-            createdAt: new Date().toISOString(),
-            profileComplete: true,
-            isActive: true,
-            isCEO: true, // First admin is CEO
-            permissions: ['all'],
-            verificationStatus: 'verified',
-            verificationLevel: 'admin'
-          };
-          
-          users.push(adminUser);
-          localStorage.setItem('renteasy_users', JSON.stringify(users));
-        }
+        // DEBUG: Log what we're saving
+        console.log('🔧 LOGIN DEBUG: Calling login with:', adminUser);
         
-        // Log admin in
-        login(adminUser, 'admin_token');
+        const result = login(adminUser, 'admin_token');
+        console.log('🔧 LOGIN DEBUG: login result:', result);
+        
+        // DEBUG: Check what was saved
+        setTimeout(() => {
+          console.log('🔧 LOGIN DEBUG: localStorage after login:');
+          console.log('  renteasy_token:', localStorage.getItem('renteasy_token'));
+          console.log('  renteasy_user:', localStorage.getItem('renteasy_user'));
+          console.log('  token:', localStorage.getItem('token'));
+          console.log('  userData:', localStorage.getItem('userData'));
+        }, 100);
+        
         navigate('/admin');
         setIsLoading(false);
         return;
       }
-      // ========== END ADMIN LOGIN CHECK ==========
+     
       
       // Regular user login
       const mockUsers = {
@@ -318,6 +313,20 @@ const Login = () => {
             </div>
           </div>
         )}
+
+
+      // In your src/modules/auth/pages/Login.jsx, add this somewhere:
+<div style={{ marginTop: '20px', textAlign: 'center' }}>
+  <p style={{ fontSize: '12px', color: '#666' }}>
+    System Owner? 
+    <Link 
+      to="/super-admin/login" 
+      style={{ marginLeft: '5px', color: '#3b82f6' }}
+    >
+      Access Super Admin Portal
+    </Link>
+  </p>
+</div>
         
         <div className="divider">
           <span className="divider-text">OR</span>

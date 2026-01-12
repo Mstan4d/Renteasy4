@@ -17,7 +17,9 @@ import {
   History, ClipboardList, Heart
 } from 'lucide-react';
 
+
 const DashboardLayout = () => {
+  
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -35,13 +37,22 @@ const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation(); // Get current location
   
-  // Check if user is estate firm AND on estate firm routes
-  const isEstateFirmUser = user?.role === 'estate-firm';
-  const isEstateFirmRoute = location.pathname.startsWith('/dashboard/estate-firm');
-  
-  // Don't show main sidebar for estate firm users on their routes
-  // They have their own sidebar (EstateNav)
-  const showMainSidebar = !(isEstateFirmUser && isEstateFirmRoute);
+ // Check if user is estate firm AND on estate firm routes
+ const isEstateFirmUser = user?.role === 'estate-firm';
+ const isEstateFirmRoute = location.pathname.startsWith('/dashboard/estate-firm');
+ 
+ // Check if user is manager AND on manager routes
+ const isManagerRoute = location.pathname.startsWith('/dashboard/manager');
+ 
+ const isProviderRoute = location.pathname.startsWith('/dashboard/provider');
+ // Don't show main sidebar for:
+ // 1. Estate firm users on their routes (they have EstateNav)
+ // 2. Manager users on their routes (they have ManagerSidebar)
+ const showMainSidebar = !(
+   (isEstateFirmUser && isEstateFirmRoute) || 
+   (user?.role === 'manager' && isManagerRoute)|| 
+   (user?.role === 'provider' && isProviderRoute)
+ );
 
   // ================= ENHANCED NAVIGATION CONFIGURATION =================
   
@@ -308,6 +319,20 @@ const DashboardLayout = () => {
       // So we don't show the main sidebar navigation
       return [];
     }
+  
+    // For manager users on manager routes, show limited navigation
+    if (user.role === 'manager' && isManagerRoute) {
+      // On manager routes, they use their own sidebar (ManagerSidebar)
+      // So we don't show the main sidebar navigation
+      return [];
+    }
+
+    // For manager users on manager routes, show limited navigation
+    if (user.role === 'provider' && isProviderRoute) {
+      // On manager routes, they use their own sidebar (ManagerSidebar)
+      // So we don't show the main sidebar navigation
+      return [];
+    }
     
     // For other roles, combine common and role-specific items
     const commonItems = NAV_ITEMS_BY_ROLE.common.filter(item =>
@@ -318,7 +343,6 @@ const DashboardLayout = () => {
     
     return [...commonItems, ...roleSpecificItems];
   };
-  
   const getBadgeCount = (badgeKey) => {
     return userStats[badgeKey] || 0;
   };
@@ -384,7 +408,19 @@ const DashboardLayout = () => {
   
   // Check if user is tenant for special styling
   const isTenant = user?.role === 'tenant';
-  
+ // In DashboardLayout.jsx, add right before return statement:
+console.log("=== DASHBOARD LAYOUT DEBUG ===");
+console.log("User:", user);
+console.log("Location:", location.pathname);
+console.log("showMainSidebar:", showMainSidebar);
+console.log("isEstateFirmUser:", isEstateFirmUser);
+console.log("isEstateFirmRoute:", isEstateFirmRoute);
+console.log("isManagerRoute:", isManagerRoute);
+console.log("User role:", user?.role);
+
+
+// Also check if Outlet would render anything
+console.log("Has Outlet context:", true);
   return (
     <div className="dashboard-layout">
       {/* App Header */}
@@ -543,7 +579,8 @@ const DashboardLayout = () => {
         
         {/* Main Content Area */}
         <main className={`dashboard-main ${!showMainSidebar ? 'full-width' : ''}`}>
-          {/* Mobile Sidebar Toggle Button - Only show when sidebar should be visible */}
+ 
+           {/* Mobile Sidebar Toggle Button - Only show when sidebar should be visible */}
           {showMainSidebar && (
             <button 
               className="sidebar-toggle"

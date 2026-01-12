@@ -14,11 +14,16 @@
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
+    "axios": "^1.13.2",
+    "bootstrap": "^5.3.8",
+    "geolib": "^3.3.4",
     "gh-pages": "^6.3.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",
+    "react-bootstrap": "^2.10.10",
     "react-dom": "^19.2.0",
     "react-dropzone": "^14.3.8",
+    "react-icons": "^5.5.0",
     "react-router-dom": "^7.10.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
