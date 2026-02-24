@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import {
@@ -6,6 +6,7 @@ import {
   CheckCircle, XCircle, Camera, Download,
   ArrowRight, AlertCircle, HelpCircle
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './EstateVerification.css';
 
 const EstateVerification = () => {
@@ -13,51 +14,36 @@ const EstateVerification = () => {
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
-    // Step 1: Business Information
     businessName: '',
     businessType: 'estate-firm',
     registrationNumber: '',
     taxIdNumber: '',
     yearEstablished: '',
-    
-    // Step 2: Business Address
     officeAddress: '',
     city: '',
     state: '',
     country: 'Nigeria',
     postalCode: '',
-    
-    // Step 3: Contact Information
     contactPerson: '',
     contactEmail: '',
     contactPhone: '',
     alternativePhone: '',
-    
-    // Step 4: Business Documents
     cacDocument: null,
     taxDocument: null,
     proofOfAddress: null,
     businessPlan: null,
-    
-    // Step 5: Directors/Partners
-    directors: [
-      {
-        name: '',
-        position: 'Director',
-        idType: 'national-id',
-        idNumber: '',
-        idDocument: null,
-        photo: null
-      }
-    ],
-    
-    // Step 6: Business Operations
+    directors: [{
+      name: '',
+      position: 'Director',
+      idType: 'national-id',
+      idNumber: '',
+      idDocument: null,
+      photo: null
+    }],
     servicesOffered: [],
     yearsInOperation: '',
     numberOfEmployees: '',
     annualTurnover: '',
-    
-    // Verification Status
     status: 'pending',
     submittedAt: '',
     reviewedBy: '',
@@ -68,44 +54,69 @@ const EstateVerification = () => {
   const [documentPreview, setDocumentPreview] = useState({});
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [existingVerification, setExistingVerification] = useState(null);
 
-  const documentRequirements = [
-    {
-      title: 'CAC Certificate',
-      description: 'Certificate of Incorporation from Corporate Affairs Commission',
-      format: 'PDF, JPG, PNG',
-      size: 'Max 5MB',
-      required: true
-    },
-    {
-      title: 'Tax Clearance Certificate',
-      description: 'Current year tax clearance certificate',
-      format: 'PDF, JPG, PNG',
-      size: 'Max 5MB',
-      required: true
-    },
-    {
-      title: 'Proof of Business Address',
-      description: 'Utility bill or lease agreement for business premises',
-      format: 'PDF, JPG, PNG',
-      size: 'Max 5MB',
-      required: true
-    },
-    {
-      title: 'Business Plan',
-      description: 'Document outlining your business operations (Optional)',
-      format: 'PDF, DOC',
-      size: 'Max 10MB',
-      required: false
+  useEffect(() => {
+    if (user) {
+      checkExistingVerification();
     }
-  ];
+  }, [user]);
 
-  const directorIdTypes = [
-    { value: 'national-id', label: 'National ID Card' },
-    { value: 'passport', label: 'International Passport' },
-    { value: 'driver-license', label: "Driver's License" },
-    { value: 'voter-card', label: "Voter's Card" }
-  ];
+  const checkExistingVerification = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('estate_verifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      if (data) {
+        setExistingVerification(data);
+        
+        // If already verified or under review, show status
+        if (data.status !== 'pending') {
+          navigate('/dashboard/estate-firm');
+        } else {
+          // Load existing data into form
+          setFormData({
+            businessName: data.business_name || '',
+            businessType: data.business_type || 'estate-firm',
+            registrationNumber: data.registration_number || '',
+            taxIdNumber: data.tax_id_number || '',
+            yearEstablished: data.year_established || '',
+            officeAddress: data.office_address || '',
+            city: data.city || '',
+            state: data.state || '',
+            country: data.country || 'Nigeria',
+            postalCode: data.postal_code || '',
+            contactPerson: data.contact_person || '',
+            contactEmail: data.contact_email || '',
+            contactPhone: data.contact_phone || '',
+            alternativePhone: data.alternative_phone || '',
+            directors: data.directors || [{
+              name: '',
+              position: 'Director',
+              idType: 'national-id',
+              idNumber: '',
+              idDocument: null,
+              photo: null
+            }],
+            servicesOffered: data.services_offered || [],
+            yearsInOperation: data.years_in_operation || '',
+            numberOfEmployees: data.number_of_employees || '',
+            annualTurnover: data.annual_turnover || '',
+            status: data.status || 'pending'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error checking verification:', error);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -113,7 +124,6 @@ const EstateVerification = () => {
       ...prev,
       [name]: value
     }));
-    // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
@@ -157,8 +167,10 @@ const EstateVerification = () => {
     }));
   };
 
-  const handleFileUpload = (field, file) => {
-    if (file) {
+  const handleFileUpload = async (field, file) => {
+    if (!file || !user) return;
+
+    try {
       // Check file size
       const maxSize = field === 'businessPlan' ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
       if (file.size > maxSize) {
@@ -184,6 +196,10 @@ const EstateVerification = () => {
         ...prev,
         [field]: file
       }));
+
+    } catch (error) {
+      console.error('Error handling file upload:', error);
+      alert('Failed to upload file. Please try again.');
     }
   };
 
@@ -236,14 +252,31 @@ const EstateVerification = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const nextStep = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, 6));
-    }
-  };
+  const uploadDocument = async (file, documentType) => {
+    if (!file || !user) return null;
 
-  const prevStep = () => {
-    setCurrentStep(prev => Math.max(prev - 1, 1));
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${documentType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      const filePath = `verifications/${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('estate-verification-docs')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('estate-verification-docs')
+        .getPublicUrl(filePath);
+
+      return publicUrl;
+
+    } catch (error) {
+      console.error(`Error uploading ${documentType}:`, error);
+      throw error;
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -254,59 +287,101 @@ const EstateVerification = () => {
       return;
     }
 
+    if (!user) {
+      alert('Please login to submit verification');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // Create FormData for file upload
-      const submissionData = new FormData();
-      
-      // Add all form data
-      Object.keys(formData).forEach(key => {
-        if (key === 'directors') {
-          submissionData.append(key, JSON.stringify(formData[key]));
-        } else if (['cacDocument', 'taxDocument', 'proofOfAddress', 'businessPlan'].includes(key) && formData[key]) {
-          submissionData.append(key, formData[key]);
-        } else if (key === 'servicesOffered') {
-          submissionData.append(key, JSON.stringify(formData[key]));
-        } else {
-          submissionData.append(key, formData[key]);
-        }
-      });
+      // Upload documents to Supabase Storage
+      let cacDocumentUrl = null;
+      let taxDocumentUrl = null;
+      let proofOfAddressUrl = null;
+      let businessPlanUrl = null;
 
-      // Add user info
-      submissionData.append('userId', user?.id);
-      submissionData.append('userEmail', user?.email);
-      submissionData.append('submittedAt', new Date().toISOString());
-      submissionData.append('status', 'pending');
+      if (formData.cacDocument) {
+        cacDocumentUrl = await uploadDocument(formData.cacDocument, 'cac');
+      }
+      if (formData.taxDocument) {
+        taxDocumentUrl = await uploadDocument(formData.taxDocument, 'tax');
+      }
+      if (formData.proofOfAddress) {
+        proofOfAddressUrl = await uploadDocument(formData.proofOfAddress, 'address');
+      }
+      if (formData.businessPlan) {
+        businessPlanUrl = await uploadDocument(formData.businessPlan, 'business_plan');
+      }
 
-      // Mock API call - replace with actual API
-      console.log('Submitting verification data:', Object.fromEntries(submissionData));
-      
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Save to localStorage for demo
-      const existingVerifications = JSON.parse(localStorage.getItem('estateVerifications') || '[]');
+      // Prepare verification data
       const verificationData = {
-        ...Object.fromEntries(submissionData),
-        files: {
-          cacDocument: formData.cacDocument?.name,
-          taxDocument: formData.taxDocument?.name,
-          proofOfAddress: formData.proofOfAddress?.name,
-          businessPlan: formData.businessPlan?.name
-        },
-        id: `verif_${Date.now()}`,
-        submittedAt: new Date().toISOString(),
-        status: 'pending'
-      };
-      
-      existingVerifications.push(verificationData);
-      localStorage.setItem('estateVerifications', JSON.stringify(existingVerifications));
-      
-      // Also update user verification status
-      localStorage.setItem('userVerification', JSON.stringify({
+        user_id: user.id,
+        business_name: formData.businessName,
+        business_type: formData.businessType,
+        registration_number: formData.registrationNumber,
+        tax_id_number: formData.taxIdNumber,
+        year_established: formData.yearEstablished ? parseInt(formData.yearEstablished) : null,
+        office_address: formData.officeAddress,
+        city: formData.city,
+        state: formData.state,
+        country: formData.country,
+        postal_code: formData.postalCode,
+        contact_person: formData.contactPerson,
+        contact_email: formData.contactEmail,
+        contact_phone: formData.contactPhone,
+        alternative_phone: formData.alternativePhone,
+        cac_document_url: cacDocumentUrl,
+        tax_document_url: taxDocumentUrl,
+        proof_of_address_url: proofOfAddressUrl,
+        business_plan_url: businessPlanUrl,
+        directors: formData.directors,
+        services_offered: formData.servicesOffered,
+        years_in_operation: formData.yearsInOperation ? parseInt(formData.yearsInOperation) : null,
+        number_of_employees: formData.numberOfEmployees ? parseInt(formData.numberOfEmployees) : null,
+        annual_turnover: formData.annualTurnover ? parseFloat(formData.annualTurnover) : null,
         status: 'pending',
-        submittedAt: new Date().toISOString()
-      }));
+        submitted_at: new Date().toISOString()
+      };
+
+      // Insert into database
+      const { data, error } = await supabase
+        .from('estate_verifications')
+        .upsert(verificationData, {
+          onConflict: 'user_id'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update estate firm profile
+      await supabase
+        .from('estate_firm_profiles')
+        .upsert({
+          user_id: user.id,
+          firm_name: formData.businessName,
+          business_email: formData.contactEmail,
+          business_phone: formData.contactPhone,
+          address: formData.officeAddress,
+          certification: {
+            cac_number: formData.registrationNumber,
+            rc_number: formData.registrationNumber,
+            certified: false,
+            verification_status: 'pending'
+          }
+        }, {
+          onConflict: 'user_id'
+        });
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'verification',
+        action: 'submit',
+        description: `Submitted business verification for ${formData.businessName}`,
+        created_at: new Date().toISOString()
+      });
 
       alert('Verification submitted successfully! Our team will review your application within 3-5 business days.');
       navigate('/dashboard/estate-firm');
@@ -319,7 +394,7 @@ const EstateVerification = () => {
     }
   };
 
-  const renderStep = () => {
+   const renderStep = () => {
     switch(currentStep) {
       case 1:
         return (
@@ -975,5 +1050,6 @@ const DocumentUpload = ({ label, name, file, preview, onUpload, error }) => {
     </div>
   );
 };
+
 
 export default EstateVerification;

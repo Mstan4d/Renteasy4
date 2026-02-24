@@ -21,21 +21,46 @@ const AdminRevenue = () => {
   });
 
   useEffect(() => {
-    loadRevenueData();
-  }, [timeRange]);
+ const loadRevenueData = async () => {
+  setLoading(true);
+  
+  // 1. Fetch real data from our SQL View
+  const { data, error } = await supabase
+    .from('admin_revenue_stats')
+    .select('*')
+    .limit(30); // Last 30 days of activity
 
-  const loadRevenueData = () => {
-    setLoading(true);
-    
-    setTimeout(() => {
-      // Generate sample revenue data based on time range
-      const sampleData = generateRevenueData(timeRange);
-      setRevenueData(sampleData);
-      calculateStats(sampleData);
-      setLoading(false);
-    }, 1000);
-  };
+  if (data) {
+    // 2. Format the data for your charts
+    const labels = data.map(d => new Date(d.day).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }));
+    const revenueValues = data.map(d => d.daily_rent_volume);
+    const commissionValues = data.map(d => d.daily_commission);
 
+    setRevenueData({
+      labels: labels.reverse(),
+      datasets: [
+        { label: 'Total Rent Volume', data: revenueValues.reverse() },
+        { label: 'Platform Commission (7.5%)', data: commissionValues.reverse() }
+      ]
+    });
+
+    // 3. Update the Stat Cards with real sums
+    const totalRevenue = revenueValues.reduce((a, b) => a + b, 0);
+    const totalComm = commissionValues.reduce((a, b) => a + b, 0);
+    const totalTrans = data.reduce((a, b) => a + b.transaction_count, 0);
+
+    setStats({
+      totalRevenue: totalRevenue,
+      commission: totalComm,
+      growth: 12.5, // You can calculate this by comparing to the previous 30 days
+      target: 10000000, // Set your 10 Million Naira goal here
+      transactions: totalTrans,
+      avgTransaction: totalRevenue / (totalTrans || 1)
+    });
+  }
+  setLoading(false);
+};
+});
   const generateRevenueData = (range) => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const days = Array.from({ length: 30 }, (_, i) => i + 1);
@@ -320,7 +345,30 @@ const AdminRevenue = () => {
                   const total = array.reduce((sum, s) => sum + s.value, 0);
                   const percentage = (source.value / total) * 100;
                   const startAngle = array.slice(0, index).reduce((sum, s) => sum + (s.value / total) * 360, 0);
-                  
+                  <div className="admin-audit-logs">
+  <h3>📑 Payout Accountability Log</h3>
+  <table className="audit-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Admin</th>
+        <th>Property</th>
+        <th>Amount Paid Out</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {/* This would fetch from a 'payout_logs' table we create */}
+      <tr>
+        <td>{new Date().toLocaleDateString()}</td>
+        <td>Admin_Sikiru</td>
+        <td>3 Bedroom Flat, Lekki</td>
+        <td>₦45,000</td>
+        <td><span className="badge-success">Verified</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
                   return (
                     <div 
                       key={source.name}

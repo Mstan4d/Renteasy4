@@ -1,4 +1,4 @@
-// ProviderBookings.jsx - Complete Component with CSS
+// src/modules/providers/pages/ProviderBookings.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
@@ -26,101 +26,240 @@ import {
   Navigation,
   ClipboardCheck,
   Truck,
-  Users
+  Users,
+  //FaSpinner
 } from 'lucide-react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ProviderBookings.css';
 
 const ProviderBookings = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [statusUpdate, setStatusUpdate] = useState('');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [newReview, setNewReview] = useState({ rating: 5, comment: '' });
 
-  // Mock data - replace with API call
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      const mockBooking = {
-        id: id || 'BOOK-789456',
-        bookingNumber: 'BK-2024-00123',
-        serviceName: 'Deep Cleaning Service',
-        serviceType: 'Cleaning',
-        serviceCategory: 'Home Services',
+    if (!user || !id) return;
+    fetchBooking();
+  }, [user, id]);
+
+  const fetchBooking = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch main booking from service_requests, join with client profile
+      const { data: bookingData, error: bookingError } = await supabase
+        .from('service_requests')
+        .select(`
+          *,
+          client:client_id (
+            id,
+            full_name,
+            email,
+            phone,
+            rating,
+            completed_bookings
+          )
+        `)
+        .eq('id', id)
+        .eq('provider_id', user.id)
+        .single();
+
+      if (bookingError) throw bookingError;
+      if (!bookingData) throw new Error('Booking not found');
+
+      // Fetch associated property (if any) – might be separate table or embedded
+      // For now, we'll assume property details are in the booking record
+      // Fetch team members (if stored)
+      const { data: teamData, error: teamError } = await supabase
+        .from('booking_team')
+        .select('*')
+        .eq('booking_id', id);
+
+      if (teamError && teamError.code !== 'PGRST116') throw teamError;
+
+      // Fetch documents
+      const { data: docsData, error: docsError } = await supabase
+        .from('booking_documents')
+        .select('*')
+        .eq('booking_id', id);
+
+      if (docsError && docsError.code !== 'PGRST116') throw docsError;
+
+      // Fetch messages
+      const { data: messagesData, error: msgsError } = await supabase
+        .from('booking_messages')
+        .select('*')
+        .eq('booking_id', id)
+        .order('created_at', { ascending: true });
+
+      if (msgsError && msgsError.code !== 'PGRST116') throw msgsError;
+
+      // Transform data to match component's expected structure
+      const formattedBooking = {
+        id: bookingData.id,
+        bookingNumber: bookingData.booking_number || `BK-${bookingData.id.slice(0, 8)}`,
+        serviceName: bookingData.service_name || bookingData.service_type,
+        serviceType: bookingData.service_type,
+        serviceCategory: bookingData.service_category,
         customer: {
-          id: 'CUST-456',
-          name: 'Adebayo Johnson',
-          role: 'tenant',
-          email: 'adebayo.j@example.com',
-          phone: '+2348012345678',
+          id: bookingData.client?.id,
+          name: bookingData.client?.full_name || 'Unknown',
+          role: 'tenant', // or derive from client role
+          email: bookingData.client?.email || 'N/A',
+          phone: bookingData.client?.phone || 'N/A',
           avatar: null,
-          rating: 4.5,
-          completedBookings: 12
+          rating: bookingData.client?.rating || 0,
+          completedBookings: bookingData.client?.completed_bookings || 0
         },
         property: {
-          id: 'PROP-789',
-          address: '24, Allen Avenue, Ikeja, Lagos',
-          type: '3-Bedroom Apartment',
-          size: '1800 sq ft'
+          id: bookingData.property_id,
+          address: bookingData.address || 'Address not provided',
+          type: bookingData.property_type || 'N/A',
+          size: bookingData.property_size || 'N/A'
         },
         dateTime: {
-          scheduled: '2024-01-28T14:00:00Z',
-          requested: '2024-01-20T10:30:00Z',
-          accepted: '2024-01-20T11:15:00Z',
-          completed: null,
-          cancelled: null
+          scheduled: bookingData.scheduled_date,
+          requested: bookingData.created_at,
+          accepted: bookingData.accepted_at,
+          completed: bookingData.completed_at,
+          cancelled: bookingData.cancelled_at
         },
         pricing: {
-          basePrice: 35000,
-          extraCharges: [
-            { description: 'Window Cleaning', amount: 5000 },
-            { description: 'Furniture Movement', amount: 3000 }
-          ],
-          discount: 2000,
-          tax: 1750,
-          total: 40750,
-          paymentMethod: 'card',
-          paymentStatus: 'paid',
-          paymentId: 'PAY-789123456'
+          basePrice: bookingData.base_price || 0,
+          extraCharges: bookingData.extra_charges || [],
+          discount: bookingData.discount || 0,
+          tax: bookingData.tax || 0,
+          total: bookingData.total_amount || 0,
+          paymentMethod: bookingData.payment_method || 'card',
+          paymentStatus: bookingData.payment_status || 'pending',
+          paymentId: bookingData.payment_id
         },
-        status: 'scheduled',
-        statusHistory: [
-          { status: 'requested', timestamp: '2024-01-20T10:30:00Z', note: 'Booking requested by customer' },
-          { status: 'accepted', timestamp: '2024-01-20T11:15:00Z', note: 'Booking accepted by provider' },
-          { status: 'confirmed', timestamp: '2024-01-20T12:00:00Z', note: 'Payment received and confirmed' }
-        ],
-        notes: 'Customer requested eco-friendly cleaning products. Please avoid strong chemicals.',
-        specialInstructions: 'Parking available at the back. Bring extra cleaning cloths.',
-        team: [
-          { id: 'TM-001', name: 'Chika Okafor', role: 'Lead Cleaner', phone: '+2348023456789' },
-          { id: 'TM-002', name: 'Bola Ahmed', role: 'Assistant Cleaner', phone: '+2348034567890' }
-        ],
-        duration: '4 hours',
-        materialsNeeded: ['Eco-friendly detergent', 'Microfiber cloths', 'Vacuum cleaner', 'Mop'],
-        documents: [
-          { id: 'DOC-001', name: 'Service Agreement.pdf', url: '#', uploaded: '2024-01-20T11:30:00Z' },
-          { id: 'DOC-002', name: 'Customer Requirements.docx', url: '#', uploaded: '2024-01-20T11:45:00Z' }
-        ],
-        messages: [
-          { id: 'MSG-001', sender: 'customer', text: 'Hello, I need deep cleaning for my new apartment', timestamp: '2024-01-20T10:30:00Z' },
-          { id: 'MSG-002', sender: 'provider', text: 'Sure! I can schedule it for next Monday at 2 PM', timestamp: '2024-01-20T10:45:00Z' },
-          { id: 'MSG-003', sender: 'customer', text: 'Perfect! Please use eco-friendly products', timestamp: '2024-01-20T11:00:00Z' }
-        ],
-        review: null,
-        cancellationPolicy: {
+        status: bookingData.status || 'pending',
+        statusHistory: bookingData.status_history || [],
+        notes: bookingData.notes || '',
+        specialInstructions: bookingData.special_instructions || '',
+        team: (teamData || []).map(m => ({
+          id: m.id,
+          name: m.name,
+          role: m.role,
+          phone: m.phone
+        })),
+        duration: bookingData.duration || 'N/A',
+        materialsNeeded: bookingData.materials_needed || [],
+        documents: (docsData || []).map(d => ({
+          id: d.id,
+          name: d.name,
+          url: d.url,
+          uploaded: d.created_at
+        })),
+        messages: (messagesData || []).map(m => ({
+          id: m.id,
+          sender: m.sender_type, // 'customer' or 'provider'
+          text: m.content,
+          timestamp: m.created_at
+        })),
+        review: bookingData.review,
+        cancellationPolicy: bookingData.cancellation_policy || {
           allowed: true,
-          deadline: '2024-01-27T14:00:00Z',
+          deadline: bookingData.scheduled_date,
           refundPercentage: 80
         },
-        commissionNote: 'This booking counts toward your 10 free bookings limit. After 10 bookings, ₦3,000 monthly subscription applies.'
+        commissionNote: bookingData.commission_note || 'This booking counts toward your free booking limit.'
       };
-      setBooking(mockBooking);
+
+      setBooking(formattedBooking);
+    } catch (err) {
+      console.error('Error fetching booking:', err);
+      setError(err.message);
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, [id]);
+    }
+  };
+
+  const updateBookingStatus = async (newStatus, note = '') => {
+    try {
+      const updates = {
+        status: newStatus,
+        status_history: [
+          ...(booking.statusHistory || []),
+          { status: newStatus, timestamp: new Date().toISOString(), note }
+        ]
+      };
+      if (newStatus === 'completed') {
+        updates.completed_at = new Date().toISOString();
+      } else if (newStatus === 'cancelled') {
+        updates.cancelled_at = new Date().toISOString();
+      } else if (newStatus === 'in_progress') {
+        updates.started_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('service_requests')
+        .update(updates)
+        .eq('id', booking.id);
+
+      if (error) throw error;
+
+      // Refresh data
+      await fetchBooking();
+      setStatusUpdate('');
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Failed to update status: ' + err.message);
+    }
+  };
+
+  const handleStatusUpdate = () => {
+    if (statusUpdate) {
+      updateBookingStatus(booking.status === 'scheduled' ? 'in_progress' : 
+                         booking.status === 'in_progress' ? 'completed' : 'cancelled',
+                         statusUpdate);
+    }
+  };
+
+  const handleSendMessage = () => {
+    navigate(`/dashboard/provider/messages?booking=${booking.id}`);
+  };
+
+  const handleDownloadInvoice = () => {
+    alert('Invoice download functionality would be implemented here');
+  };
+
+  const handleSubmitReview = async () => {
+    try {
+      const { error } = await supabase
+        .from('provider_reviews')
+        .insert([{
+          provider_id: user.id,
+          booking_id: booking.id,
+          rating: newReview.rating,
+          comment: newReview.comment
+        }]);
+
+      if (error) throw error;
+
+      setShowReviewModal(false);
+      setNewReview({ rating: 5, comment: '' });
+      alert('Review submitted successfully');
+      fetchBooking();
+    } catch (err) {
+      console.error('Error submitting review:', err);
+      alert('Failed to submit review: ' + err.message);
+    }
+  };
+
+  const handlePrintDetails = () => {
+    window.print();
+  };
 
   const getStatusBadge = (status) => {
     const config = {
@@ -153,6 +292,7 @@ const ProviderBookings = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-NG', {
       weekday: 'long',
@@ -163,6 +303,7 @@ const ProviderBookings = () => {
   };
 
   const formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleString('en-NG', {
       day: 'numeric',
@@ -173,15 +314,8 @@ const ProviderBookings = () => {
     });
   };
 
-  const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-NG', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   const calculateTimeRemaining = (dateString) => {
+    if (!dateString) return 'N/A';
     const now = new Date();
     const target = new Date(dateString);
     const diff = target - now;
@@ -195,60 +329,6 @@ const ProviderBookings = () => {
     return `${hours}h`;
   };
 
-  const handleStatusUpdate = (newStatus) => {
-    if (statusUpdate) {
-      const updatedBooking = {
-        ...booking,
-        status: newStatus,
-        statusHistory: [
-          ...booking.statusHistory,
-          {
-            status: newStatus,
-            timestamp: new Date().toISOString(),
-            note: statusUpdate
-          }
-        ]
-      };
-      
-      if (newStatus === 'completed') {
-        updatedBooking.dateTime.completed = new Date().toISOString();
-      } else if (newStatus === 'cancelled') {
-        updatedBooking.dateTime.cancelled = new Date().toISOString();
-      }
-      
-      setBooking(updatedBooking);
-      setStatusUpdate('');
-      alert(`Booking status updated to ${newStatus}`);
-    }
-  };
-
-  const handleSendMessage = () => {
-    navigate(`/dashboard/provider/messages?booking=${booking.id}`);
-  };
-
-  const handleDownloadInvoice = () => {
-    alert('Invoice download functionality would be implemented here');
-  };
-
-  const handleSubmitReview = () => {
-    const updatedBooking = {
-      ...booking,
-      review: {
-        ...newReview,
-        timestamp: new Date().toISOString(),
-        reviewer: 'provider'
-      }
-    };
-    setBooking(updatedBooking);
-    setShowReviewModal(false);
-    setNewReview({ rating: 5, comment: '' });
-    alert('Review submitted successfully');
-  };
-
-  const handlePrintDetails = () => {
-    window.print();
-  };
-
   if (loading) {
     return (
       <div className="provider-bookings-loading">
@@ -260,13 +340,13 @@ const ProviderBookings = () => {
     );
   }
 
-  if (!booking) {
+  if (error || !booking) {
     return (
       <div className="provider-bookings-error">
         <div className="error-content">
           <AlertCircle className="error-icon" />
           <h3 className="error-title">Booking not found</h3>
-          <p className="error-message">The requested booking could not be found</p>
+          <p className="error-message">{error || 'The requested booking could not be found'}</p>
           <Link
             to="/dashboard/provider/bookings"
             className="back-button"
@@ -515,9 +595,9 @@ const ProviderBookings = () => {
                                 </p>
                               </div>
                             </div>
-                            <button className="document-download">
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="document-download">
                               Download
-                            </button>
+                            </a>
                           </div>
                         ))}
                       </div>
@@ -591,7 +671,7 @@ const ProviderBookings = () => {
               </div>
               
               {/* Status Update Section */}
-              {['scheduled', 'accepted', 'confirmed'].includes(booking.status) && (
+              {['scheduled', 'accepted', 'confirmed', 'in_progress'].includes(booking.status) && (
                 <div className="status-update-container">
                   <h3 className="section-title">Update Booking Status</h3>
                   <div className="status-update-form">
@@ -611,7 +691,7 @@ const ProviderBookings = () => {
                     <div className="status-buttons">
                       {booking.status === 'scheduled' && (
                         <button
-                          onClick={() => handleStatusUpdate('in_progress')}
+                          onClick={() => updateBookingStatus('in_progress', statusUpdate)}
                           className="status-button start"
                         >
                           Start Service
@@ -620,7 +700,7 @@ const ProviderBookings = () => {
                       
                       {booking.status === 'in_progress' && (
                         <button
-                          onClick={() => handleStatusUpdate('completed')}
+                          onClick={() => updateBookingStatus('completed', statusUpdate)}
                           className="status-button complete"
                         >
                           Mark as Completed
@@ -628,7 +708,7 @@ const ProviderBookings = () => {
                       )}
                       
                       <button
-                        onClick={() => handleStatusUpdate('cancelled')}
+                        onClick={() => updateBookingStatus('cancelled', statusUpdate)}
                         className="status-button cancel"
                       >
                         Cancel Booking
@@ -901,1576 +981,8 @@ const ProviderBookings = () => {
           </div>
         </div>
       )}
-
-      {/* CSS Styles */}
-      <style jsx>{`
-        .provider-bookings-container {
-          min-height: 100vh;
-          background-color: #f9fafb;
-          padding: 1rem;
-        }
-        
-        @media (min-width: 768px) {
-          .provider-bookings-container {
-            padding: 1.5rem;
-          }
-        }
-        
-        @media (min-width: 1024px) {
-          .provider-bookings-container {
-            padding: 2rem;
-          }
-        }
-        
-        .bookings-content {
-          max-width: 120rem;
-          margin: 0 auto;
-        }
-        
-        /* Header */
-        .bookings-header {
-          margin-bottom: 2rem;
-        }
-        
-        .header-main {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          margin-bottom: 1.5rem;
-        }
-        
-        @media (min-width: 768px) {
-          .header-main {
-            flex-direction: row;
-            align-items: center;
-            justify-content: space-between;
-          }
-        }
-        
-        .header-left {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .back-button-icon {
-          padding: 0.5rem;
-          border-radius: 0.5rem;
-          background: none;
-          border: none;
-          cursor: pointer;
-          transition: background-color 0.2s;
-        }
-        
-        .back-button-icon:hover {
-          background-color: #f3f4f6;
-        }
-        
-        .back-button-icon .icon {
-          width: 1.25rem;
-          height: 1.25rem;
-          color: #4b5563;
-        }
-        
-        .header-title {
-          font-size: 1.5rem;
-          font-weight: bold;
-          color: #111827;
-          margin: 0;
-        }
-        
-        @media (min-width: 768px) {
-          .header-title {
-            font-size: 1.875rem;
-          }
-        }
-        
-        .header-subtitle {
-          color: #6b7280;
-          margin-top: 0.25rem;
-          font-size: 0.875rem;
-        }
-        
-        .header-right {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-        
-        /* Status Badges */
-        .status-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 1rem;
-          border-radius: 9999px;
-          font-size: 0.875rem;
-          font-weight: 500;
-        }
-        
-        .status-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        .status-badge-yellow {
-          background-color: #fef3c7;
-          color: #92400e;
-        }
-        
-        .status-badge-blue {
-          background-color: #dbeafe;
-          color: #1e40af;
-        }
-        
-        .status-badge-green {
-          background-color: #d1fae5;
-          color: #065f46;
-        }
-        
-        .status-badge-purple {
-          background-color: #ede9fe;
-          color: #5b21b6;
-        }
-        
-        .status-badge-orange {
-          background-color: #ffedd5;
-          color: #9a3412;
-        }
-        
-        .status-badge-red {
-          background-color: #fee2e2;
-          color: #991b1b;
-        }
-        
-        .status-badge-gray {
-          background-color: #f3f4f6;
-          color: #374151;
-        }
-        
-        /* Actions Menu */
-        .actions-menu {
-          position: relative;
-        }
-        
-        .actions-menu-button {
-          padding: 0.5rem;
-          border-radius: 0.5rem;
-          background: none;
-          border: none;
-          cursor: pointer;
-          transition: background-color 0.2s;
-        }
-        
-        .actions-menu-button:hover {
-          background-color: #f3f4f6;
-        }
-        
-        .actions-menu-button .icon {
-          width: 1.25rem;
-          height: 1.25rem;
-          color: #4b5563;
-        }
-        
-        .actions-menu-dropdown {
-          position: absolute;
-          right: 0;
-          top: 100%;
-          margin-top: 0.5rem;
-          width: 12rem;
-          background-color: white;
-          border-radius: 0.5rem;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-          border: 1px solid #e5e7eb;
-          z-index: 50;
-        }
-        
-        .actions-menu-item {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          width: 100%;
-          padding: 0.75rem 1rem;
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #374151;
-          font-size: 0.875rem;
-          transition: background-color 0.2s;
-        }
-        
-        .actions-menu-item:hover {
-          background-color: #f9fafb;
-        }
-        
-        .actions-menu-item .item-icon {
-          width: 1rem;
-          height: 1rem;
-          color: #6b7280;
-        }
-        
-        /* Stats Grid */
-        .stats-grid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 1rem;
-        }
-        
-        @media (min-width: 768px) {
-          .stats-grid {
-            grid-template-columns: repeat(4, 1fr);
-          }
-        }
-        
-        .stat-card {
-          background-color: white;
-          padding: 1.25rem;
-          border-radius: 0.75rem;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-        }
-        
-        .stat-card-content {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .stat-label {
-          font-size: 0.875rem;
-          color: #6b7280;
-          margin: 0;
-        }
-        
-        .stat-value {
-          font-size: 1.5rem;
-          font-weight: bold;
-          color: #111827;
-          margin: 0;
-        }
-        
-        .stat-icon-container {
-          padding: 0.75rem;
-          border-radius: 0.5rem;
-        }
-        
-        .stat-icon-container .icon {
-          width: 1.5rem;
-          height: 1.5rem;
-        }
-        
-        .stat-icon-green {
-          background-color: #d1fae5;
-        }
-        
-        .stat-icon-green .icon {
-          color: #10b981;
-        }
-        
-        .stat-icon-blue {
-          background-color: #dbeafe;
-        }
-        
-        .stat-icon-blue .icon {
-          color: #3b82f6;
-        }
-        
-        .stat-icon-purple {
-          background-color: #ede9fe;
-        }
-        
-        .stat-icon-purple .icon {
-          color: #8b5cf6;
-        }
-        
-        .stat-icon-orange {
-          background-color: #ffedd5;
-        }
-        
-        .stat-icon-orange .icon {
-          color: #f97316;
-        }
-        
-        /* Main Grid Layout */
-        .main-grid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 1.5rem;
-        }
-        
-        @media (min-width: 1024px) {
-          .main-grid {
-            grid-template-columns: 2fr 1fr;
-          }
-        }
-        
-        /* Tabs */
-        .tabs-container {
-          background-color: white;
-          border-radius: 0.75rem;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-        }
-        
-        .tabs-header {
-          border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .tabs-list {
-          display: flex;
-          overflow-x: auto;
-          padding: 0 0.5rem;
-        }
-        
-        .tab-button {
-          flex-shrink: 0;
-          padding: 1rem 1.5rem;
-          font-size: 0.875rem;
-          font-weight: 500;
-          background: none;
-          border: none;
-          cursor: pointer;
-          border-bottom: 2px solid transparent;
-          color: #6b7280;
-          transition: all 0.2s;
-        }
-        
-        .tab-button:hover {
-          color: #374151;
-        }
-        
-        .tab-button.active {
-          border-bottom-color: #3b82f6;
-          color: #3b82f6;
-        }
-        
-        .tabs-content {
-          padding: 1.5rem;
-        }
-        
-        /* Section Styles */
-        .section-title {
-          font-size: 1.125rem;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 1rem 0;
-        }
-        
-        .section-divider {
-          border-top: 1px solid #e5e7eb;
-          padding-top: 1.5rem;
-          margin-top: 1.5rem;
-        }
-        
-        /* Details Tab */
-        .details-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        
-        .details-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .detail-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .detail-label {
-          color: #6b7280;
-          font-size: 0.875rem;
-        }
-        
-        .detail-value {
-          font-weight: 500;
-          color: #111827;
-          font-size: 0.875rem;
-        }
-        
-        .instructions-container {
-          background-color: #f9fafb;
-          padding: 1rem;
-          border-radius: 0.5rem;
-        }
-        
-        .instructions-text {
-          color: #374151;
-          margin: 0;
-          line-height: 1.5;
-        }
-        
-        .special-instructions {
-          margin-top: 0.75rem;
-        }
-        
-        .special-instructions-label {
-          font-size: 0.875rem;
-          font-weight: 500;
-          color: #111827;
-          margin: 0 0 0.25rem 0;
-        }
-        
-        .materials-grid {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-        }
-        
-        .material-tag {
-          padding: 0.25rem 0.75rem;
-          background-color: #dbeafe;
-          color: #1d4ed8;
-          border-radius: 9999px;
-          font-size: 0.875rem;
-        }
-        
-        /* Messages Tab */
-        .messages-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .messages-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .send-message-button {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 1rem;
-          background-color: #3b82f6;
-          color: white;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: background-color 0.2s;
-        }
-        
-        .send-message-button:hover {
-          background-color: #2563eb;
-        }
-        
-        .send-message-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        .messages-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          max-height: 24rem;
-          overflow-y: auto;
-          padding-right: 0.5rem;
-        }
-        
-        .message-item {
-          display: flex;
-        }
-        
-        .message-item.customer {
-          justify-content: flex-start;
-        }
-        
-        .message-item.provider {
-          justify-content: flex-end;
-        }
-        
-        .message-bubble {
-          max-width: 28rem;
-          padding: 1rem;
-          border-radius: 0.5rem;
-        }
-        
-        .message-bubble.customer {
-          background-color: #f3f4f6;
-          color: #111827;
-        }
-        
-        .message-bubble.provider {
-          background-color: #dbeafe;
-          color: #1e40af;
-        }
-        
-        .message-text {
-          margin: 0 0 0.5rem 0;
-          line-height: 1.5;
-        }
-        
-        .message-time {
-          font-size: 0.75rem;
-          opacity: 0.7;
-          margin: 0;
-        }
-        
-        /* Documents Tab */
-        .documents-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .documents-list {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-        
-        .document-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0.75rem;
-          background-color: #f9fafb;
-          border-radius: 0.5rem;
-          transition: background-color 0.2s;
-        }
-        
-        .document-item:hover {
-          background-color: #f3f4f6;
-        }
-        
-        .document-info {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-        
-        .document-icon {
-          width: 1.25rem;
-          height: 1.25rem;
-          color: #6b7280;
-        }
-        
-        .document-name {
-          font-weight: 500;
-          color: #111827;
-          margin: 0;
-          font-size: 0.875rem;
-        }
-        
-        .document-date {
-          font-size: 0.75rem;
-          color: #6b7280;
-          margin: 0;
-        }
-        
-        .document-download {
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #3b82f6;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: color 0.2s;
-        }
-        
-        .document-download:hover {
-          color: #2563eb;
-        }
-        
-        .upload-document-button {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 1rem;
-          background: none;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          color: #374151;
-          font-size: 0.875rem;
-          transition: all 0.2s;
-          align-self: flex-start;
-        }
-        
-        .upload-document-button:hover {
-          background-color: #f9fafb;
-        }
-        
-        .upload-document-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* Team Tab */
-        .team-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .team-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .team-member {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 1rem;
-          background-color: #f9fafb;
-          border-radius: 0.5rem;
-        }
-        
-        .member-info {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .member-avatar {
-          width: 3rem;
-          height: 3rem;
-          background-color: #dbeafe;
-          border-radius: 9999px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-        
-        .member-avatar-icon {
-          width: 1.5rem;
-          height: 1.5rem;
-          color: #3b82f6;
-        }
-        
-        .member-details h4 {
-          font-weight: 500;
-          color: #111827;
-          margin: 0 0 0.25rem 0;
-          font-size: 0.875rem;
-        }
-        
-        .member-details p {
-          font-size: 0.75rem;
-          color: #6b7280;
-          margin: 0 0 0.125rem 0;
-        }
-        
-        .message-member-button {
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #3b82f6;
-          padding: 0.5rem;
-          border-radius: 0.25rem;
-          transition: background-color 0.2s;
-        }
-        
-        .message-member-button:hover {
-          background-color: #f3f4f6;
-        }
-        
-        .message-member-button .icon {
-          width: 1.25rem;
-          height: 1.25rem;
-        }
-        
-        .assign-member-button {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 1rem;
-          background: none;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          color: #374151;
-          font-size: 0.875rem;
-          transition: all 0.2s;
-          align-self: flex-start;
-        }
-        
-        .assign-member-button:hover {
-          background-color: #f9fafb;
-        }
-        
-        .assign-member-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* History Tab */
-        .history-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .history-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .history-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 1rem;
-        }
-        
-        .history-dot {
-          flex-shrink: 0;
-          width: 0.5rem;
-          height: 0.5rem;
-          background-color: #3b82f6;
-          border-radius: 9999px;
-          margin-top: 0.5rem;
-        }
-        
-        .history-content {
-          flex: 1;
-        }
-        
-        .history-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 0.25rem;
-        }
-        
-        .history-status {
-          font-weight: 500;
-          color: #111827;
-          font-size: 0.875rem;
-          text-transform: capitalize;
-        }
-        
-        .history-time {
-          font-size: 0.75rem;
-          color: #6b7280;
-        }
-        
-        .history-note {
-          font-size: 0.875rem;
-          color: #6b7280;
-          margin: 0;
-          line-height: 1.5;
-        }
-        
-        /* Status Update */
-        .status-update-container {
-          background-color: white;
-          border-radius: 0.75rem;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-          padding: 1.5rem;
-        }
-        
-        .status-update-form {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        
-        .form-label {
-          font-size: 0.875rem;
-          font-weight: 500;
-          color: #374151;
-        }
-        
-        .status-update-textarea {
-          width: 100%;
-          padding: 0.75rem;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          font-family: inherit;
-          font-size: 0.875rem;
-          resize: vertical;
-          transition: all 0.2s;
-        }
-        
-        .status-update-textarea:focus {
-          outline: none;
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        
-        .status-buttons {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.75rem;
-        }
-        
-        .status-button {
-          padding: 0.5rem 1.5rem;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        
-        .status-button.start {
-          background-color: #f97316;
-          color: white;
-        }
-        
-        .status-button.start:hover {
-          background-color: #ea580c;
-        }
-        
-        .status-button.complete {
-          background-color: #10b981;
-          color: white;
-        }
-        
-        .status-button.complete:hover {
-          background-color: #059669;
-        }
-        
-        .status-button.cancel {
-          background-color: #ef4444;
-          color: white;
-        }
-        
-        .status-button.cancel:hover {
-          background-color: #dc2626;
-        }
-        
-        .status-button.clear {
-          background-color: white;
-          border: 1px solid #d1d5db;
-          color: #374151;
-        }
-        
-        .status-button.clear:hover {
-          background-color: #f9fafb;
-        }
-        
-        /* Sidebar Cards */
-        .main-right {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        
-        .sidebar-card {
-          background-color: white;
-          border-radius: 0.75rem;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-          padding: 1.5rem;
-        }
-        
-        .sidebar-card-title {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 1.125rem;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 1rem 0;
-        }
-        
-        .sidebar-card-title-icon {
-          width: 1.25rem;
-          height: 1.25rem;
-          color: #4b5563;
-        }
-        
-        /* Customer Card */
-        .customer-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .customer-info {
-          margin-bottom: 0.5rem;
-        }
-        
-        .customer-name {
-          font-weight: 500;
-          color: #111827;
-          margin: 0 0 0.25rem 0;
-          font-size: 1rem;
-        }
-        
-        .customer-meta {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        
-        .customer-role {
-          padding: 0.125rem 0.5rem;
-          background-color: #dbeafe;
-          color: #1d4ed8;
-          border-radius: 9999px;
-          font-size: 0.75rem;
-          font-weight: 500;
-        }
-        
-        .customer-rating {
-          display: flex;
-          align-items: center;
-          gap: 0.125rem;
-        }
-        
-        .star-icon {
-          width: 1rem;
-          height: 1rem;
-          color: #fbbf24;
-          fill: currentColor;
-        }
-        
-        .customer-contact {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        
-        .contact-item {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-        
-        .contact-icon {
-          width: 1rem;
-          height: 1rem;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        
-        .contact-link {
-          color: #374151;
-          text-decoration: none;
-          font-size: 0.875rem;
-          transition: color 0.2s;
-        }
-        
-        .contact-link:hover {
-          color: #3b82f6;
-        }
-        
-        .customer-stats {
-          padding-top: 1rem;
-          border-top: 1px solid #e5e7eb;
-        }
-        
-        .stats-text {
-          font-size: 0.875rem;
-          color: #6b7280;
-          margin: 0;
-        }
-        
-        .stats-value {
-          font-weight: 500;
-          color: #111827;
-        }
-        
-        .customer-actions {
-          display: flex;
-          gap: 0.75rem;
-        }
-        
-        .action-button {
-          flex: 1;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-          padding: 0.5rem;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        
-        .action-button.message {
-          background-color: #3b82f6;
-          color: white;
-        }
-        
-        .action-button.message:hover {
-          background-color: #2563eb;
-        }
-        
-        .action-button.call {
-          background-color: white;
-          border: 1px solid #d1d5db;
-          color: #374151;
-        }
-        
-        .action-button.call:hover {
-          background-color: #f9fafb;
-        }
-        
-        .action-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* Property Card */
-        .property-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .property-address {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.75rem;
-        }
-        
-        .address-icon {
-          width: 1rem;
-          height: 1rem;
-          color: #6b7280;
-          margin-top: 0.125rem;
-          flex-shrink: 0;
-        }
-        
-        .address-text {
-          color: #374151;
-          font-size: 0.875rem;
-          line-height: 1.5;
-          margin: 0;
-        }
-        
-        .property-details {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        
-        .directions-button {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-          padding: 0.5rem;
-          background: none;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          color: #374151;
-          font-size: 0.875rem;
-          transition: all 0.2s;
-        }
-        
-        .directions-button:hover {
-          background-color: #f9fafb;
-        }
-        
-        .directions-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* Pricing Card */
-        .pricing-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .pricing-breakdown {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-        
-        .pricing-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        
-        .pricing-label {
-          color: #6b7280;
-          font-size: 0.875rem;
-        }
-        
-        .pricing-value {
-          font-weight: 500;
-          color: #111827;
-          font-size: 0.875rem;
-        }
-        
-        .pricing-row.discount .pricing-value {
-          color: #10b981;
-        }
-        
-        .pricing-total {
-          padding-top: 0.75rem;
-          border-top: 1px solid #e5e7eb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-size: 1.125rem;
-          font-weight: bold;
-          color: #111827;
-        }
-        
-        .payment-info {
-          padding-top: 0.75rem;
-          border-top: 1px solid #e5e7eb;
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        
-        .payment-status {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .payment-label {
-          color: #6b7280;
-          font-size: 0.875rem;
-        }
-        
-        .status-badge-small {
-          padding: 0.125rem 0.5rem;
-          border-radius: 9999px;
-          font-size: 0.75rem;
-          font-weight: 500;
-        }
-        
-        .status-badge-paid {
-          background-color: #d1fae5;
-          color: #065f46;
-        }
-        
-        .status-badge-pending {
-          background-color: #fef3c7;
-          color: #92400e;
-        }
-        
-        .payment-method {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .method-info {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        
-        .method-icon {
-          width: 1rem;
-          height: 1rem;
-          color: #6b7280;
-        }
-        
-        .method-text {
-          font-size: 0.875rem;
-          color: #111827;
-          text-transform: capitalize;
-        }
-        
-        .download-invoice-button {
-          width: 100%;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-          padding: 0.5rem;
-          background-color: #f3f4f6;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          color: #374151;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: all 0.2s;
-          margin-top: 1rem;
-        }
-        
-        .download-invoice-button:hover {
-          background-color: #e5e7eb;
-        }
-        
-        .download-invoice-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* Commission Note */
-        .commission-note {
-          background-color: #fffbeb;
-          border: 1px solid #fde68a;
-          border-radius: 0.75rem;
-          padding: 1rem;
-        }
-        
-        .commission-note-content {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.75rem;
-        }
-        
-        .commission-icon {
-          width: 1.25rem;
-          height: 1.25rem;
-          color: #d97706;
-          flex-shrink: 0;
-          margin-top: 0.125rem;
-        }
-        
-        .commission-text {
-          font-size: 0.875rem;
-          color: #92400e;
-          margin: 0;
-          line-height: 1.5;
-        }
-        
-        .commission-link {
-          display: inline-block;
-          margin-top: 0.5rem;
-          font-size: 0.875rem;
-          font-weight: 500;
-          color: #b45309;
-          text-decoration: none;
-          transition: color 0.2s;
-        }
-        
-        .commission-link:hover {
-          color: #92400e;
-          text-decoration: underline;
-        }
-        
-        /* Review Section */
-        .review-section {
-          background-color: white;
-          border-radius: 0.75rem;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-          padding: 1.5rem;
-        }
-        
-        .review-description {
-          color: #6b7280;
-          font-size: 0.875rem;
-          margin: 0 0 1rem 0;
-        }
-        
-        .review-button {
-          width: 100%;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-          padding: 0.5rem;
-          background-color: #3b82f6;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          color: white;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: background-color 0.2s;
-        }
-        
-        .review-button:hover {
-          background-color: #2563eb;
-        }
-        
-        .review-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* Review Modal */
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background-color: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 1rem;
-          z-index: 100;
-        }
-        
-        .modal-content {
-          background-color: white;
-          border-radius: 1rem;
-          max-width: 28rem;
-          width: 100%;
-        }
-        
-        .modal-header {
-          padding: 1.5rem 1.5rem 0;
-        }
-        
-        .modal-title {
-          font-size: 1.25rem;
-          font-weight: bold;
-          color: #111827;
-          margin: 0 0 1.5rem 0;
-        }
-        
-        .modal-body {
-          padding: 0 1.5rem 1.5rem;
-        }
-        
-        .review-modal-content {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        
-        .rating-stars {
-          display: flex;
-          gap: 0.25rem;
-        }
-        
-        .rating-star-button {
-          padding: 0.25rem;
-          background: none;
-          border: none;
-          cursor: pointer;
-        }
-        
-        .rating-star {
-          width: 2rem;
-          height: 2rem;
-        }
-        
-        .rating-star.active {
-          color: #fbbf24;
-          fill: currentColor;
-        }
-        
-        .rating-star.inactive {
-          color: #d1d5db;
-        }
-        
-        .review-textarea {
-          width: 100%;
-          padding: 0.75rem;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          font-family: inherit;
-          font-size: 0.875rem;
-          resize: vertical;
-          transition: all 0.2s;
-        }
-        
-        .review-textarea:focus {
-          outline: none;
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        
-        .modal-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 0.75rem;
-        }
-        
-        .modal-button {
-          padding: 0.5rem 1.5rem;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: all 0.2s;
-        }
-        
-        .modal-button.cancel {
-          background-color: white;
-          border: 1px solid #d1d5db;
-          color: #374151;
-        }
-        
-        .modal-button.cancel:hover {
-          background-color: #f9fafb;
-        }
-        
-        .modal-button.submit {
-          background-color: #3b82f6;
-          color: white;
-        }
-        
-        .modal-button.submit:hover {
-          background-color: #2563eb;
-        }
-        
-        /* Loading State */
-        .provider-bookings-loading {
-          min-height: 100vh;
-          background-color: #f9fafb;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        
-        .loading-content {
-          text-align: center;
-        }
-        
-        .loading-spinner {
-          width: 4rem;
-          height: 4rem;
-          border: 4px solid #3b82f6;
-          border-top-color: transparent;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 1rem;
-        }
-        
-        .loading-text {
-          color: #4b5563;
-          font-size: 1rem;
-          margin: 0;
-        }
-        
-        /* Error State */
-        .provider-bookings-error {
-          min-height: 100vh;
-          background-color: #f9fafb;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        
-        .error-content {
-          text-align: center;
-        }
-        
-        .error-icon {
-          width: 4rem;
-          height: 4rem;
-          color: #9ca3af;
-          margin: 0 auto 1rem;
-        }
-        
-        .error-title {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 0.5rem 0;
-        }
-        
-        .error-message {
-          color: #6b7280;
-          margin: 0 0 1.5rem 0;
-        }
-        
-        .back-button {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.75rem 1.5rem;
-          background-color: #3b82f6;
-          color: white;
-          border-radius: 0.5rem;
-          text-decoration: none;
-          font-weight: 500;
-          transition: background-color 0.2s;
-        }
-        
-        .back-button:hover {
-          background-color: #2563eb;
-        }
-        
-        .back-button .button-icon {
-          width: 1rem;
-          height: 1rem;
-        }
-        
-        /* Animations */
-        @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-        
-        /* Scrollbar Styling */
-        .messages-list::-webkit-scrollbar,
-        .tabs-list::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        
-        .messages-list::-webkit-scrollbar-track,
-        .tabs-list::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 3px;
-        }
-        
-        .messages-list::-webkit-scrollbar-thumb,
-        .tabs-list::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 3px;
-        }
-        
-        .messages-list::-webkit-scrollbar-thumb:hover,
-        .tabs-list::-webkit-scrollbar-thumb:hover {
-          background: #a1a1a1;
-        }
-        
-        /* Print Styles */
-        @media print {
-          .provider-bookings-container {
-            padding: 0;
-            background-color: white;
-          }
-          
-          .header-right,
-          .status-update-container,
-          .review-section,
-          .actions-menu,
-          button:not(.print-button) {
-            display: none !important;
-          }
-          
-          .main-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .stat-card,
-          .tabs-container,
-          .sidebar-card {
-            border: 1px solid #000;
-            box-shadow: none;
-          }
-          
-          .header-title {
-            color: #000;
-          }
-        }
-        `}</style>
     </>
   );
 };
 
-// Add this missing export statement:
 export default ProviderBookings;

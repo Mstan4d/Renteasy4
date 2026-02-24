@@ -189,3 +189,201 @@
       align-self: flex-end;
     }
   }
+
+  /* CommissionNotice.css */
+.commission-notice {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
+  border: 2px solid;
+  border-radius: 15px;
+  padding: 1.5rem;
+  margin: 2rem 0;
+  animation: slideIn 0.5s ease-out;
+  transition: all 0.3s ease;
+}
+
+.commission-notice:hover {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.commission-notice.info {
+  background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
+  border-color: #fbbf24;
+  text-align: center;
+}
+
+.commission-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.commission-header h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin: 0;
+}
+
+.commission-description {
+  color: #2d3748;
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.commission-breakdown {
+  background: white;
+  border-radius: 10px;
+  padding: 1.5rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px dashed #e2e8f0;
+  transition: background-color 0.2s ease;
+}
+
+.breakdown-item:hover {
+  background-color: #f7fafc;
+}
+
+.breakdown-item:last-child {
+  border-bottom: none;
+}
+
+.breakdown-item.highlight {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border-radius: 8px;
+  border: 1px solid #10b981;
+  margin: 0.5rem 0;
+}
+
+.breakdown-item.total-item {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+  color: white;
+  border-radius: 8px;
+  border: none;
+  margin-top: 0.5rem;
+}
+
+.breakdown-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 500;
+  color: #4a5568;
+}
+
+.breakdown-item.total-item .breakdown-label {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.breakdown-item.total-item .price,
+.breakdown-item.total-item .total-amount {
+  color: white;
+  font-size: 1.5rem;
+}
+
+.breakdown-separator {
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #4a5568;
+  padding: 0.5rem 0;
+}
+
+.price {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.commission-renteasy {
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.commission-manager {
+  color: #8b5cf6;
+  font-weight: 700;
+}
+
+.commission-poster {
+  color: #10b981;
+  font-weight: 800;
+  font-size: 1.25rem;
+}
+
+.total-amount {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1e3a8a;
+}
+
+.commission-note {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  border-left: 4px solid #10b981;
+}
+
+.commission-note p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .commission-notice {
+    padding: 1rem;
+    margin: 1rem 0;
+  }
+  
+  .commission-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.5rem;
+  }
+  
+  .commission-header h3 {
+    font-size: 1.25rem;
+  }
+  
+  .breakdown-item {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+  
+  .breakdown-label {
+    justify-content: center;
+  }
+  
+  .price,
+  .total-amount,
+  .commission-renteasy,
+  .commission-manager,
+  .commission-poster {
+    font-size: 1.1rem;
+  }
+}

@@ -1,12 +1,13 @@
 // src/modules/dashboard/pages/tenant/TenantMaintenance.jsx - UPDATED
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import './TenantMaintenance.css';
 
 const TenantMaintenance = () => {
   const { user } = useAuth();
   const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showNewRequest, setShowNewRequest] = useState(false);
   const [filter, setFilter] = useState('all');
   const [newRequest, setNewRequest] = useState({
@@ -14,106 +15,53 @@ const TenantMaintenance = () => {
     category: '',
     description: '',
     priority: 'medium',
-    property: '',
     emergency: false,
     images: []
   });
 
   useEffect(() => {
-    loadRequests();
-  }, []);
+    if (user) fetchRequests();
+  }, [user]);
 
-  const loadRequests = () => {
+  const fetchRequests = async () => {
     setLoading(true);
-    
-    // Mock maintenance requests data
-    const mockRequests = [
-      {
-        id: 'req_001',
-        title: 'AC Repair',
-        category: 'air_conditioning',
-        description: 'AC not cooling properly. The temperature stays at 28°C even when set to 18°C.',
-        property: '2 Bedroom Flat, Lekki Phase 1',
-        date: '2024-12-01',
-        status: 'in_progress',
-        priority: 'high',
-        assignedTo: 'John Maintenance',
-        contact: '+234 803 123 4567',
-        estimatedCompletion: '2024-12-05',
-        images: [],
-        notes: 'Technician visited on Dec 2. Waiting for compressor part.'
-      },
-      {
-        id: 'req_002',
-        title: 'Leaking Kitchen Tap',
-        category: 'plumbing',
-        description: 'Kitchen tap leaking continuously. Wasting water.',
-        property: '2 Bedroom Flat, Lekki Phase 1',
-        date: '2024-11-28',
-        status: 'pending',
-        priority: 'medium',
-        assignedTo: null,
-        contact: null,
-        estimatedCompletion: null,
-        images: [],
-        notes: ''
-      },
-      {
-        id: 'req_003',
-        title: 'Broken Window',
-        category: 'structural',
-        description: 'Bedroom window broken during storm. Need urgent replacement.',
-        property: '2 Bedroom Flat, Lekki Phase 1',
-        date: '2024-11-25',
-        status: 'completed',
-        priority: 'high',
-        assignedTo: 'Glass Masters Ltd',
-        contact: '+234 802 987 6543',
-        estimatedCompletion: '2024-11-27',
-        images: [],
-        notes: 'Window replaced successfully on Nov 27.'
-      },
-      {
-        id: 'req_004',
-        title: 'Painting Request',
-        category: 'decoration',
-        description: 'Living room needs repainting. Walls have stains.',
-        property: '2 Bedroom Flat, Lekki Phase 1',
-        date: '2024-11-20',
-        status: 'approved',
-        priority: 'low',
-        assignedTo: 'Paint Pros',
-        contact: '+234 701 234 5678',
-        estimatedCompletion: '2024-12-10',
-        images: [],
-        notes: 'Landlord approved. Waiting for scheduling.'
-      },
-      {
-        id: 'req_005',
-        title: 'Electrical Socket Not Working',
-        category: 'electrical',
-        description: 'Socket in bedroom not working. Suspected wiring issue.',
-        property: '2 Bedroom Flat, Lekki Phase 1',
-        date: '2024-11-18',
-        status: 'completed',
-        priority: 'medium',
-        assignedTo: 'Spark Electricians',
-        contact: '+234 809 876 5432',
-        estimatedCompletion: '2024-11-19',
-        images: [],
-        notes: 'Fixed wiring issue. Socket now functional.'
-      }
-    ];
+    const { data, error } = await supabase
+      .from('maintenance_requests')
+      .select('*')
+      .eq('tenant_id', user.id)
+      .order('created_at', { ascending: false });
 
-    const savedRequests = JSON.parse(localStorage.getItem(`tenant_maintenance_${user?.id}`) || 'null');
-    
-    if (savedRequests) {
-      setRequests(savedRequests);
+    if (!error) setRequests(data);
+    setLoading(false);
+  };
+
+  const submitNewRequest = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    const requestData = {
+      tenant_id: user.id,
+      landlord_id: user.landlord_id, // Ensure this exists in your AuthContext/Profile
+      property_id: user.current_property_id, 
+      title: newRequest.title,
+      category: newRequest.category,
+      description: newRequest.description,
+      priority: newRequest.priority,
+      emergency: newRequest.emergency,
+      status: 'pending'
+    };
+
+    const { error } = await supabase
+      .from('maintenance_requests')
+      .insert([requestData]);
+
+    if (error) {
+      alert("Error submitting request: " + error.message);
     } else {
-      setRequests(mockRequests);
-      localStorage.setItem(`tenant_maintenance_${user?.id}`, JSON.stringify(mockRequests));
+      alert("Request sent to landlord!");
+      setShowNewRequest(false);
+      fetchRequests();
     }
-    
     setLoading(false);
   };
 
@@ -146,63 +94,7 @@ const TenantMaintenance = () => {
     });
   };
 
-  // Update the submitNewRequest function in TenantMaintenance.jsx
-const submitNewRequest = (e) => {
-  e.preventDefault();
-  
-  const request = {
-    id: `req_${Date.now()}`,
-    ...newRequest,
-    date: new Date().toISOString().split('T')[0],
-    status: 'pending',
-    assignedTo: null,
-    contact: null,
-    estimatedCompletion: null,
-    notes: '',
-    tenantId: user?.id,
-    tenantName: user?.name || 'Tenant',
-    createdAt: new Date().toISOString(),
-    propertyId: user?.propertyId || '', // Add property ID if available
-    landlordId: user?.landlordId || '' // Add landlord ID if available
-  };
-
-  // Save to tenant's local storage
-  const updatedRequests = [request, ...requests];
-  setRequests(updatedRequests);
-  localStorage.setItem(`tenant_maintenance_${user?.id}`, JSON.stringify(updatedRequests));
-  
-  // ALSO save to landlord's maintenance reports
-  const landlordId = request.property.split(',')[0]?.trim() || 'default_landlord'; // Extract landlord ID from property or use a default
-  const landlordReportsKey = `landlord_maintenance_reports_${landlordId}`;
-  const existingLandlordReports = JSON.parse(localStorage.getItem(landlordReportsKey) || '[]');
-  
-  // Add to landlord's reports
-  const landlordReportEntry = {
-    ...request,
-    reportId: `report_${Date.now()}`,
-    viewed: false,
-    priorityLevel: request.priority,
-    emergency: request.emergency,
-    tenantContact: user?.email || user?.phone || 'Not provided'
-  };
-  
-  const updatedLandlordReports = [landlordReportEntry, ...existingLandlordReports];
-  localStorage.setItem(landlordReportsKey, JSON.stringify(updatedLandlordReports));
-  
-  // Reset form and close modal
-  setNewRequest({
-    title: '',
-    category: '',
-    description: '',
-    priority: 'medium',
-    property: '',
-    emergency: false,
-    images: []
-  });
-  setShowNewRequest(false);
-  
-  alert('Maintenance request submitted successfully! Landlord has been notified.');
-};
+ 
   const markAsCompleted = (requestId) => {
     if (window.confirm('Mark this maintenance request as completed?')) {
       const updatedRequests = requests.map(request => {

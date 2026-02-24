@@ -58,17 +58,90 @@ const ManagerPayments = () => {
     }
   }
 
-  const getPaymentStatus = (payment) => {
-    if (payment.paidToManager) {
-      return { label: 'Paid', color: '#155724', bgColor: '#d4edda', icon: '✅' }
-    }
+  const handleNotifySent = async (chatId) => {
+  // 1. Create a hidden file input to pick the screenshot
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*';
+  
+  fileInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setLoading(true);
     
-    if (payment.status === 'confirmed') {
-      return { label: 'Confirmed', color: '#004085', bgColor: '#cce5ff', icon: '💰' }
+    // 2. Upload the receipt to Supabase Storage
+    const fileExt = file.name.split('.').pop();
+    const fileName = `receipts/${chatId}_${Date.now()}.${fileExt}`;
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('verification-docs') // Reuse your existing bucket
+      .upload(fileName, file);
+
+    if (uploadError) {
+      alert("Error uploading receipt");
+      setLoading(false);
+      return;
     }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('verification-docs')
+      .getPublicUrl(fileName);
+
+    // 3. Update the Chat record
+    const { error: updateError } = await supabase
+      .from('chats')
+      .update({ 
+        admin_confirmed_payment: true, 
+        payment_receipt_url: publicUrl,
+        manager_notified_transfer_at: new Date().toISOString()
+      })
+      .eq('id', chatId);
+
+    if (!updateError) {
+      alert("Receipt uploaded and Admin notified!");
+      loadPayments();
+    }
+    setLoading(false);
+  };
+
+  fileInput.click();
+};
+
+  const updateBankDetails = async (e) => {
+  e.preventDefault();
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      bank_name: bankName,
+      account_number: accNo,
+      account_name: accName
+    })
+    .eq('id', user.id);
+    
+  if(!error) alert("Bank details updated! Admin will use this for your payouts.");
+};
+
+const getPaymentStatus = (payment) => {
+  if (payment.paid_to_manager) {
+    return { label: 'Paid to Bank', color: '#155724', bgColor: '#d4edda', icon: '✅' };
+  }
+  return { label: 'Awaiting Your Transfer', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
+}
     
     return { label: 'Pending', color: '#856404', bgColor: '#fff3cd', icon: '⏳' }
   }
+
+  const notifyAdminOfTransfer = async (chatId) => {
+  const { error } = await supabase
+    .from('chats')
+    .update({ 
+      admin_confirmed_payment: 'pending_verification' // This flags the admin
+    })
+    .eq('id', chatId);
+
+  if(!error) alert("Admin notified! Once they verify the transfer, your payout will be processed.");
+};
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
@@ -123,6 +196,7 @@ const ManagerPayments = () => {
           </div>
         </div>
         
+
         <div className="summary-card available">
           <div className="summary-icon">💳</div>
           <div className="summary-content">
@@ -159,6 +233,21 @@ const ManagerPayments = () => {
       </div>
 
       {/* WITHDRAWAL CTA */}
+      {/* RENTEASY BANK DETAILS (PLACEHOLDER) */}
+<div className="renteasy-bank-notice">
+  <div className="notice-icon">🏦</div>
+  <div className="notice-text">
+    <h4>How to complete your commission:</h4>
+    <p>After closing a deal, send the total 7.5% commission to the account below. 
+       Once confirmed, your 2.5% share will be sent to your registered bank account.</p>
+    <div className="bank-details-box">
+      <p><strong>Bank:</strong> Zenith Bank</p>
+      <p><strong>Account Name:</strong> RentEasy Real Estate Ltd</p>
+      <p><strong>Account Number:</strong> 1234567890</p>
+    </div>
+    <small>*Use the Property Title as your transfer narration.</small>
+  </div>
+</div>
       {stats.available >= 5000 && (
         <div className="withdrawal-cta">
           <div className="cta-content">
@@ -270,6 +359,18 @@ const ManagerPayments = () => {
                         {status.icon} {status.label}
                       </span>
                     </td>
+                    <td>
+  {!payment.admin_confirmed_payment ? (
+    <button 
+      className="btn-notify-sent"
+      onClick={() => handleNotifySent(payment.id)}
+    >
+      Confirm 7.5% Sent
+    </button>
+  ) : (
+    <span className="status-waiting">Verification Pending...</span>
+  )}
+</td>
                     <td>
                       <div className="payment-actions">
                         <button 

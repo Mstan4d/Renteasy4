@@ -79,43 +79,28 @@ const ManagerRadius = () => {
     return selectedAreas.some(a => a.id === areaId)
   }
 
-  const handleSaveSettings = () => {
-    setSaving(true)
-    
-    // Save to localStorage
-    const managers = JSON.parse(localStorage.getItem('managers') || '[]')
-    const managerIndex = managers.findIndex(m => m.userId === user.id)
-    
-    const managerData = {
-      userId: user.id,
-      name: user.name,
-      radius,
-      areas: selectedAreas,
-      location: mapLocation,
-      updatedAt: new Date().toISOString()
-    }
-    
-    if (managerIndex !== -1) {
-      managers[managerIndex] = managerData
-    } else {
-      managers.push(managerData)
-    }
-    
-    localStorage.setItem('managers', JSON.stringify(managers))
-    
-    // Update user settings
-    const users = JSON.parse(localStorage.getItem('users') || '[]')
-    const userIndex = users.findIndex(u => u.id === user.id)
-    if (userIndex !== -1) {
-      users[userIndex].managerSettings = { radius, areas: selectedAreas }
-      localStorage.setItem('users', JSON.stringify(users))
-    }
-    
-    setTimeout(() => {
-      setSaving(false)
-      alert('✅ Settings saved successfully!\n\nYou will now receive notifications for listings within your selected radius and areas.')
-    }, 1000)
+  const handleSaveSettings = async () => {
+  setSaving(true);
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      notification_radius_km: radius,
+      preferred_lgas: selectedAreas.map(a => a.lga),
+      // Update location if mapLocation exists
+      last_location: mapLocation 
+        ? `POINT(${mapLocation.lng} ${mapLocation.lat})` 
+        : null
+    })
+    .eq('id', user.id);
+
+  if (error) {
+    alert("Error saving settings: " + error.message);
+  } else {
+    alert("✅ Settings synced to RentEasy Cloud!");
   }
+  setSaving(false);
+};
 
   const getCurrentLocation = () => {
     if (navigator.geolocation) {

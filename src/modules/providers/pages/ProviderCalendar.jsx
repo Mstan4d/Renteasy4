@@ -1,45 +1,91 @@
 // src/modules/providers/pages/ProviderCalendar.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, User, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './ProviderCalendar.css';
 
 const ProviderCalendar = () => {
+  const { user } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState('month'); // 'month', 'week', 'day'
+  const [bookings, setBookings] = useState([]);
+  const [availability, setAvailability] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const bookings = [
-    {
-      id: 1,
-      title: 'Deep Cleaning',
-      client: 'John Doe',
-      date: '2024-01-15',
-      time: '10:00 AM - 2:00 PM',
-      location: 'Lagos Island',
-      status: 'confirmed',
-      color: 'blue'
-    },
-    {
-      id: 2,
-      title: 'Painting Service',
-      client: 'Jane Smith',
-      date: '2024-01-16',
-      time: '9:00 AM - 5:00 PM',
-      location: 'Victoria Island',
-      status: 'pending',
-      color: 'yellow'
-    },
-    {
-      id: 3,
-      title: 'Plumbing Repair',
-      client: 'Mike Johnson',
-      date: '2024-01-17',
-      time: '2:00 PM - 4:00 PM',
-      location: 'Lekki Phase 1',
-      status: 'confirmed',
-      color: 'green'
-    },
-  ];
+  useEffect(() => {
+    if (!user) return;
+    fetchData();
+  }, [user, currentDate]);
 
+  const fetchData = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    // Get start and end of current month for filtering
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+    const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+    // Fetch service_requests for this provider within date range
+    const { data: requests, error: reqError } = await supabase
+      .from('service_requests')
+      .select(`
+        id,
+        service_type,
+        client:client_id (full_name),
+        scheduled_date,
+        status,
+        created_at
+      `)
+      .eq('provider_id', user.id)
+      .gte('scheduled_date', startDate)
+      .lte('scheduled_date', endDate)
+      .order('scheduled_date', { ascending: true });
+
+    if (reqError) throw reqError;
+
+    // Transform to component's expected format with fallbacks
+    const transformed = (requests || []).map(req => {
+      // Determine color based on status
+      let color = 'gray';
+      if (req.status === 'confirmed' || req.status === 'scheduled') color = 'green';
+      else if (req.status === 'pending') color = 'yellow';
+      else if (req.status === 'completed') color = 'blue';
+
+      return {
+        id: req.id,
+        title: req.service_type || 'Service',
+        client: req.client?.full_name || 'Client',
+        date: req.scheduled_date,
+        time: 'All day', // placeholder – add if you have a time column
+        location: 'Location not specified', // placeholder
+        status: req.status,
+        color
+      };
+    });
+
+    setBookings(transformed);
+
+    // Fetch provider availability (optional)
+    const { data: availData, error: availError } = await supabase
+      .from('provider_availability')
+      .select('*')
+      .eq('provider_id', user.id)
+      .maybeSingle();
+
+    if (availError && availError.code !== 'PGRST116') throw availError;
+    setAvailability(availData || null);
+
+  } catch (err) {
+    console.error('Error fetching calendar data:', err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
   const navigateMonth = (direction) => {
     const newDate = new Date(currentDate);
     if (direction === 'prev') {
@@ -65,8 +111,43 @@ const ProviderCalendar = () => {
     return days;
   };
 
+  // Stats calculation
+  const currentMonthBookings = bookings.filter(b => {
+    const bDate = new Date(b.date);
+    return bDate.getMonth() === currentDate.getMonth() && bDate.getFullYear() === currentDate.getFullYear();
+  });
+  const bookingsThisMonth = currentMonthBookings.length;
+
+  const confirmedThisMonth = currentMonthBookings.filter(b => b.status === 'confirmed' || b.status === 'scheduled').length;
+
+  // Next available slot – from upcoming bookings or availability
+  const nextBooking = bookings.find(b => new Date(b.date) >= new Date() && (b.status === 'scheduled' || b.status === 'confirmed'));
+  const nextSlotText = nextBooking 
+    ? `${new Date(nextBooking.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${nextBooking.time}` 
+    : 'None';
+
   const days = getDaysInMonth(currentDate);
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  if (loading) {
+    return (
+      <div className="provider-calendar-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading your calendar...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="provider-calendar-error">
+        <AlertCircle size={48} />
+        <h3>Failed to load calendar</h3>
+        <p>{error}</p>
+        <button onClick={fetchData} className="retry-button">Retry</button>
+      </div>
+    );
+  }
 
   return (
     <div className="provider-calendar-container">
@@ -129,8 +210,9 @@ const ProviderCalendar = () => {
           {/* Days Grid */}
           <div className="days-grid">
             {days.map((day, index) => {
+              const dayString = day.toISOString().split('T')[0];
               const dayBookings = bookings.filter(
-                booking => booking.date === day.toISOString().split('T')[0]
+                booking => booking.date === dayString
               );
               
               const isToday = day.toDateString() === new Date().toDateString();
@@ -169,7 +251,7 @@ const ProviderCalendar = () => {
         </div>
       )}
 
-      {/* Upcoming Bookings */}
+      {/* Upcoming Bookings (next 3) */}
       <div className="upcoming-bookings-section">
         <div className="section-header">
           <h3 className="section-title">Upcoming Bookings</h3>
@@ -179,7 +261,7 @@ const ProviderCalendar = () => {
         </div>
         
         <div className="booking-cards-container">
-          {bookings.map((booking) => (
+          {bookings.slice(0, 3).map((booking) => (
             <div key={booking.id} className="booking-card">
               <div className="booking-info">
                 <div className={`booking-icon-container ${booking.color}`}>
@@ -206,7 +288,11 @@ const ProviderCalendar = () => {
               
               <div className="booking-actions">
                 <span className={`booking-status ${booking.status}`}>
-                  {booking.status === 'confirmed' ? <CheckCircle className="status-icon" size={14} /> : <AlertCircle className="status-icon" size={14} />}
+                  {booking.status === 'confirmed' || booking.status === 'scheduled' ? (
+                    <CheckCircle className="status-icon" size={14} />
+                  ) : (
+                    <AlertCircle className="status-icon" size={14} />
+                  )}
                   <span className="capitalize">{booking.status}</span>
                 </span>
                 <button className="view-details-button">
@@ -215,6 +301,9 @@ const ProviderCalendar = () => {
               </div>
             </div>
           ))}
+          {bookings.length === 0 && (
+            <div className="no-bookings-message">No upcoming bookings</div>
+          )}
         </div>
       </div>
 
@@ -224,33 +313,41 @@ const ProviderCalendar = () => {
           <div className="stat-card-header">
             <div>
               <p className="stat-label">Bookings This Month</p>
-              <p className="stat-value">18</p>
+              <p className="stat-value">{bookingsThisMonth}</p>
             </div>
             <CalendarIcon className="stat-icon blue" size={24} />
           </div>
-          <p className="stat-trend positive">↑ 5 from last month</p>
+          <p className="stat-trend positive">
+            {confirmedThisMonth} confirmed
+          </p>
         </div>
         
         <div className="stat-card">
           <div className="stat-card-header">
             <div>
               <p className="stat-label">Available Days</p>
-              <p className="stat-value">24/31</p>
+              <p className="stat-value">
+                {availability ? Object.values(availability.schedule || {}).filter(d => d.active).length : '0'}/7
+              </p>
             </div>
             <CheckCircle className="stat-icon green" size={24} />
           </div>
-          <p className="stat-trend neutral">Fully booked for 7 days</p>
+          <p className="stat-trend neutral">
+            {availability ? 'Weekly schedule set' : 'Not set'}
+          </p>
         </div>
         
         <div className="stat-card">
           <div className="stat-card-header">
             <div>
               <p className="stat-label">Next Available Slot</p>
-              <p className="stat-value">Jan 18</p>
+              <p className="stat-value">{nextSlotText}</p>
             </div>
             <Clock className="stat-icon purple" size={24} />
           </div>
-          <p className="stat-trend neutral">2:00 PM - 4:00 PM</p>
+          <p className="stat-trend neutral">
+            {nextBooking ? 'Book now' : 'No upcoming bookings'}
+          </p>
         </div>
       </div>
     </div>

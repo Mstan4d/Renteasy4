@@ -2,43 +2,43 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   TrendingUp, DollarSign, Calendar, Filter,
   Download, BarChart3, PieChart, TrendingDown,
   Clock, Target, Award, RefreshCw,
-  ChevronDown, ChevronUp, Eye, Share2
+  ChevronDown, ChevronUp, Eye, Share2, AlertCircle
 } from 'lucide-react';
 import './ProviderEarnings.css';
 
 const ProviderEarnings = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  
-  const [provider, setProvider] = useState(null);
-  const [earnings, setEarnings] = useState({
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Financial stats
+  const [stats, setStats] = useState({
     totalEarnings: 0,
     availableBalance: 0,
     pendingPayouts: 0,
-    lifetimeEarnings: 0
+    lifetimeEarnings: 0,
+    thisMonthEarnings: 0,
+    lastMonthEarnings: 0,
+    averageBookingValue: 0,
+    bookingCount: 0
   });
-  
+
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
+
   // Filters
-  const [timeFilter, setTimeFilter] = useState('all'); // all, today, week, month, year
-  const [typeFilter, setTypeFilter] = useState('all'); // all, earnings, payout, refund
-  const [statusFilter, setStatusFilter] = useState('all'); // all, completed, pending, failed
-  const [sortBy, setSortBy] = useState('date-desc'); // date-asc, date-desc, amount-asc, amount-desc
-  
-  // Chart data
-  const [chartData, setChartData] = useState({
-    labels: [],
-    earnings: [],
-    bookings: []
-  });
-  
+  const [timeFilter, setTimeFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('date-desc');
+
   // Time periods for filter
   const timePeriods = [
     { id: 'today', label: 'Today' },
@@ -48,17 +48,16 @@ const ProviderEarnings = () => {
     { id: 'year', label: 'This Year' },
     { id: 'all', label: 'All Time' }
   ];
-  
+
   // Transaction types
   const transactionTypes = [
     { id: 'all', label: 'All Types' },
-    { id: 'earnings', label: 'Earnings' },
+    { id: 'earning', label: 'Earnings' },
     { id: 'payout', label: 'Payouts' },
-    { id: 'refund', label: 'Refunds' },
     { id: 'subscription', label: 'Subscription' },
     { id: 'boost', label: 'Boost' }
   ];
-  
+
   // Status options
   const statusOptions = [
     { id: 'all', label: 'All Status' },
@@ -66,7 +65,7 @@ const ProviderEarnings = () => {
     { id: 'pending', label: 'Pending' },
     { id: 'failed', label: 'Failed' }
   ];
-  
+
   // Sort options
   const sortOptions = [
     { id: 'date-desc', label: 'Newest First' },
@@ -74,248 +73,201 @@ const ProviderEarnings = () => {
     { id: 'amount-desc', label: 'Amount (High to Low)' },
     { id: 'amount-asc', label: 'Amount (Low to High)' }
   ];
-  
+
   useEffect(() => {
-    loadEarningsData();
-  }, []);
-  
+    if (!user) return;
+    fetchEarningsData();
+  }, [user]);
+
   useEffect(() => {
     filterAndSortTransactions();
   }, [transactions, timeFilter, typeFilter, statusFilter, sortBy]);
-  
-  const loadEarningsData = () => {
+
+  const fetchEarningsData = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      
-      // Load provider data
-      const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-      const userProvider = providers.find(p => p.userId === user?.id || p.email === user?.email);
-      
-      if (userProvider) {
-        setProvider(userProvider);
-        
-        // Mock earnings data
-        const mockEarnings = {
-          totalEarnings: userProvider.totalRevenue || 0,
-          availableBalance: userProvider.availableBalance || 0,
-          pendingPayouts: userProvider.pendingPayouts || 0,
-          lifetimeEarnings: userProvider.lifetimeEarnings || 0,
-          thisMonthEarnings: userProvider.thisMonthEarnings || 0,
-          lastMonthEarnings: userProvider.lastMonthEarnings || 0,
-          averageBookingValue: userProvider.averageBookingValue || 0,
-          bookingCount: userProvider.successfulBookings || 0
-        };
-        
-        setEarnings(mockEarnings);
-        
-        // Mock transactions
-        const mockTransactions = [
-          {
-            id: 'txn_001',
-            date: '2024-02-15',
-            type: 'earnings',
-            description: 'Interior Design Service - Lekki Phase 1',
-            amount: 75000,
-            status: 'completed',
-            bookingId: 'BKG-001',
-            clientName: 'Adeola Williams'
-          },
-          {
-            id: 'txn_002',
-            date: '2024-02-10',
-            type: 'earnings',
-            description: 'Electrical Installation - Victoria Island',
-            amount: 45000,
-            status: 'completed',
-            bookingId: 'BKG-002',
-            clientName: 'Michael Johnson'
-          },
-          {
-            id: 'txn_003',
-            date: '2024-02-05',
-            type: 'payout',
-            description: 'Withdrawal to Bank Account',
-            amount: -50000,
-            status: 'completed',
-            bookingId: null,
-            clientName: null
-          },
-          {
-            id: 'txn_004',
-            date: '2024-02-01',
-            type: 'subscription',
-            description: 'Monthly Subscription Fee',
-            amount: -3000,
-            status: 'completed',
-            bookingId: null,
-            clientName: null
-          },
-          {
-            id: 'txn_005',
-            date: '2024-01-28',
-            type: 'earnings',
-            description: 'Plumbing Repair - Ikeja',
-            amount: 25000,
-            status: 'pending',
-            bookingId: 'BKG-003',
-            clientName: 'Sarah Ahmed'
-          },
-          {
-            id: 'txn_006',
-            date: '2024-01-20',
-            type: 'boost',
-            description: 'Profile Boost - 30 days',
-            amount: -5000,
-            status: 'completed',
-            bookingId: null,
-            clientName: null
-          },
-          {
-            id: 'txn_007',
-            date: '2024-01-15',
-            type: 'earnings',
-            description: 'Painting Service - Ajah',
-            amount: 65000,
-            status: 'completed',
-            bookingId: 'BKG-004',
-            clientName: 'David Okafor'
-          }
-        ];
-        
-        setTransactions(mockTransactions);
-        setFilteredTransactions(mockTransactions);
-        
-        // Mock chart data
-        const mockChartData = {
-          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-          earnings: [45000, 85000, 65000, 95000, 75000, 110000, 90000],
-          bookings: [3, 5, 4, 6, 5, 8, 7]
-        };
-        
-        setChartData(mockChartData);
-      }
-    } catch (error) {
-      console.error('Error loading earnings data:', error);
+      // Fetch transactions
+      const { data: txnData, error: txnError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (txnError) throw txnError;
+      setTransactions(txnData || []);
+
+      // Fetch earnings summary
+      const { data: earnData, error: earnError } = await supabase
+        .from('provider_earnings')
+        .select('amount, status, created_at')
+        .eq('provider_id', user.id);
+
+      if (earnError) throw earnError;
+
+      // Fetch payouts summary
+      const { data: payoutData, error: payoutError } = await supabase
+        .from('provider_payouts')
+        .select('amount, status')
+        .eq('provider_id', user.id);
+
+      if (payoutError) throw payoutError;
+
+      // Calculate stats
+      const totalEarnings = (earnData || []).reduce((sum, e) => sum + (e.amount || 0), 0);
+      const pendingEarnings = (earnData || []).filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
+      const paidEarnings = (earnData || []).filter(e => e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
+      const pendingPayouts = (payoutData || []).filter(p => p.status === 'pending').reduce((sum, p) => sum + p.amount, 0);
+
+      // Available balance = paid earnings minus already paid out (assuming payouts are from paid earnings)
+      // For simplicity, available = paidEarnings - sum of completed payouts
+      const completedPayouts = (payoutData || []).filter(p => p.status === 'processed').reduce((sum, p) => sum + p.amount, 0);
+      const availableBalance = paidEarnings - completedPayouts;
+
+      // This month earnings
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const thisMonthEarnings = (earnData || [])
+        .filter(e => e.created_at >= startOfMonth)
+        .reduce((sum, e) => sum + e.amount, 0);
+
+      // Last month earnings
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString();
+      const lastMonthEarnings = (earnData || [])
+        .filter(e => e.created_at >= startOfLastMonth && e.created_at <= endOfLastMonth)
+        .reduce((sum, e) => sum + e.amount, 0);
+
+      // Average booking value
+      const bookings = (earnData || []).filter(e => e.amount > 0);
+      const avgBookingValue = bookings.length ? totalEarnings / bookings.length : 0;
+
+setStats({
+  totalEarnings,
+  availableBalance: Math.max(availableBalance, 0),
+  pendingPayouts,
+  lifetimeEarnings: totalEarnings,
+  thisMonthEarnings,
+  lastMonthEarnings,
+  averageBookingValue: avgBookingValue, // ✅ correct
+  bookingCount: bookings.length
+});
+
+    } catch (err) {
+      console.error('Error fetching earnings:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
-  
+
   const filterAndSortTransactions = () => {
-    let filtered = transactions.filter(transaction => {
-      // Filter by time
+    let filtered = transactions.filter(tx => {
+      // Time filter
       if (timeFilter !== 'all') {
-        const transactionDate = new Date(transaction.date);
+        const txDate = new Date(tx.created_at);
         const now = new Date();
-        const diffTime = Math.abs(now - transactionDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
+        const diffDays = Math.ceil((now - txDate) / (1000 * 60 * 60 * 24));
         switch (timeFilter) {
           case 'today':
-            return diffDays === 0;
+            if (diffDays > 0) return false;
+            break;
           case 'week':
-            return diffDays <= 7;
+            if (diffDays > 7) return false;
+            break;
           case 'month':
-            return diffDays <= 30;
+            if (diffDays > 30) return false;
+            break;
           case 'quarter':
-            return diffDays <= 90;
+            if (diffDays > 90) return false;
+            break;
           case 'year':
-            return diffDays <= 365;
-          default:
-            return true;
+            if (diffDays > 365) return false;
+            break;
         }
       }
-      
-      // Filter by type
-      if (typeFilter !== 'all' && transaction.type !== typeFilter) {
-        return false;
-      }
-      
-      // Filter by status
-      if (statusFilter !== 'all' && transaction.status !== statusFilter) {
-        return false;
-      }
-      
+      // Type filter
+      if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
+      // Status filter
+      if (statusFilter !== 'all' && tx.status !== statusFilter) return false;
       return true;
     });
-    
-    // Sort transactions
+
+    // Sorting
     filtered.sort((a, b) => {
-      const [sortField, sortOrder] = sortBy.split('-');
-      
-      if (sortField === 'date') {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
-        return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-      } else if (sortField === 'amount') {
-        return sortOrder === 'desc' ? b.amount - a.amount : a.amount - b.amount;
+      const [field, order] = sortBy.split('-');
+      if (field === 'date') {
+        const dateA = new Date(a.created_at);
+        const dateB = new Date(b.created_at);
+        return order === 'desc' ? dateB - dateA : dateA - dateB;
+      } else if (field === 'amount') {
+        return order === 'desc' ? b.amount - a.amount : a.amount - b.amount;
       }
-      
       return 0;
     });
-    
+
     setFilteredTransactions(filtered);
   };
-  
-  const calculateGrowth = () => {
-    if (!earnings.thisMonthEarnings || !earnings.lastMonthEarnings) {
-      return { percentage: 0, isPositive: true };
+
+  const requestPayout = async () => {
+    if (stats.availableBalance < 1000) {
+      alert('Minimum payout amount is ₦1,000');
+      return;
     }
-    
-    const growth = ((earnings.thisMonthEarnings - earnings.lastMonthEarnings) / earnings.lastMonthEarnings) * 100;
-    return {
-      percentage: Math.abs(Math.round(growth)),
-      isPositive: growth >= 0
-    };
+
+    if (!window.confirm(`Request payout of ₦${stats.availableBalance.toLocaleString()}?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('provider_payouts')
+        .insert({
+          provider_id: user.id,
+          amount: stats.availableBalance,
+          status: 'pending',
+          payment_method: 'bank_transfer',
+          requested_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      // Also create a transaction for this payout (negative amount)
+      await supabase
+        .from('transactions')
+        .insert({
+          provider_id: user.id,
+          type: 'payout',
+          amount: -stats.availableBalance,
+          description: 'Withdrawal request',
+          status: 'pending',
+          created_at: new Date().toISOString()
+        });
+
+      alert('Payout request submitted! It will be processed within 3-5 business days.');
+      await fetchEarningsData(); // Refresh
+    } catch (err) {
+      console.error('Payout request failed:', err);
+      alert('Failed to request payout: ' + err.message);
+    }
   };
-  
-  const getEarningsBreakdown = () => {
-    const breakdown = {
-      earnings: 0,
-      payouts: 0,
-      subscriptions: 0,
-      boosts: 0
-    };
-    
-    transactions.forEach(txn => {
-      if (txn.amount > 0) {
-        breakdown.earnings += txn.amount;
-      } else {
-        switch (txn.type) {
-          case 'payout':
-            breakdown.payouts += Math.abs(txn.amount);
-            break;
-          case 'subscription':
-            breakdown.subscriptions += Math.abs(txn.amount);
-            break;
-          case 'boost':
-            breakdown.boosts += Math.abs(txn.amount);
-            break;
-        }
-      }
-    });
-    
-    return breakdown;
+
+  const refreshData = () => {
+    fetchEarningsData();
   };
-  
+
   const exportToCSV = () => {
-    const data = filteredTransactions.map(txn => ({
-      Date: new Date(txn.date).toLocaleDateString(),
-      Type: txn.type.toUpperCase(),
-      Description: txn.description,
-      Amount: `₦${Math.abs(txn.amount).toLocaleString()}`,
-      Status: txn.status.toUpperCase(),
-      'Booking ID': txn.bookingId || 'N/A',
-      'Client Name': txn.clientName || 'N/A'
+    const data = filteredTransactions.map(tx => ({
+      Date: new Date(tx.created_at).toLocaleDateString(),
+      Type: tx.type.toUpperCase(),
+      Description: tx.description || '',
+      Amount: `₦${Math.abs(tx.amount).toLocaleString()}`,
+      Status: tx.status.toUpperCase(),
     }));
-    
+
     const csv = [
       Object.keys(data[0] || {}).join(','),
-      ...data.map(row => Object.values(row).map(value => 
-        `"${value?.toString().replace(/"/g, '""') || ''}"`
-      ).join(','))
+      ...data.map(row => Object.values(row).map(value => `"${value}"`).join(','))
     ].join('\n');
-    
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -323,68 +275,22 @@ const ProviderEarnings = () => {
     a.download = `renteasy-earnings-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    
-    alert('Earnings data exported successfully!');
   };
-  
-  const requestPayout = () => {
-    if (earnings.availableBalance < 1000) {
-      alert('Minimum payout amount is ₦1,000');
-      return;
-    }
-    
-    if (window.confirm(`Request payout of ₦${earnings.availableBalance.toLocaleString()}?`)) {
-      // Add payout request
-      const payoutRequests = JSON.parse(localStorage.getItem('providerPayouts') || '[]');
-      payoutRequests.push({
-        id: `PAY-${Date.now()}`,
-        providerId: provider.id,
-        amount: earnings.availableBalance,
-        date: new Date().toISOString(),
-        status: 'pending',
-        method: 'bank_transfer'
-      });
-      
-      localStorage.setItem('providerPayouts', JSON.stringify(payoutRequests));
-      
-      // Update provider balance
-      const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-      const providerIndex = providers.findIndex(p => p.id === provider.id);
-      
-      if (providerIndex !== -1) {
-        providers[providerIndex].availableBalance = 0;
-        providers[providerIndex].pendingPayouts = (providers[providerIndex].pendingPayouts || 0) + earnings.availableBalance;
-        localStorage.setItem('serviceProviders', JSON.stringify(providers));
-      }
-      
-      alert('Payout request submitted! It will be processed within 3-5 business days.');
-      loadEarningsData(); // Refresh data
-    }
-  };
-  
-  const refreshData = () => {
-    setLoading(true);
-    setTimeout(() => {
-      loadEarningsData();
-      alert('Data refreshed!');
-    }, 1000);
-  };
-  
+
   const formatCurrency = (amount) => {
     return `₦${Math.abs(amount).toLocaleString()}`;
   };
-  
+
   const getTransactionIcon = (type) => {
     switch (type) {
-      case 'earnings': return <TrendingUp size={16} color="#059669" />;
+      case 'earning': return <TrendingUp size={16} color="#059669" />;
       case 'payout': return <DollarSign size={16} color="#ef4444" />;
       case 'subscription': return <RefreshCw size={16} color="#3b82f6" />;
       case 'boost': return <TrendingUp size={16} color="#f59e0b" />;
-      case 'refund': return <TrendingDown size={16} color="#ef4444" />;
       default: return <DollarSign size={16} color="#6b7280" />;
     }
   };
-  
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'completed': return '#059669';
@@ -393,7 +299,13 @@ const ProviderEarnings = () => {
       default: return '#6b7280';
     }
   };
-  
+
+  const growth = (() => {
+    if (!stats.thisMonthEarnings || !stats.lastMonthEarnings) return { percentage: 0, isPositive: true };
+    const g = ((stats.thisMonthEarnings - stats.lastMonthEarnings) / stats.lastMonthEarnings) * 100;
+    return { percentage: Math.abs(Math.round(g)), isPositive: g >= 0 };
+  })();
+
   if (loading) {
     return (
       <div className="earnings-loading">
@@ -402,11 +314,18 @@ const ProviderEarnings = () => {
       </div>
     );
   }
-  
-  
-  const growth = calculateGrowth();
-  const breakdown = getEarningsBreakdown();
-  
+
+  if (error) {
+    return (
+      <div className="earnings-error">
+        <AlertCircle size={48} />
+        <h3>Failed to load earnings</h3>
+        <p>{error}</p>
+        <button onClick={refreshData}>Retry</button>
+      </div>
+    );
+  }
+
   return (
     <div className="provider-earnings">
       <div className="earnings-container">
@@ -448,11 +367,11 @@ const ProviderEarnings = () => {
               <DollarSign size={24} color="#10b981" />
             </div>
             <div className="stat-content">
-              <h3>{formatCurrency(earnings.availableBalance)}</h3>
+              <h3>{formatCurrency(stats.availableBalance)}</h3>
               <p>Available Balance</p>
               <small>Ready for payout</small>
             </div>
-            {earnings.availableBalance >= 1000 && (
+            {stats.availableBalance >= 1000 && (
               <button 
                 className="btn btn-small btn-primary"
                 onClick={requestPayout}
@@ -467,9 +386,9 @@ const ProviderEarnings = () => {
               <TrendingUp size={24} color="#3b82f6" />
             </div>
             <div className="stat-content">
-              <h3>{formatCurrency(earnings.totalEarnings)}</h3>
-              <p>Total Earnings</p>
-              <small>This month</small>
+              <h3>{formatCurrency(stats.thisMonthEarnings)}</h3>
+              <p>This Month</p>
+              <small>Earnings this month</small>
             </div>
             <div className="growth-indicator">
               {growth.isPositive ? (
@@ -488,7 +407,7 @@ const ProviderEarnings = () => {
               <Target size={24} color="#8b5cf6" />
             </div>
             <div className="stat-content">
-              <h3>{formatCurrency(earnings.lifetimeEarnings)}</h3>
+              <h3>{formatCurrency(stats.lifetimeEarnings)}</h3>
               <p>Lifetime Earnings</p>
               <small>Since registration</small>
             </div>
@@ -499,7 +418,7 @@ const ProviderEarnings = () => {
               <Clock size={24} color="#f59e0b" />
             </div>
             <div className="stat-content">
-              <h3>{formatCurrency(earnings.pendingPayouts)}</h3>
+              <h3>{formatCurrency(stats.pendingPayouts)}</h3>
               <p>Pending Payouts</p>
               <small>Processing requests</small>
             </div>
@@ -516,7 +435,7 @@ const ProviderEarnings = () => {
           <div className="metrics-grid">
             <div className="metric-card">
               <div className="metric-value">
-                {earnings.bookingCount}
+                {stats.bookingCount}
                 <span className="metric-label">Bookings</span>
               </div>
               <p>Total successful bookings</p>
@@ -524,7 +443,7 @@ const ProviderEarnings = () => {
             
             <div className="metric-card">
               <div className="metric-value">
-                {formatCurrency(earnings.averageBookingValue)}
+                {formatCurrency(stats.averageBookingValue)}
                 <span className="metric-label">Average Booking</span>
               </div>
               <p>Average value per booking</p>
@@ -532,7 +451,7 @@ const ProviderEarnings = () => {
             
             <div className="metric-card">
               <div className="metric-value">
-                {formatCurrency(breakdown.earnings)}
+                {formatCurrency(stats.totalEarnings)}
                 <span className="metric-label">Total Earnings</span>
               </div>
               <p>From all services</p>
@@ -540,131 +459,10 @@ const ProviderEarnings = () => {
             
             <div className="metric-card">
               <div className="metric-value">
-                {formatCurrency(breakdown.payouts)}
-                <span className="metric-label">Total Payouts</span>
+                {formatCurrency(stats.availableBalance + stats.pendingPayouts)}
+                <span className="metric-label">Total Withdrawn</span>
               </div>
-              <p>Amount withdrawn</p>
-            </div>
-          </div>
-        </div>
-        
-        {/* Breakdown Chart */}
-        <div className="breakdown-section">
-          <div className="section-header">
-            <h3>
-              <PieChart size={20} />
-              Earnings Breakdown
-            </h3>
-            <button 
-              className="btn btn-small btn-outline"
-              onClick={() => navigate('/providers/analytics')}
-            >
-              <Eye size={16} />
-              View Details
-            </button>
-          </div>
-          
-          <div className="breakdown-grid">
-            <div className="breakdown-card">
-              <h4>By Type</h4>
-              <div className="breakdown-list">
-                <div className="breakdown-item">
-                  <div className="item-label">
-                    <span className="color-dot" style={{ backgroundColor: '#10b981' }}></span>
-                    <span>Earnings</span>
-                  </div>
-                  <div className="item-value">
-                    <strong>{formatCurrency(breakdown.earnings)}</strong>
-                    <span className="percentage">
-                      {breakdown.earnings > 0 ? '100%' : '0%'}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="breakdown-item">
-                  <div className="item-label">
-                    <span className="color-dot" style={{ backgroundColor: '#ef4444' }}></span>
-                    <span>Payouts</span>
-                  </div>
-                  <div className="item-value">
-                    <strong>{formatCurrency(breakdown.payouts)}</strong>
-                    <span className="percentage">
-                      {breakdown.earnings > 0 ? 
-                        `${Math.round((breakdown.payouts / breakdown.earnings) * 100)}%` : 
-                        '0%'}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="breakdown-item">
-                  <div className="item-label">
-                    <span className="color-dot" style={{ backgroundColor: '#3b82f6' }}></span>
-                    <span>Subscriptions</span>
-                  </div>
-                  <div className="item-value">
-                    <strong>{formatCurrency(breakdown.subscriptions)}</strong>
-                    <span className="percentage">
-                      {breakdown.earnings > 0 ? 
-                        `${Math.round((breakdown.subscriptions / breakdown.earnings) * 100)}%` : 
-                        '0%'}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="breakdown-item">
-                  <div className="item-label">
-                    <span className="color-dot" style={{ backgroundColor: '#f59e0b' }}></span>
-                    <span>Boosts</span>
-                  </div>
-                  <div className="item-value">
-                    <strong>{formatCurrency(breakdown.boosts)}</strong>
-                    <span className="percentage">
-                      {breakdown.earnings > 0 ? 
-                        `${Math.round((breakdown.boosts / breakdown.earnings) * 100)}%` : 
-                        '0%'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="breakdown-card">
-              <h4>Quick Stats</h4>
-              <div className="quick-stats">
-                <div className="quick-stat">
-                  <Award size={20} color="#3b82f6" />
-                  <div className="stat-content">
-                    <strong>Highest Earning</strong>
-                    <span>{formatCurrency(Math.max(...transactions.filter(t => t.amount > 0).map(t => t.amount) || [0]))}</span>
-                  </div>
-                </div>
-                
-                <div className="quick-stat">
-                  <Calendar size={20} color="#10b981" />
-                  <div className="stat-content">
-                    <strong>Best Month</strong>
-                    <span>February 2024</span>
-                  </div>
-                </div>
-                
-                <div className="quick-stat">
-                  <Target size={20} color="#8b5cf6" />
-                  <div className="stat-content">
-                    <strong>Goal Progress</strong>
-                    <span>{Math.round((earnings.totalEarnings / 500000) * 100)}% of ₦500k</span>
-                  </div>
-                </div>
-                
-                <div className="quick-stat">
-                  <TrendingUp size={20} color="#f59e0b" />
-                  <div className="stat-content">
-                    <strong>Growth Rate</strong>
-                    <span className={growth.isPositive ? 'positive' : 'negative'}>
-                      {growth.isPositive ? '+' : '-'}{growth.percentage}%
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <p>Amount paid out</p>
             </div>
           </div>
         </div>
@@ -757,40 +555,37 @@ const ProviderEarnings = () => {
             </div>
             
             <div className="table-body">
-              {filteredTransactions.map(transaction => (
-                <div key={transaction.id} className="table-row">
+              {filteredTransactions.map(tx => (
+                <div key={tx.id} className="table-row">
                   <div className="table-cell">
                     <div className="date-cell">
                       <Calendar size={14} color="#6b7280" />
-                      {new Date(transaction.date).toLocaleDateString()}
+                      {new Date(tx.created_at).toLocaleDateString()}
                     </div>
                   </div>
                   
                   <div className="table-cell">
                     <div className="type-cell">
-                      {getTransactionIcon(transaction.type)}
+                      {getTransactionIcon(tx.type)}
                       <span className="type-label">
-                        {transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)}
+                        {tx.type.charAt(0).toUpperCase() + tx.type.slice(1)}
                       </span>
                     </div>
                   </div>
                   
                   <div className="table-cell">
                     <div className="description-cell">
-                      <strong>{transaction.description}</strong>
-                      {transaction.bookingId && (
-                        <small>Booking #{transaction.bookingId}</small>
-                      )}
-                      {transaction.clientName && (
-                        <small>Client: {transaction.clientName}</small>
+                      <strong>{tx.description || 'Transaction'}</strong>
+                      {tx.reference_id && (
+                        <small>Ref: {tx.reference_id}</small>
                       )}
                     </div>
                   </div>
                   
                   <div className="table-cell">
-                    <div className={`amount-cell ${transaction.amount >= 0 ? 'positive' : 'negative'}`}>
-                      {transaction.amount >= 0 ? '+' : '-'}
-                      {formatCurrency(transaction.amount)}
+                    <div className={`amount-cell ${tx.amount >= 0 ? 'positive' : 'negative'}`}>
+                      {tx.amount >= 0 ? '+' : '-'}
+                      {formatCurrency(tx.amount)}
                     </div>
                   </div>
                   
@@ -798,11 +593,11 @@ const ProviderEarnings = () => {
                     <span 
                       className="status-badge"
                       style={{ 
-                        backgroundColor: `${getStatusColor(transaction.status)}20`,
-                        color: getStatusColor(transaction.status)
+                        backgroundColor: `${getStatusColor(tx.status)}20`,
+                        color: getStatusColor(tx.status)
                       }}
                     >
-                      {transaction.status.toUpperCase()}
+                      {tx.status.toUpperCase()}
                     </span>
                   </div>
                   
@@ -810,22 +605,15 @@ const ProviderEarnings = () => {
                     <div className="action-buttons">
                       <button 
                         className="btn-icon"
-                        onClick={() => navigate(`/providers/bookings/${transaction.bookingId}`)}
-                        disabled={!transaction.bookingId}
+                        onClick={() => {}}
                       >
                         <Eye size={14} />
                       </button>
                       <button 
                         className="btn-icon"
-                        onClick={() => alert(`Receipt for ${transaction.description}`)}
+                        onClick={() => alert('Download receipt')}
                       >
                         <Download size={14} />
-                      </button>
-                      <button 
-                        className="btn-icon"
-                        onClick={() => alert(`Share ${transaction.description}`)}
-                      >
-                        <Share2 size={14} />
                       </button>
                     </div>
                   </div>
@@ -840,7 +628,7 @@ const ProviderEarnings = () => {
               <div className="footer-total">
                 <span>Filtered Total:</span>
                 <strong>
-                  {formatCurrency(filteredTransactions.reduce((sum, txn) => sum + txn.amount, 0))}
+                  {formatCurrency(filteredTransactions.reduce((sum, tx) => sum + tx.amount, 0))}
                 </strong>
               </div>
             </div>

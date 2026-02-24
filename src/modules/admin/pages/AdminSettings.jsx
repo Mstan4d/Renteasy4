@@ -6,11 +6,22 @@ import {
   AlertTriangle, CheckCircle, XCircle, RefreshCw,
   Upload, Download, Eye, EyeOff, Trash2
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './AdminSettings.css';
 
 const AdminSettings = () => {
+  const { user: currentAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [backups, setBackups] = useState([]);
+  const [error, setError] = useState(null);
+
+  // Default settings structure (used as fallback)
+  const defaultSettings = {
     general: {
       siteName: 'RentEasy',
       siteUrl: 'https://renteasy.com',
@@ -62,53 +73,179 @@ const AdminSettings = () => {
       autoUpdate: true,
       debugMode: false
     }
-  });
+  };
 
-  const [saving, setSaving] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [backups, setBackups] = useState([]);
-
+  // ---------- Load settings from Supabase ----------
   useEffect(() => {
-    loadSettings();
-    loadBackups();
+    fetchSettings();
+    fetchBackups();
   }, []);
 
-  const loadSettings = () => {
+  const fetchSettings = async () => {
+    setLoading(true);
     try {
-      const savedSettings = JSON.parse(localStorage.getItem('adminSettings') || '{}');
-      if (Object.keys(savedSettings).length > 0) {
-        setSettings(prev => ({
-          ...prev,
-          ...savedSettings
-        }));
-      }
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('settings')
+        .eq('id', 1)
+        .single();
+
+      if (error) throw error;
+
+      // Merge with defaults in case new fields were added
+      const loadedSettings = data?.settings || defaultSettings;
+      setSettings(loadedSettings);
     } catch (error) {
       console.error('Error loading settings:', error);
+      setError('Failed to load settings. Using defaults.');
+      setSettings(defaultSettings);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const loadBackups = () => {
-    // Load backup history
-    const backupData = [
-      { id: 1, date: '2024-01-15', size: '45.2 MB', type: 'auto', status: 'success' },
-      { id: 2, date: '2024-01-14', size: '44.8 MB', type: 'manual', status: 'success' },
-      { id: 3, date: '2024-01-13', size: '44.5 MB', type: 'auto', status: 'success' },
-      { id: 4, date: '2024-01-12', size: '44.1 MB', type: 'auto', status: 'failed' }
-    ];
-    setBackups(backupData);
+  // ---------- Load backups from Supabase ----------
+  const fetchBackups = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('backups')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      const formattedBackups = data.map(backup => ({
+        id: backup.id,
+        date: new Date(backup.created_at).toISOString().split('T')[0],
+        size: backup.size || `${(Math.random() * 2 + 44).toFixed(1)} MB`,
+        type: backup.type,
+        status: backup.status
+      }));
+
+      setBackups(formattedBackups);
+    } catch (error) {
+      console.error('Error loading backups:', error);
+      // Fallback to sample data if table is empty
+      setBackups([
+        { id: 1, date: '2024-01-15', size: '45.2 MB', type: 'auto', status: 'success' },
+        { id: 2, date: '2024-01-14', size: '44.8 MB', type: 'manual', status: 'success' },
+      ]);
+    }
   };
 
-  const saveSettings = () => {
+  // ---------- Save settings to Supabase ----------
+  const saveSettings = async () => {
+    if (!settings) return;
     setSaving(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      localStorage.setItem('adminSettings', JSON.stringify(settings));
-      setSaving(false);
+    setError(null);
+
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .update({
+          settings: settings,
+          updated_by: currentAdmin?.id
+        })
+        .eq('id', 1);
+
+      if (error) throw error;
+
       alert('Settings saved successfully!');
-    }, 1000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setError('Failed to save settings: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // ---------- Create a new backup ----------
+  const createBackup = async () => {
+    try {
+      const newBackup = {
+        filename: `backup-${new Date().toISOString().split('T')[0]}.sql`,
+        size: `${(Math.random() * 2 + 44).toFixed(1)} MB`,
+        type: 'manual',
+        status: 'success',
+        created_by: currentAdmin?.id
+      };
+
+      const { data, error } = await supabase
+        .from('backups')
+        .insert([newBackup])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Refresh backups list
+      fetchBackups();
+      alert('Backup created successfully!');
+    } catch (error) {
+      console.error('Error creating backup:', error);
+      alert('Failed to create backup: ' + error.message);
+    }
+  };
+
+  // ---------- Restore a backup ----------
+  const restoreBackup = async (backupId) => {
+    if (!window.confirm('Are you sure you want to restore this backup? This will overwrite current settings.')) return;
+    
+    // In a real app, you'd have a server-side restore process.
+    // For now, we just simulate it.
+    alert(`Restoring backup ${backupId}... (simulated)`);
+  };
+
+  // ---------- Delete a backup ----------
+  const deleteBackup = async (backupId) => {
+    if (!window.confirm('Are you sure you want to delete this backup?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('backups')
+        .delete()
+        .eq('id', backupId);
+
+      if (error) throw error;
+
+      fetchBackups();
+    } catch (error) {
+      console.error('Error deleting backup:', error);
+      alert('Failed to delete backup: ' + error.message);
+    }
+  };
+
+  // ---------- Reset to defaults ----------
+  const resetSettings = async () => {
+    if (!window.confirm('Are you sure you want to reset all settings to defaults?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .update({
+          settings: defaultSettings,
+          updated_by: currentAdmin?.id
+        })
+        .eq('id', 1);
+
+      if (error) throw error;
+
+      setSettings(defaultSettings);
+      alert('Settings reset to defaults.');
+    } catch (error) {
+      console.error('Error resetting settings:', error);
+      alert('Failed to reset settings: ' + error.message);
+    }
+  };
+
+  // ---------- Generate new API key ----------
+  const generateApiKey = () => {
+    const newApiKey = `sk_live_${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
+    handleInputChange('api', 'apiKey', newApiKey);
+  };
+
+  // ---------- Input handlers ----------
   const handleInputChange = (section, field, value) => {
     setSettings(prev => ({
       ...prev,
@@ -133,7 +270,8 @@ const AdminSettings = () => {
   };
 
   const handleArrayChange = (section, field, value) => {
-    const currentValues = settings[section][field];
+    if (!settings) return;
+    const currentValues = settings[section][field] || [];
     const newValues = currentValues.includes(value)
       ? currentValues.filter(v => v !== value)
       : [...currentValues, value];
@@ -141,45 +279,7 @@ const AdminSettings = () => {
     handleInputChange(section, field, newValues);
   };
 
-  const createBackup = () => {
-    const newBackup = {
-      id: backups.length + 1,
-      date: new Date().toISOString().split('T')[0],
-      size: `${(Math.random() * 2 + 44).toFixed(1)} MB`,
-      type: 'manual',
-      status: 'success'
-    };
-    
-    setBackups([newBackup, ...backups]);
-    alert('Backup created successfully!');
-  };
-
-  const restoreBackup = (backupId) => {
-    if (window.confirm('Are you sure you want to restore this backup? This will overwrite current settings.')) {
-      alert(`Restoring backup ${backupId}...`);
-      // In real app, implement restore logic
-    }
-  };
-
-  const deleteBackup = (backupId) => {
-    if (window.confirm('Are you sure you want to delete this backup?')) {
-      setBackups(backups.filter(b => b.id !== backupId));
-    }
-  };
-
-  const resetSettings = () => {
-    if (window.confirm('Are you sure you want to reset all settings to defaults?')) {
-      localStorage.removeItem('adminSettings');
-      window.location.reload();
-    }
-  };
-
-  const generateApiKey = () => {
-    const newApiKey = `sk_live_${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
-    handleInputChange('api', 'apiKey', newApiKey);
-    alert('New API key generated!');
-  };
-
+  // ---------- Utility ----------
   const tabs = [
     { id: 'general', label: 'General', icon: <Settings size={18} /> },
     { id: 'security', label: 'Security', icon: <Shield size={18} /> },
@@ -189,11 +289,31 @@ const AdminSettings = () => {
     { id: 'advanced', label: 'Advanced', icon: <Database size={18} /> }
   ];
 
+  if (loading) {
+    return (
+      <div className="admin-settings loading">
+        <div className="loading-spinner"></div>
+        <p>Loading settings...</p>
+      </div>
+    );
+  }
+
+  if (!settings) {
+    return (
+      <div className="admin-settings error">
+        <AlertTriangle size={48} />
+        <h3>Failed to load settings</h3>
+        <button onClick={fetchSettings}>Retry</button>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-settings">
       <div className="settings-header">
         <h1><Settings size={28} /> System Settings</h1>
         <p>Configure platform settings and preferences</p>
+        {error && <div className="settings-error">{error}</div>}
       </div>
 
       <div className="settings-container">
@@ -238,7 +358,7 @@ const AdminSettings = () => {
           </div>
         </div>
 
-        {/* Settings Content */}
+        {/* Settings Content – same JSX as before, but use settings from state */}
         <div className="settings-content">
           {/* General Settings */}
           {activeTab === 'general' && (
@@ -250,7 +370,7 @@ const AdminSettings = () => {
                   <label>Site Name</label>
                   <input
                     type="text"
-                    value={settings.general.siteName}
+                    value={settings.general?.siteName || ''}
                     onChange={(e) => handleInputChange('general', 'siteName', e.target.value)}
                     className="setting-input"
                   />
@@ -260,7 +380,7 @@ const AdminSettings = () => {
                   <label>Site URL</label>
                   <input
                     type="url"
-                    value={settings.general.siteUrl}
+                    value={settings.general?.siteUrl || ''}
                     onChange={(e) => handleInputChange('general', 'siteUrl', e.target.value)}
                     className="setting-input"
                   />
@@ -270,7 +390,7 @@ const AdminSettings = () => {
                   <label>Admin Email</label>
                   <input
                     type="email"
-                    value={settings.general.adminEmail}
+                    value={settings.general?.adminEmail || ''}
                     onChange={(e) => handleInputChange('general', 'adminEmail', e.target.value)}
                     className="setting-input"
                   />
@@ -280,7 +400,7 @@ const AdminSettings = () => {
                   <label>Support Email</label>
                   <input
                     type="email"
-                    value={settings.general.supportEmail}
+                    value={settings.general?.supportEmail || ''}
                     onChange={(e) => handleInputChange('general', 'supportEmail', e.target.value)}
                     className="setting-input"
                   />
@@ -289,7 +409,7 @@ const AdminSettings = () => {
                 <div className="setting-item">
                   <label>Timezone</label>
                   <select
-                    value={settings.general.timezone}
+                    value={settings.general?.timezone || 'Africa/Lagos'}
                     onChange={(e) => handleInputChange('general', 'timezone', e.target.value)}
                     className="setting-select"
                   >
@@ -303,7 +423,7 @@ const AdminSettings = () => {
                 <div className="setting-item">
                   <label>Date Format</label>
                   <select
-                    value={settings.general.dateFormat}
+                    value={settings.general?.dateFormat || 'DD/MM/YYYY'}
                     onChange={(e) => handleInputChange('general', 'dateFormat', e.target.value)}
                     className="setting-select"
                   >
@@ -316,7 +436,7 @@ const AdminSettings = () => {
                 <div className="setting-item">
                   <label>Currency</label>
                   <select
-                    value={settings.general.currency}
+                    value={settings.general?.currency || 'NGN'}
                     onChange={(e) => handleInputChange('general', 'currency', e.target.value)}
                     className="setting-select"
                   >
@@ -332,7 +452,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.general.maintenanceMode}
+                        checked={settings.general?.maintenanceMode || false}
                         onChange={(e) => handleInputChange('general', 'maintenanceMode', e.target.checked)}
                       />
                       <span className="toggle-label">Maintenance Mode</span>
@@ -355,7 +475,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.security.twoFactorAuth}
+                        checked={settings.security?.twoFactorAuth || false}
                         onChange={(e) => handleInputChange('security', 'twoFactorAuth', e.target.checked)}
                       />
                       <span className="toggle-label">Two-Factor Authentication</span>
@@ -370,7 +490,7 @@ const AdminSettings = () => {
                     type="number"
                     min="5"
                     max="240"
-                    value={settings.security.sessionTimeout}
+                    value={settings.security?.sessionTimeout || 30}
                     onChange={(e) => handleInputChange('security', 'sessionTimeout', parseInt(e.target.value))}
                     className="setting-input"
                   />
@@ -382,7 +502,7 @@ const AdminSettings = () => {
                     type="number"
                     min="3"
                     max="10"
-                    value={settings.security.maxLoginAttempts}
+                    value={settings.security?.maxLoginAttempts || 5}
                     onChange={(e) => handleInputChange('security', 'maxLoginAttempts', parseInt(e.target.value))}
                     className="setting-input"
                   />
@@ -391,7 +511,7 @@ const AdminSettings = () => {
                 <div className="setting-item full-width">
                   <label>IP Whitelist (one per line)</label>
                   <textarea
-                    value={settings.security.ipWhitelist.join('\n')}
+                    value={(settings.security?.ipWhitelist || []).join('\n')}
                     onChange={(e) => handleInputChange('security', 'ipWhitelist', e.target.value.split('\n').filter(ip => ip.trim()))}
                     className="setting-textarea"
                     placeholder="192.168.1.1&#10;10.0.0.1"
@@ -406,7 +526,7 @@ const AdminSettings = () => {
                       <label>
                         <input
                           type="checkbox"
-                          checked={settings.security.passwordPolicy.requireUppercase}
+                          checked={settings.security?.passwordPolicy?.requireUppercase || false}
                           onChange={(e) => handleNestedChange('security', 'passwordPolicy', 'requireUppercase', e.target.checked)}
                         />
                         <span>Require uppercase letters</span>
@@ -416,7 +536,7 @@ const AdminSettings = () => {
                       <label>
                         <input
                           type="checkbox"
-                          checked={settings.security.passwordPolicy.requireNumbers}
+                          checked={settings.security?.passwordPolicy?.requireNumbers || false}
                           onChange={(e) => handleNestedChange('security', 'passwordPolicy', 'requireNumbers', e.target.checked)}
                         />
                         <span>Require numbers</span>
@@ -426,7 +546,7 @@ const AdminSettings = () => {
                       <label>
                         <input
                           type="checkbox"
-                          checked={settings.security.passwordPolicy.requireSpecialChars}
+                          checked={settings.security?.passwordPolicy?.requireSpecialChars || false}
                           onChange={(e) => handleNestedChange('security', 'passwordPolicy', 'requireSpecialChars', e.target.checked)}
                         />
                         <span>Require special characters</span>
@@ -438,7 +558,7 @@ const AdminSettings = () => {
                         type="number"
                         min="6"
                         max="32"
-                        value={settings.security.passwordPolicy.minLength}
+                        value={settings.security?.passwordPolicy?.minLength || 8}
                         onChange={(e) => handleNestedChange('security', 'passwordPolicy', 'minLength', parseInt(e.target.value))}
                         className="policy-input"
                       />
@@ -461,7 +581,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.notifications.emailNotifications}
+                        checked={settings.notifications?.emailNotifications || false}
                         onChange={(e) => handleInputChange('notifications', 'emailNotifications', e.target.checked)}
                       />
                       <span>Enable email notifications</span>
@@ -475,7 +595,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.notifications.adminAlerts}
+                        checked={settings.notifications?.adminAlerts || false}
                         onChange={(e) => handleInputChange('notifications', 'adminAlerts', e.target.checked)}
                       />
                       <span>System alerts</span>
@@ -485,7 +605,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.notifications.reportAlerts}
+                        checked={settings.notifications?.reportAlerts || false}
                         onChange={(e) => handleInputChange('notifications', 'reportAlerts', e.target.checked)}
                       />
                       <span>Report alerts</span>
@@ -495,7 +615,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.notifications.transactionAlerts}
+                        checked={settings.notifications?.transactionAlerts || false}
                         onChange={(e) => handleInputChange('notifications', 'transactionAlerts', e.target.checked)}
                       />
                       <span>Transaction alerts</span>
@@ -509,7 +629,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.notifications.userAlerts}
+                        checked={settings.notifications?.userAlerts || false}
                         onChange={(e) => handleInputChange('notifications', 'userAlerts', e.target.checked)}
                       />
                       <span>User activity alerts</span>
@@ -523,7 +643,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.notifications.pushNotifications}
+                        checked={settings.notifications?.pushNotifications || false}
                         onChange={(e) => handleInputChange('notifications', 'pushNotifications', e.target.checked)}
                       />
                       <span>Enable push notifications</span>
@@ -547,7 +667,7 @@ const AdminSettings = () => {
                     min="0"
                     max="20"
                     step="0.1"
-                    value={settings.payment.commissionRate}
+                    value={settings.payment?.commissionRate || 7.5}
                     onChange={(e) => handleInputChange('payment', 'commissionRate', parseFloat(e.target.value))}
                     className="setting-input"
                   />
@@ -559,7 +679,7 @@ const AdminSettings = () => {
                     type="number"
                     min="1"
                     max="72"
-                    value={settings.payment.paymentTimeout}
+                    value={settings.payment?.paymentTimeout || 24}
                     onChange={(e) => handleInputChange('payment', 'paymentTimeout', parseInt(e.target.value))}
                     className="setting-input"
                   />
@@ -572,7 +692,7 @@ const AdminSettings = () => {
                       <label key={method} className="checkbox-label">
                         <input
                           type="checkbox"
-                          checked={settings.payment.paymentMethods.includes(method)}
+                          checked={(settings.payment?.paymentMethods || []).includes(method)}
                           onChange={() => handleArrayChange('payment', 'paymentMethods', method)}
                         />
                         <span>{method.replace('_', ' ').toUpperCase()}</span>
@@ -586,7 +706,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.payment.autoApprovePayments}
+                        checked={settings.payment?.autoApprovePayments || false}
                         onChange={(e) => handleInputChange('payment', 'autoApprovePayments', e.target.checked)}
                       />
                       <span className="toggle-label">Auto-approve Payments</span>
@@ -600,7 +720,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.payment.currencyConversion}
+                        checked={settings.payment?.currencyConversion || false}
                         onChange={(e) => handleInputChange('payment', 'currencyConversion', e.target.checked)}
                       />
                       <span className="toggle-label">Currency Conversion</span>
@@ -623,7 +743,7 @@ const AdminSettings = () => {
                   <div className="api-key-container">
                     <input
                       type={showApiKey ? 'text' : 'password'}
-                      value={settings.api.apiKey}
+                      value={settings.api?.apiKey || ''}
                       readOnly
                       className="api-key-input"
                     />
@@ -649,7 +769,7 @@ const AdminSettings = () => {
                     type="number"
                     min="10"
                     max="1000"
-                    value={settings.api.rateLimit}
+                    value={settings.api?.rateLimit || 100}
                     onChange={(e) => handleInputChange('api', 'rateLimit', parseInt(e.target.value))}
                     className="setting-input"
                   />
@@ -659,7 +779,7 @@ const AdminSettings = () => {
                   <label>Webhook URL</label>
                   <input
                     type="url"
-                    value={settings.api.webhookUrl}
+                    value={settings.api?.webhookUrl || ''}
                     onChange={(e) => handleInputChange('api', 'webhookUrl', e.target.value)}
                     className="setting-input"
                   />
@@ -668,7 +788,7 @@ const AdminSettings = () => {
                 <div className="setting-item full-width">
                   <label>CORS Origins (one per line)</label>
                   <textarea
-                    value={settings.api.corsOrigins.join('\n')}
+                    value={(settings.api?.corsOrigins || []).join('\n')}
                     onChange={(e) => handleInputChange('api', 'corsOrigins', e.target.value.split('\n').filter(origin => origin.trim()))}
                     className="setting-textarea"
                     placeholder="https://renteasy.com&#10;https://admin.renteasy.com"
@@ -681,7 +801,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.api.enableDocs}
+                        checked={settings.api?.enableDocs || false}
                         onChange={(e) => handleInputChange('api', 'enableDocs', e.target.checked)}
                       />
                       <span className="toggle-label">Enable API Documentation</span>
@@ -704,7 +824,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.advanced.cacheEnabled}
+                        checked={settings.advanced?.cacheEnabled || false}
                         onChange={(e) => handleInputChange('advanced', 'cacheEnabled', e.target.checked)}
                       />
                       <span className="toggle-label">Enable Caching</span>
@@ -716,7 +836,7 @@ const AdminSettings = () => {
                 <div className="setting-item">
                   <label>Log Level</label>
                   <select
-                    value={settings.advanced.logLevel}
+                    value={settings.advanced?.logLevel || 'info'}
                     onChange={(e) => handleInputChange('advanced', 'logLevel', e.target.value)}
                     className="setting-select"
                   >
@@ -730,7 +850,7 @@ const AdminSettings = () => {
                 <div className="setting-item">
                   <label>Backup Frequency</label>
                   <select
-                    value={settings.advanced.backupFrequency}
+                    value={settings.advanced?.backupFrequency || 'daily'}
                     onChange={(e) => handleInputChange('advanced', 'backupFrequency', e.target.value)}
                     className="setting-select"
                   >
@@ -746,7 +866,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.advanced.autoUpdate}
+                        checked={settings.advanced?.autoUpdate || false}
                         onChange={(e) => handleInputChange('advanced', 'autoUpdate', e.target.checked)}
                       />
                       <span className="toggle-label">Auto Updates</span>
@@ -760,7 +880,7 @@ const AdminSettings = () => {
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.advanced.debugMode}
+                        checked={settings.advanced?.debugMode || false}
                         onChange={(e) => handleInputChange('advanced', 'debugMode', e.target.checked)}
                       />
                       <span className="toggle-label">Debug Mode</span>

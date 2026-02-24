@@ -1,80 +1,24 @@
 // src/modules/providers/pages/ProviderDocuments.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileText, CheckCircle, AlertCircle,
   Download, Eye, Trash2, Clock, Shield,
   File, FileImage, FileSpreadsheet,
-  Plus, Search, Filter, Calendar, FilePlayIcon
+  Plus, Search, Filter, Calendar
 } from 'lucide-react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ProviderDocuments.css';
 
 const ProviderDocuments = () => {
-  const [documents, setDocuments] = useState([
-    {
-      id: 1,
-      name: 'CAC Certificate',
-      type: 'pdf',
-      size: '2.4 MB',
-      uploaded: '2024-01-15',
-      status: 'approved',
-      verifiedBy: 'Admin Team',
-      expiry: '2025-01-15'
-    },
-    {
-      id: 2,
-      name: 'Tax Identification',
-      type: 'pdf',
-      size: '1.8 MB',
-      uploaded: '2024-01-14',
-      status: 'approved',
-      verifiedBy: 'Admin Team',
-      expiry: '2025-01-14'
-    },
-    {
-      id: 3,
-      name: 'Driver\'s License',
-      type: 'image',
-      size: '3.2 MB',
-      uploaded: '2024-01-13',
-      status: 'pending',
-      verifiedBy: null,
-      expiry: '2026-05-20'
-    },
-    {
-      id: 4,
-      name: 'Proof of Address',
-      type: 'pdf',
-      size: '1.5 MB',
-      uploaded: '2024-01-12',
-      status: 'rejected',
-      verifiedBy: 'Admin Team',
-      expiry: null,
-      rejectionReason: 'Document blurry, please upload clearer version'
-    },
-    {
-      id: 5,
-      name: 'Professional Certificate',
-      type: 'pdf',
-      size: '4.1 MB',
-      uploaded: '2024-01-10',
-      status: 'approved',
-      verifiedBy: 'Admin Team',
-      expiry: '2024-12-31'
-    },
-    {
-      id: 6,
-      name: 'Portfolio Samples',
-      type: 'image',
-      size: '8.7 MB',
-      uploaded: '2024-01-09',
-      status: 'approved',
-      verifiedBy: 'Admin Team',
-      expiry: null
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const documentTypes = [
     { type: 'CAC Certificate', required: true, description: 'Official business registration' },
@@ -85,341 +29,52 @@ const ProviderDocuments = () => {
     { type: 'Portfolio', required: false, description: 'Work samples (optional)' }
   ];
 
-  const styles = {
-    container: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      padding: '1rem',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    },
-    header: {
-      marginBottom: '2rem'
-    },
-    title: {
-      fontSize: '1.875rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    subtitle: {
-      color: '#6b7280',
-      fontSize: '1rem'
-    },
-    statsGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '1rem',
-      marginBottom: '2rem'
-    },
-    statCard: {
-      background: 'white',
-      borderRadius: '0.75rem',
-      padding: '1.5rem',
-      border: '1px solid #e5e7eb',
-      textAlign: 'center'
-    },
-    statIcon: {
-      width: '3rem',
-      height: '3rem',
-      borderRadius: '50%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      margin: '0 auto 1rem'
-    },
-    statTitle: {
-      fontSize: '0.875rem',
-      color: '#6b7280',
-      marginBottom: '0.25rem'
-    },
-    statValue: {
-      fontSize: '1.875rem',
-      fontWeight: '700',
-      color: '#1f2937'
-    },
-    uploadSection: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '2px dashed #d1d5db',
-      padding: '3rem 2rem',
-      textAlign: 'center',
-      marginBottom: '2rem',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease'
-    },
-    uploadIcon: {
-      width: '4rem',
-      height: '4rem',
-      background: '#eff6ff',
-      borderRadius: '50%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      margin: '0 auto 1.5rem'
-    },
-    uploadTitle: {
-      fontSize: '1.25rem',
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    uploadText: {
-      color: '#6b7280',
-      marginBottom: '1.5rem',
-      maxWidth: '400px',
-      margin: '0 auto'
-    },
-    uploadButton: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      padding: '0.75rem 2rem',
-      background: '#2563eb',
-      color: 'white',
-      border: 'none',
-      borderRadius: '0.75rem',
-      fontWeight: '600',
-      cursor: 'pointer'
-    },
-    fileList: {
-      marginTop: '1.5rem'
-    },
-    fileItem: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '1rem',
-      padding: '1rem',
-      background: '#f9fafb',
-      borderRadius: '0.5rem',
-      marginBottom: '0.5rem'
-    },
-    fileName: {
-      flex: 1,
-      fontWeight: '500',
-      color: '#1f2937'
-    },
-    fileSize: {
-      color: '#6b7280',
-      fontSize: '0.875rem'
-    },
-    removeFile: {
-      background: 'none',
-      border: 'none',
-      color: '#ef4444',
-      cursor: 'pointer'
-    },
-    controls: {
-      display: 'flex',
-      gap: '1rem',
-      marginBottom: '2rem',
-      flexWrap: 'wrap'
-    },
-    searchBox: {
-      flex: 1,
-      minWidth: '300px',
-      position: 'relative'
-    },
-    searchInput: {
-      width: '100%',
-      padding: '0.75rem 1rem 0.75rem 3rem',
-      border: '2px solid #e5e7eb',
-      borderRadius: '0.75rem',
-      fontSize: '1rem',
-      color: '#1f2937'
-    },
-    searchIcon: {
-      position: 'absolute',
-      left: '1rem',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      color: '#9ca3af'
-    },
-    filterButtons: {
-      display: 'flex',
-      gap: '0.5rem',
-      flexWrap: 'wrap'
-    },
-    filterButton: {
-      padding: '0.75rem 1.5rem',
-      border: '1px solid #e5e7eb',
-      background: 'white',
-      borderRadius: '0.5rem',
-      color: '#6b7280',
-      fontWeight: '500',
-      cursor: 'pointer',
-      transition: 'all 0.2s'
-    },
-    activeFilter: {
-      background: '#2563eb',
-      borderColor: '#2563eb',
-      color: 'white'
-    },
-    documentsTable: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '1px solid #e5e7eb',
-      overflow: 'hidden'
-    },
-    tableHeader: {
-      padding: '1.5rem',
-      borderBottom: '1px solid #e5e7eb',
-      background: '#f9fafb'
-    },
-    tableTitle: {
-      fontSize: '1.125rem',
-      fontWeight: '600',
-      color: '#1f2937'
-    },
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse'
-    },
-    tableHead: {
-      borderBottom: '2px solid #e5e7eb'
-    },
-    tableTh: {
-      padding: '1rem 1.5rem',
-      textAlign: 'left',
-      fontSize: '0.75rem',
-      fontWeight: '600',
-      color: '#6b7280',
-      textTransform: 'uppercase',
-      letterSpacing: '0.05em'
-    },
-    tableRow: {
-      borderBottom: '1px solid #e5e7eb',
-      transition: 'background-color 0.2s'
-    },
-    tableCell: {
-      padding: '1rem 1.5rem',
-      fontSize: '0.875rem',
-      color: '#374151'
-    },
-    docName: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      fontWeight: '500',
-      color: '#1f2937'
-    },
-    docIcon: {
-      width: '2.5rem',
-      height: '2.5rem',
-      borderRadius: '0.5rem',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    },
-    statusBadge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '0.25rem',
-      padding: '0.25rem 0.75rem',
-      borderRadius: '9999px',
-      fontSize: '0.75rem',
-      fontWeight: '600'
-    },
-    statusApproved: {
-      background: '#d1fae5',
-      color: '#065f46'
-    },
-    statusPending: {
-      background: '#fef3c7',
-      color: '#92400e'
-    },
-    statusRejected: {
-      background: '#fee2e2',
-      color: '#991b1b'
-    },
-    actionButtons: {
-      display: 'flex',
-      gap: '0.5rem'
-    },
-    actionButton: {
-      padding: '0.5rem',
-      border: '1px solid #e5e7eb',
-      background: 'white',
-      borderRadius: '0.5rem',
-      color: '#6b7280',
-      cursor: 'pointer',
-      transition: 'all 0.2s'
-    },
-    requirementsSection: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '1px solid #e5e7eb',
-      padding: '2rem',
-      marginTop: '2rem'
-    },
-    requirementsTitle: {
-      fontSize: '1.5rem',
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '1.5rem'
-    },
-    requirementsGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-      gap: '1rem'
-    },
-    requirementCard: {
-      padding: '1.5rem',
-      border: '1px solid #e5e7eb',
-      borderRadius: '0.75rem',
-      background: '#f9fafb'
-    },
-    requirementHeader: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: '0.75rem'
-    },
-    requirementName: {
-      fontWeight: '600',
-      color: '#1f2937'
-    },
-    requirementBadge: {
-      padding: '0.25rem 0.75rem',
-      borderRadius: '9999px',
-      fontSize: '0.75rem',
-      fontWeight: '600'
-    },
-    requiredBadge: {
-      background: '#fee2e2',
-      color: '#991b1b'
-    },
-    optionalBadge: {
-      background: '#d1fae5',
-      color: '#065f46'
-    },
-    requirementDescription: {
-      color: '#6b7280',
-      fontSize: '0.875rem',
-      lineHeight: '1.5'
-    },
-    emptyState: {
-      textAlign: 'center',
-      padding: '3rem 1rem'
-    },
-    emptyIcon: {
-      width: '4rem',
-      height: '4rem',
-      background: '#f3f4f6',
-      borderRadius: '50%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      margin: '0 auto 1rem'
-    },
-    emptyTitle: {
-      fontSize: '1.25rem',
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    emptyText: {
-      color: '#6b7280'
+  useEffect(() => {
+    if (!user) return;
+    fetchDocuments();
+  }, [user]);
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from('provider_documents')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('uploaded_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform to match component's expected format
+      const transformed = (data || []).map(doc => ({
+        id: doc.id,
+        name: doc.name,
+        type: doc.mime_type?.split('/')[1] || 'pdf',
+        size: formatBytes(doc.file_size),
+        uploaded: new Date(doc.uploaded_at).toLocaleDateString('en-CA'), // YYYY-MM-DD
+        status: doc.verification_status,
+        verifiedBy: doc.verified_by ? 'Admin' : null,
+        expiry: doc.expiry_date || null,
+        rejectionReason: doc.rejection_reason,
+        storagePath: doc.storage_path
+      }));
+
+      setDocuments(transformed);
+    } catch (err) {
+      console.error('Error fetching documents:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const formatBytes = (bytes) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
   const handleFileSelect = (e) => {
@@ -427,26 +82,138 @@ const ProviderDocuments = () => {
     setSelectedFiles(prev => [...prev, ...files]);
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (selectedFiles.length === 0) {
       alert('Please select files to upload');
       return;
     }
 
     setUploading(true);
-    // Simulate upload
-    setTimeout(() => {
-      setUploading(false);
+    setError(null);
+
+    try {
+      for (const file of selectedFiles) {
+        // Generate a unique file path: user_id/timestamp_filename
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${file.name.replace(/\s/g, '_')}`;
+        const filePath = `${user.id}/${fileName}`;
+
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+          .from('provider-documents')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('provider-documents')
+          .getPublicUrl(filePath);
+
+        // Insert record into provider_documents table
+        const { error: dbError } = await supabase
+          .from('provider_documents')
+          .insert({
+            provider_id: user.id,
+            name: file.name,
+            file_name: fileName,
+            file_size: file.size,
+            mime_type: file.type,
+            storage_path: filePath,
+            verification_status: 'pending'
+          });
+
+        if (dbError) throw dbError;
+      }
+
+      // Refresh document list
+      await fetchDocuments();
       setSelectedFiles([]);
       alert('Files uploaded successfully! They will be reviewed by our team.');
-    }, 2000);
+    } catch (err) {
+      console.error('Upload error:', err);
+      setError(err.message);
+      alert('Upload failed: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (doc) => {
+    if (!window.confirm(`Are you sure you want to delete "${doc.name}"?`)) return;
+
+    try {
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('provider-documents')
+        .remove([doc.storagePath]);
+
+      if (storageError) throw storageError;
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('provider_documents')
+        .delete()
+        .eq('id', doc.id);
+
+      if (dbError) throw dbError;
+
+      // Refresh list
+      await fetchDocuments();
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('Delete failed: ' + err.message);
+    }
+  };
+
+  const handleView = async (doc) => {
+    try {
+      // Generate a signed URL (valid for 60 seconds) for secure viewing (optional)
+      const { data, error } = await supabase.storage
+        .from('provider-documents')
+        .createSignedUrl(doc.storagePath, 60);
+
+      if (error) throw error;
+      window.open(data.signedUrl, '_blank');
+    } catch (err) {
+      console.error('View error:', err);
+      alert('Could not open document: ' + err.message);
+    }
+  };
+
+  const handleDownload = async (doc) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('provider-documents')
+        .download(doc.storagePath);
+
+      if (error) throw error;
+
+      // Create a download link
+      const url = window.URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.name;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Download failed: ' + err.message);
+    }
   };
 
   const getFileIcon = (type) => {
     switch(type) {
-      case 'pdf': return <FilePlayIcon size={20} color="#ef4444" />;
+      case 'pdf': return <File size={20} color="#ef4444" />;
+      case 'jpeg':
+      case 'jpg':
+      case 'png':
       case 'image': return <FileImage size={20} color="#10b981" />;
-      case 'spreadsheet': return <FileSpreadsheet size={20} color="#10b981" />;
+      case 'xls':
+      case 'xlsx':
+      case 'csv': return <FileSpreadsheet size={20} color="#10b981" />;
       default: return <File size={20} color="#6b7280" />;
     }
   };
@@ -461,8 +228,8 @@ const ProviderDocuments = () => {
   };
 
   const filteredDocuments = documents.filter(doc =>
-    doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    doc.status.toLowerCase().includes(searchTerm.toLowerCase())
+    doc.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+    (statusFilter === 'all' || doc.status === statusFilter)
   );
 
   const stats = {
@@ -472,103 +239,113 @@ const ProviderDocuments = () => {
     rejected: documents.filter(d => d.status === 'rejected').length
   };
 
+  if (loading) {
+    return (
+      <div className="documents-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading your documents...</p>
+      </div>
+    );
+  }
+
   return (
-    <div style={styles.container}>
+    <div className="documents-container">
       {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>Documents & Verification</h1>
-        <p style={styles.subtitle}>Upload and manage your verification documents</p>
+      <div className="documents-header">
+        <h1 className="documents-title">Documents & Verification</h1>
+        <p className="documents-subtitle">Upload and manage your verification documents</p>
       </div>
 
       {/* Stats */}
-      <div style={styles.statsGrid}>
-        <div style={styles.statCard}>
-          <div style={{...styles.statIcon, background: '#eff6ff'}}>
-            <FileText size={24} color="#2563eb" />
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon blue">
+            <FileText size={24} />
           </div>
-          <div style={styles.statTitle}>Total Documents</div>
-          <div style={styles.statValue}>{stats.total}</div>
+          <div className="stat-content">
+            <p className="stat-label">Total Documents</p>
+            <p className="stat-value">{stats.total}</p>
+          </div>
         </div>
-        <div style={styles.statCard}>
-          <div style={{...styles.statIcon, background: '#d1fae5'}}>
-            <CheckCircle size={24} color="#10b981" />
+        <div className="stat-card">
+          <div className="stat-icon green">
+            <CheckCircle size={24} />
           </div>
-          <div style={styles.statTitle}>Approved</div>
-          <div style={styles.statValue}>{stats.approved}</div>
+          <div className="stat-content">
+            <p className="stat-label">Approved</p>
+            <p className="stat-value">{stats.approved}</p>
+          </div>
         </div>
-        <div style={styles.statCard}>
-          <div style={{...styles.statIcon, background: '#fef3c7'}}>
-            <Clock size={24} color="#f59e0b" />
+        <div className="stat-card">
+          <div className="stat-icon yellow">
+            <Clock size={24} />
           </div>
-          <div style={styles.statTitle}>Pending</div>
-          <div style={styles.statValue}>{stats.pending}</div>
+          <div className="stat-content">
+            <p className="stat-label">Pending</p>
+            <p className="stat-value">{stats.pending}</p>
+          </div>
         </div>
-        <div style={styles.statCard}>
-          <div style={{...styles.statIcon, background: '#fee2e2'}}>
-            <AlertCircle size={24} color="#ef4444" />
+        <div className="stat-card">
+          <div className="stat-icon red">
+            <AlertCircle size={24} />
           </div>
-          <div style={styles.statTitle}>Rejected</div>
-          <div style={styles.statValue}>{stats.rejected}</div>
+          <div className="stat-content">
+            <p className="stat-label">Rejected</p>
+            <p className="stat-value">{stats.rejected}</p>
+          </div>
         </div>
       </div>
 
       {/* Upload Section */}
       <div
-        style={styles.uploadSection}
+        className="upload-section"
         onDragOver={(e) => {
           e.preventDefault();
-          e.currentTarget.style.borderColor = '#2563eb';
-          e.currentTarget.style.background = '#eff6ff';
+          e.currentTarget.classList.add('drag-over');
         }}
         onDragLeave={(e) => {
-          e.currentTarget.style.borderColor = '#d1d5db';
-          e.currentTarget.style.background = 'white';
+          e.currentTarget.classList.remove('drag-over');
         }}
         onDrop={(e) => {
           e.preventDefault();
+          e.currentTarget.classList.remove('drag-over');
           const files = Array.from(e.dataTransfer.files);
           setSelectedFiles(prev => [...prev, ...files]);
-          e.currentTarget.style.borderColor = '#d1d5db';
-          e.currentTarget.style.background = 'white';
         }}
       >
-        <div style={styles.uploadIcon}>
-          <Upload size={32} color="#2563eb" />
+        <div className="upload-icon">
+          <Upload size={32} />
         </div>
-        <h3 style={styles.uploadTitle}>Upload Documents</h3>
-        <p style={styles.uploadText}>
+        <h3 className="upload-title">Upload Documents</h3>
+        <p className="upload-text">
           Drag and drop files here or click to browse. Supported formats: PDF, JPG, PNG, DOC (Max 10MB)
         </p>
         <input
           type="file"
           multiple
           onChange={handleFileSelect}
-          style={{display: 'none'}}
+          style={{ display: 'none' }}
           id="file-upload"
           accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
         />
-        <label htmlFor="file-upload">
-          <div style={styles.uploadButton}>
-            <Upload size={20} />
-            Browse Files
-          </div>
+        <label htmlFor="file-upload" className="upload-button">
+          <Upload size={20} />
+          Browse Files
         </label>
       </div>
 
       {/* Selected Files */}
       {selectedFiles.length > 0 && (
-        <div style={styles.fileList}>
-          <h4 style={{marginBottom: '1rem', color: '#374151'}}>Selected Files ({selectedFiles.length})</h4>
+        <div className="selected-files">
+          <h4>Selected Files ({selectedFiles.length})</h4>
           {selectedFiles.map((file, index) => (
-            <div key={index} style={styles.fileItem}>
-              <FileText size={20} color="#6b7280" />
-              <div style={styles.fileName}>{file.name}</div>
-              <div style={styles.fileSize}>
-                {(file.size / 1024 / 1024).toFixed(2)} MB
-              </div>
+            <div key={index} className="selected-file">
+              <FileText size={20} />
+              <span className="file-name">{file.name}</span>
+              <span className="file-size">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
               <button
                 onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))}
-                style={styles.removeFile}
+                className="remove-file"
               >
                 <Trash2 size={16} />
               </button>
@@ -577,12 +354,7 @@ const ProviderDocuments = () => {
           <button
             onClick={handleUpload}
             disabled={uploading}
-            style={{
-              ...styles.uploadButton,
-              marginTop: '1rem',
-              opacity: uploading ? 0.7 : 1,
-              cursor: uploading ? 'not-allowed' : 'pointer'
-            }}
+            className="upload-submit"
           >
             {uploading ? 'Uploading...' : 'Upload Documents'}
           </button>
@@ -590,27 +362,23 @@ const ProviderDocuments = () => {
       )}
 
       {/* Controls */}
-      <div style={styles.controls}>
-        <div style={styles.searchBox}>
+      <div className="controls">
+        <div className="search-box">
           <input
             type="text"
             placeholder="Search documents..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={styles.searchInput}
           />
-          <Search style={styles.searchIcon} size={20} />
+          <Search className="search-icon" size={20} />
         </div>
         
-        <div style={styles.filterButtons}>
+        <div className="filter-buttons">
           {['all', 'approved', 'pending', 'rejected'].map((filter) => (
             <button
               key={filter}
-              onClick={() => {}}
-              style={{
-                ...styles.filterButton,
-                ...(filter === 'all' ? styles.activeFilter : {})
-              }}
+              onClick={() => setStatusFilter(filter)}
+              className={`filter-button ${statusFilter === filter ? 'active' : ''}`}
             >
               {filter.charAt(0).toUpperCase() + filter.slice(1)}
             </button>
@@ -619,81 +387,66 @@ const ProviderDocuments = () => {
       </div>
 
       {/* Documents Table */}
-      <div style={styles.documentsTable}>
-        <div style={styles.tableHeader}>
-          <h3 style={styles.tableTitle}>Your Documents</h3>
+      <div className="documents-table">
+        <div className="table-header">
+          <h3>Your Documents</h3>
         </div>
         
         {filteredDocuments.length === 0 ? (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>
-              <FileText size={32} color="#9ca3af" />
+          <div className="empty-state">
+            <div className="empty-icon">
+              <FileText size={32} />
             </div>
-            <h4 style={styles.emptyTitle}>No documents found</h4>
-            <p style={styles.emptyText}>Upload your first document to get started</p>
+            <h4>No documents found</h4>
+            <p>Upload your first document to get started</p>
           </div>
         ) : (
-          <div style={{overflowX: 'auto'}}>
-            <table style={styles.table}>
-              <thead style={styles.tableHead}>
+          <div className="table-responsive">
+            <table>
+              <thead>
                 <tr>
-                  <th style={styles.tableTh}>Document</th>
-                  <th style={styles.tableTh}>Type</th>
-                  <th style={styles.tableTh}>Size</th>
-                  <th style={styles.tableTh}>Uploaded</th>
-                  <th style={styles.tableTh}>Status</th>
-                  <th style={styles.tableTh}>Expiry</th>
-                  <th style={styles.tableTh}>Actions</th>
+                  <th>Document</th>
+                  <th>Type</th>
+                  <th>Size</th>
+                  <th>Uploaded</th>
+                  <th>Status</th>
+                  <th>Expiry</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredDocuments.map((doc) => (
-                  <tr key={doc.id} style={styles.tableRow}>
-                    <td style={styles.tableCell}>
-                      <div style={styles.docName}>
-                        <div style={{
-                          ...styles.docIcon,
-                          background: doc.type === 'pdf' ? '#fee2e2' : 
-                                     doc.type === 'image' ? '#d1fae5' : '#f3f4f6'
-                        }}>
-                          {getFileIcon(doc.type)}
-                        </div>
-                        {doc.name}
+                  <tr key={doc.id}>
+                    <td className="doc-name">
+                      <div className="doc-icon" data-type={doc.type}>
+                        {getFileIcon(doc.type)}
                       </div>
+                      {doc.name}
                     </td>
-                    <td style={styles.tableCell}>
-                      {doc.type.toUpperCase()}
-                    </td>
-                    <td style={styles.tableCell}>
-                      {doc.size}
-                    </td>
-                    <td style={styles.tableCell}>
-                      <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                        <Calendar size={14} color="#9ca3af" />
+                    <td>{doc.type.toUpperCase()}</td>
+                    <td>{doc.size}</td>
+                    <td>
+                      <span className="date-cell">
+                        <Calendar size={14} />
                         {doc.uploaded}
-                      </div>
+                      </span>
                     </td>
-                    <td style={styles.tableCell}>
-                      <span style={{
-                        ...styles.statusBadge,
-                        ...styles[`status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`]
-                      }}>
+                    <td>
+                      <span className={`status-badge ${doc.status}`}>
                         {getStatusIcon(doc.status)}
                         {doc.status}
                       </span>
                     </td>
-                    <td style={styles.tableCell}>
-                      {doc.expiry || '—'}
-                    </td>
-                    <td style={styles.tableCell}>
-                      <div style={styles.actionButtons}>
-                        <button style={styles.actionButton} title="View">
+                    <td>{doc.expiry || '—'}</td>
+                    <td>
+                      <div className="action-buttons">
+                        <button onClick={() => handleView(doc)} className="action-button" title="View">
                           <Eye size={16} />
                         </button>
-                        <button style={styles.actionButton} title="Download">
+                        <button onClick={() => handleDownload(doc)} className="action-button" title="Download">
                           <Download size={16} />
                         </button>
-                        <button style={styles.actionButton} title="Delete">
+                        <button onClick={() => handleDelete(doc)} className="action-button" title="Delete">
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -707,21 +460,18 @@ const ProviderDocuments = () => {
       </div>
 
       {/* Requirements Section */}
-      <div style={styles.requirementsSection}>
-        <h3 style={styles.requirementsTitle}>Document Requirements</h3>
-        <div style={styles.requirementsGrid}>
+      <div className="requirements-section">
+        <h3>Document Requirements</h3>
+        <div className="requirements-grid">
           {documentTypes.map((req, index) => (
-            <div key={index} style={styles.requirementCard}>
-              <div style={styles.requirementHeader}>
-                <div style={styles.requirementName}>{req.type}</div>
-                <span style={{
-                  ...styles.requirementBadge,
-                  ...styles[req.required ? 'requiredBadge' : 'optionalBadge']
-                }}>
+            <div key={index} className="requirement-card">
+              <div className="requirement-header">
+                <span className="requirement-name">{req.type}</span>
+                <span className={`requirement-badge ${req.required ? 'required' : 'optional'}`}>
                   {req.required ? 'Required' : 'Optional'}
                 </span>
               </div>
-              <p style={styles.requirementDescription}>{req.description}</p>
+              <p className="requirement-description">{req.description}</p>
             </div>
           ))}
         </div>

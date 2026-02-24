@@ -8,66 +8,279 @@ import {
   ChevronUp, ChevronDown, Target, Star,
   CheckCircle, XCircle, AlertCircle
 } from 'lucide-react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 
 const ProviderAnalytics = () => {
+  const { user } = useAuth();
   const [timeRange, setTimeRange] = useState('month');
   const [selectedMetric, setSelectedMetric] = useState('overview');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Mock analytics data
   const [analyticsData, setAnalyticsData] = useState({
     overview: {
-      totalBookings: 128,
-      completedBookings: 112,
-      cancelledBookings: 16,
-      totalRevenue: 1256000,
-      avgRating: 4.7,
-      responseRate: 92,
-      conversionRate: 18.5,
-      repeatCustomers: 42
+      totalBookings: 0,
+      completedBookings: 0,
+      cancelledBookings: 0,
+      totalRevenue: 0,
+      avgRating: 0,
+      responseRate: 0,
+      conversionRate: 0,
+      repeatCustomers: 0
     },
     trends: {
-      bookings: [65, 59, 80, 81, 56, 55, 40, 85, 92, 78, 88, 95],
-      revenue: [120000, 140000, 160000, 180000, 200000, 220000, 180000, 240000, 260000, 240000, 280000, 300000],
-      ratings: [4.5, 4.6, 4.7, 4.8, 4.7, 4.9, 4.8, 4.9, 4.8, 4.9, 4.9, 5.0]
+      bookings: [],
+      revenue: [],
+      ratings: []
     },
-    servicePerformance: [
-      { id: 1, name: 'Professional Cleaning', bookings: 45, revenue: 450000, rating: 4.9, completionRate: 98 },
-      { id: 2, name: 'Painting Services', bookings: 32, revenue: 320000, rating: 4.7, completionRate: 94 },
-      { id: 3, name: 'Plumbing Services', bookings: 28, revenue: 280000, rating: 4.8, completionRate: 96 },
-      { id: 4, name: 'Electrical Works', bookings: 15, revenue: 150000, rating: 4.6, completionRate: 92 },
-      { id: 5, name: 'Carpentry', bookings: 8, revenue: 56000, rating: 4.5, completionRate: 90 }
-    ],
+    servicePerformance: [],
     customerInsights: {
-      newCustomers: 86,
-      returningCustomers: 42,
-      topCustomerCities: ['Lagos', 'Abuja', 'Port Harcourt', 'Ibadan', 'Enugu'],
-      peakBookingHours: ['9AM-11AM', '2PM-4PM', '6PM-8PM'],
-      customerSources: [
+      newCustomers: 0,
+      returningCustomers: 0,
+      topCustomerCities: [],
+      peakBookingHours: [],
+      customerSources: []
+    },
+    financials: {
+      totalEarnings: 0,
+      pendingPayouts: 0,
+      paidOut: 0,
+      commissionDeducted: 0,
+      averageBookingValue: 0,
+      topEarningMonth: ''
+    },
+    goals: {
+      monthlyTarget: 1500000,
+      currentProgress: 0,
+      bookingTarget: 150,
+      currentBookings: 0,
+      ratingTarget: 4.8,
+      currentRating: 0
+    }
+  });
+
+  // Fetch analytics data when timeRange changes
+  useEffect(() => {
+    if (!user) return;
+    fetchAnalyticsData();
+  }, [user, timeRange]);
+
+  const fetchAnalyticsData = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const providerId = user.id;
+
+      // Determine date range based on timeRange
+      const now = new Date();
+      let startDate;
+      switch (timeRange) {
+        case 'week':
+          startDate = new Date(now.setDate(now.getDate() - 7));
+          break;
+        case 'month':
+          startDate = new Date(now.setMonth(now.getMonth() - 1));
+          break;
+        case 'quarter':
+          startDate = new Date(now.setMonth(now.getMonth() - 3));
+          break;
+        case 'year':
+          startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+          break;
+        default:
+          startDate = new Date(now.setMonth(now.getMonth() - 1));
+      }
+      const startISO = startDate.toISOString();
+
+      // 1. Fetch service_requests (bookings) for this provider
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('service_requests')
+        .select('id, status, amount, created_at, client_id, service_type')
+        .eq('provider_id', providerId)
+        .gte('created_at', startISO);
+
+      if (bookingsError) throw bookingsError;
+
+      const totalBookings = bookings?.length || 0;
+      const completedBookings = bookings?.filter(b => b.status === 'completed').length || 0;
+      const cancelledBookings = bookings?.filter(b => b.status === 'cancelled').length || 0;
+      const totalRevenue = bookings
+        ?.filter(b => b.status === 'completed')
+        .reduce((sum, b) => sum + (b.amount || 0), 0) || 0;
+
+      // 2. Fetch provider_reviews for ratings
+      const { data: reviews, error: reviewsError } = await supabase
+        .from('provider_reviews')
+        .select('rating, created_at')
+        .eq('provider_id', providerId)
+        .gte('created_at', startISO);
+
+      if (reviewsError) throw reviewsError;
+
+      const avgRating = reviews?.length
+        ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length)
+        : 0;
+
+      // 3. Customer insights: unique clients, repeat customers
+      const clientIds = [...new Set(bookings?.map(b => b.client_id).filter(Boolean) || [])];
+      const repeatCustomers = clientIds.filter(id => 
+        bookings?.filter(b => b.client_id === id).length > 1
+      ).length;
+      const newCustomers = clientIds.length - repeatCustomers;
+
+      // 4. Service performance (group by service_type)
+      const serviceMap = {};
+      bookings?.forEach(b => {
+        const serviceType = b.service_type || 'Other';
+        if (!serviceMap[serviceType]) {
+          serviceMap[serviceType] = { bookings: 0, revenue: 0, completed: 0 };
+        }
+        serviceMap[serviceType].bookings++;
+        if (b.status === 'completed') {
+          serviceMap[serviceType].revenue += b.amount || 0;
+          serviceMap[serviceType].completed++;
+        }
+      });
+
+      const servicePerformance = Object.entries(serviceMap).map(([name, stats], idx) => ({
+        id: idx,
+        name,
+        bookings: stats.bookings,
+        revenue: stats.revenue,
+        rating: 4.5, // placeholder – you'd need average rating per service
+        completionRate: stats.bookings ? Math.round((stats.completed / stats.bookings) * 100) : 0
+      }));
+
+      // 5. Trends (monthly over last 12 months)
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthlyBookings = new Array(12).fill(0);
+      const monthlyRevenue = new Array(12).fill(0);
+      const monthlyRatings = new Array(12).fill(0).map(() => []);
+
+      bookings?.forEach(b => {
+        const month = new Date(b.created_at).getMonth();
+        monthlyBookings[month]++;
+        if (b.status === 'completed') {
+          monthlyRevenue[month] += b.amount || 0;
+        }
+      });
+
+      reviews?.forEach(r => {
+        const month = new Date(r.created_at).getMonth();
+        monthlyRatings[month].push(r.rating);
+      });
+
+      const avgMonthlyRatings = monthlyRatings.map(arr => 
+        arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+      );
+
+      // 6. Financials (placeholder for pending/paid)
+      const pendingPayouts = 0;
+      const paidOut = totalRevenue * 0.9; // assuming 10% commission
+      const commissionDeducted = totalRevenue * 0.1;
+      const averageBookingValue = totalBookings ? totalRevenue / totalBookings : 0;
+      const topEarningMonth = ''; // could be computed
+
+      // 7. Customer sources (example, could be real from tracking)
+      const customerSources = [
         { source: 'Marketplace', percentage: 65 },
         { source: 'Direct Referral', percentage: 20 },
         { source: 'Social Media', percentage: 10 },
         { source: 'Other', percentage: 5 }
-      ]
-    },
-    financials: {
-      totalEarnings: 1256000,
-      pendingPayouts: 184000,
-      paidOut: 1072000,
-      commissionDeducted: 125600,
-      averageBookingValue: 9812.5,
-      topEarningMonth: 'December 2023'
-    },
-    goals: {
-      monthlyTarget: 1500000,
-      currentProgress: 1256000,
-      bookingTarget: 150,
-      currentBookings: 128,
-      ratingTarget: 4.8,
-      currentRating: 4.7
-    }
-  });
+      ];
 
+      // 8. Goals
+      const currentProgress = totalRevenue;
+      const currentBookings = totalBookings;
+      const currentRating = avgRating;
+
+      // 9. Top cities from client profiles
+      let cities = [];
+      if (clientIds.length > 0) {
+        const { data: clients, error: clientError } = await supabase
+          .from('profiles')
+          .select('city')
+          .in('id', clientIds);
+
+        if (!clientError && clients) {
+          const cityCounts = {};
+          clients.forEach(c => {
+            if (c.city) cityCounts[c.city] = (cityCounts[c.city] || 0) + 1;
+          });
+          cities = Object.entries(cityCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([city]) => city);
+        }
+      }
+
+      // 10. Peak booking hours
+      const hours = bookings?.map(b => new Date(b.created_at).getHours()) || [];
+      const hourCounts = new Array(24).fill(0);
+      hours.forEach(h => hourCounts[h]++);
+      const peakHours = hourCounts
+        .map((count, hour) => ({ hour, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3)
+        .map(({ hour }) => `${hour}:00-${hour+1}:00`);
+
+      // Update state
+      setAnalyticsData({
+        overview: {
+          totalBookings,
+          completedBookings,
+          cancelledBookings,
+          totalRevenue,
+          avgRating: parseFloat(avgRating.toFixed(1)),
+          responseRate: 92, // placeholder
+          conversionRate: 18.5, // placeholder
+          repeatCustomers
+        },
+        trends: {
+          bookings: monthlyBookings,
+          revenue: monthlyRevenue,
+          ratings: avgMonthlyRatings
+        },
+        servicePerformance,
+        customerInsights: {
+          newCustomers,
+          returningCustomers: repeatCustomers,
+          topCustomerCities: cities,
+          peakBookingHours: peakHours,
+          customerSources
+        },
+        financials: {
+          totalEarnings: totalRevenue,
+          pendingPayouts,
+          paidOut,
+          commissionDeducted,
+          averageBookingValue,
+          topEarningMonth
+        },
+        goals: {
+          monthlyTarget: 1500000,
+          currentProgress,
+          bookingTarget: 150,
+          currentBookings,
+          ratingTarget: 4.8,
+          currentRating
+        }
+      });
+
+    } catch (err) {
+      console.error('Error fetching analytics:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = () => fetchAnalyticsData();
+  const handleExport = () => alert('Export functionality coming soon');
+
+  // ========== Styles (keep exactly as provided) ==========
   const styles = {
     container: {
       maxWidth: '1200px',
@@ -435,7 +648,7 @@ const ProviderAnalytics = () => {
     }
   };
 
-  // Chart data generators
+  // Chart placeholder generators (keep as is)
   const generateBookingChart = () => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return (
@@ -543,20 +756,6 @@ const ProviderAnalytics = () => {
       iconColor: '#0284c7'
     }
   ];
-
-  const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      // In a real app, this would fetch fresh data
-      console.log('Analytics data refreshed');
-    }, 1000);
-  };
-
-  const handleExport = () => {
-    // In a real app, this would export data
-    alert('Exporting analytics data...');
-  };
 
   return (
     <div style={styles.container}>
@@ -860,7 +1059,7 @@ const ProviderAnalytics = () => {
               <div style={styles.goalLabel}>
                 <span>Rating Target</span>
                 <span>
-                  {analyticsData.goals.currentRating} / {analyticsData.goals.ratingTarget}
+                  {analyticsData.goals.currentRating.toFixed(1)} / {analyticsData.goals.ratingTarget}
                 </span>
               </div>
               <div style={styles.goalProgress}>
@@ -874,7 +1073,7 @@ const ProviderAnalytics = () => {
         </>
       )}
 
-      {/* Other metric views can be added here */}
+      {/* Other metric views */}
       {selectedMetric !== 'overview' && (
         <div style={styles.chartCard}>
           <div style={styles.chartHeader}>
@@ -910,7 +1109,7 @@ const ProviderAnalytics = () => {
         </div>
       )}
 
-      {/* Add CSS animation */}
+      {/* CSS animation */}
       <style>
         {`
           @keyframes spin {

@@ -1,39 +1,99 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
-import { FaArrowLeft, FaPhone, FaEnvelope, FaMapMarkerAlt, FaCalendar, FaClock, FaMoneyBill, FaFileContract } from 'react-icons/fa';
+import { 
+  FaArrowLeft, FaPhone, FaEnvelope, FaMapMarkerAlt, 
+  FaCalendar, FaClock, FaMoneyBill, FaFileContract,
+  FaSpinner 
+} from 'react-icons/fa';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 
 const ProviderBookingDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [updating, setUpdating] = useState(false);
 
-  // Fetch booking data (mocked for now)
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setBooking({
-        id: id,
-        client: 'John Doe',
-        clientPhone: '+2348012345678',
-        clientEmail: 'john@example.com',
-        service: 'Deep House Cleaning',
-        date: '2024-01-15',
-        time: '10:00 AM',
-        duration: '3 hours',
-        address: '123 Lekki Phase 1, Lagos',
-        amount: '₦25,000',
-        status: 'upcoming',
-        payment: 'pending',
-        specialRequests: 'Use eco-friendly cleaning products',
-        notes: 'Customer has pets - be careful with cleaning chemicals',
-        teamAssigned: ['Chika Okafor', 'Bola Ahmed'],
-        documents: ['Service Agreement.pdf', 'Customer Requirements.docx']
-      });
+    if (!user || !id) return;
+    fetchBooking();
+  }, [user, id]);
+
+  const fetchBooking = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch booking from service_requests, join with client profile
+      const { data, error } = await supabase
+        .from('service_requests')
+        .select(`
+          *,
+          client:client_id (
+            id,
+            full_name,
+            email,
+            phone
+          )
+        `)
+        .eq('id', id)
+        .eq('provider_id', user.id)
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error('Booking not found');
+
+      // Transform to match component's expected format
+      const formattedBooking = {
+        id: data.id,
+        client: data.client?.full_name || 'Unknown',
+        clientPhone: data.client?.phone || 'N/A',
+        clientEmail: data.client?.email || 'N/A',
+        service: data.service_type || 'Service',
+        date: data.scheduled_date ? new Date(data.scheduled_date).toLocaleDateString('en-US') : 'TBD',
+        time: data.time || 'TBD',
+        duration: data.duration || 'N/A',
+        address: data.address || 'Address not provided',
+        amount: data.amount ? `₦${data.amount.toLocaleString()}` : 'N/A',
+        status: data.status || 'pending',
+        payment: data.payment_status || 'pending',
+        specialRequests: data.special_requests || 'None',
+        notes: data.notes || '',
+        teamAssigned: data.team_members || [], // assume array of names or IDs
+        documents: data.documents || [] // array of file names/urls
+      };
+
+      setBooking(formattedBooking);
+    } catch (err) {
+      console.error('Error fetching booking:', err);
+      setError(err.message);
+    } finally {
       setLoading(false);
-    }, 500);
-  }, [id]);
+    }
+  };
+
+  const updateBookingStatus = async (newStatus) => {
+    setUpdating(true);
+    try {
+      const { error } = await supabase
+        .from('service_requests')
+        .update({ status: newStatus })
+        .eq('id', id)
+        .eq('provider_id', user.id);
+
+      if (error) throw error;
+      // Refresh data
+      await fetchBooking();
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Failed to update status: ' + err.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -42,13 +102,13 @@ const ProviderBookingDetails = () => {
         subtitle="Please wait while we fetch booking details"
       >
         <div style={{ textAlign: 'center', padding: '3rem' }}>
-          <div className="loading-spinner"></div>
+          <FaSpinner className="spinner" style={{ fontSize: '2rem', animation: 'spin 1s linear infinite' }} />
         </div>
       </ProviderPageTemplate>
     );
   }
 
-  if (!booking) {
+  if (error || !booking) {
     return (
       <ProviderPageTemplate
         title="Booking Not Found"
@@ -66,7 +126,7 @@ const ProviderBookingDetails = () => {
         <div className="empty-state">
           <div className="empty-state-icon">❌</div>
           <h3>Booking #{id} not found</h3>
-          <p>This booking may have been cancelled or doesn't exist.</p>
+          <p>{error || 'This booking may have been cancelled or does not exist.'}</p>
           <button 
             className="btn-primary"
             onClick={() => navigate('/dashboard/provider/bookings')}
@@ -91,8 +151,8 @@ const ProviderBookingDetails = () => {
             <FaArrowLeft style={{ marginRight: '0.5rem' }} />
             Back to Bookings
           </button>
-          <button className="btn-primary">
-            Update Status
+          <button className="btn-primary" disabled={updating}>
+            {updating ? 'Updating...' : 'Update Status'}
           </button>
         </div>
       }
@@ -285,7 +345,7 @@ const ProviderBookingDetails = () => {
         marginTop: '2rem'
       }}>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="btn-secondary">
+          <button className="btn-secondary" onClick={() => window.print()}>
             Print Details
           </button>
           <button className="btn-secondary">
@@ -295,29 +355,52 @@ const ProviderBookingDetails = () => {
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           {booking.status === 'pending' && (
             <>
-              <button className="btn-success">
+              <button 
+                className="btn-success" 
+                onClick={() => updateBookingStatus('confirmed')}
+                disabled={updating}
+              >
                 Accept Booking
               </button>
-              <button className="btn-danger">
+              <button 
+                className="btn-danger"
+                onClick={() => updateBookingStatus('cancelled')}
+                disabled={updating}
+              >
                 Decline Booking
               </button>
             </>
           )}
           {booking.status === 'upcoming' && (
-            <button className="btn-primary">
+            <button 
+              className="btn-primary"
+              onClick={() => updateBookingStatus('in-progress')}
+              disabled={updating}
+            >
               Start Service
             </button>
           )}
           {booking.status === 'in-progress' && (
-            <button className="btn-success">
+            <button 
+              className="btn-success"
+              onClick={() => updateBookingStatus('completed')}
+              disabled={updating}
+            >
               Mark as Complete
             </button>
           )}
-          <button className="btn-secondary">
+          <button className="btn-secondary" disabled={updating}>
             Edit Booking
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </ProviderPageTemplate>
   );
 };

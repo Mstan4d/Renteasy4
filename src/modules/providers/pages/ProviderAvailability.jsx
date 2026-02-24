@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
-import { FaCalendarAlt, FaClock, FaSave, FaPlus, FaTrash } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaSave, FaPlus, FaTrash, FaSpinner } from 'react-icons/fa';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 
 const ProviderAvailability = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
   const [availability, setAvailability] = useState({
     monday: { active: true, slots: [{ from: '09:00', to: '17:00' }] },
     tuesday: { active: true, slots: [{ from: '09:00', to: '17:00' }] },
@@ -13,13 +20,67 @@ const ProviderAvailability = () => {
     sunday: { active: false, slots: [] }
   });
 
-  const [timeOff, setTimeOff] = useState([
-    { id: 1, date: '2024-01-20', reason: 'Public Holiday', recurring: false },
-    { id: 2, date: '2024-01-25', reason: 'Personal Day', recurring: false },
-    { id: 3, date: '2024-02-14', reason: 'Valentine\'s Day', recurring: true },
-  ]);
-
+  const [timeOff, setTimeOff] = useState([]);
   const [newTimeOff, setNewTimeOff] = useState({ date: '', reason: '', recurring: false });
+
+  // Fetch provider's availability from Supabase on mount
+  useEffect(() => {
+    if (!user) return;
+    fetchAvailability();
+  }, [user]);
+
+  const fetchAvailability = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Try to get existing record
+      const { data, error } = await supabase
+        .from('provider_availability')
+        .select('schedule, time_off')
+        .eq('provider_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        // If record exists, update state
+        if (data.schedule) setAvailability(data.schedule);
+        if (data.time_off) setTimeOff(data.time_off);
+      }
+      // If no data, keep default state
+    } catch (err) {
+      console.error('Error fetching availability:', err);
+      setError('Failed to load your availability settings.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // Upsert: if record exists, update; else insert
+      const { error } = await supabase
+        .from('provider_availability')
+        .upsert({
+          provider_id: user.id,
+          schedule: availability,
+          time_off: timeOff,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'provider_id' });
+
+      if (error) throw error;
+
+      alert('Availability saved successfully!');
+    } catch (err) {
+      console.error('Error saving availability:', err);
+      setError('Failed to save changes. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const days = [
     { key: 'monday', label: 'Monday' },
@@ -76,11 +137,12 @@ const ProviderAvailability = () => {
       return;
     }
     
-    setTimeOff(prev => [...prev, {
-      id: prev.length + 1,
+    const newEntry = {
+      id: Date.now(), // temporary id for UI, will be replaced on save
       ...newTimeOff
-    }]);
+    };
     
+    setTimeOff(prev => [...prev, newEntry]);
     setNewTimeOff({ date: '', reason: '', recurring: false });
   };
 
@@ -88,22 +150,34 @@ const ProviderAvailability = () => {
     setTimeOff(prev => prev.filter(item => item.id !== id));
   };
 
-  const handleSave = () => {
-    alert('Availability saved successfully!');
-    // In real app, save to API
-  };
+  // Loading state
+  if (loading) {
+    return (
+      <ProviderPageTemplate title="Availability Settings" subtitle="Loading your availability...">
+        <div style={{ textAlign: 'center', padding: '3rem' }}>
+          <FaSpinner className="spinner" style={{ fontSize: '2rem', animation: 'spin 1s linear infinite' }} />
+        </div>
+      </ProviderPageTemplate>
+    );
+  }
 
   return (
     <ProviderPageTemplate
       title="Availability Settings"
       subtitle="Set your working hours and time off"
       actions={
-        <button className="btn-primary" onClick={handleSave}>
-          <FaSave style={{ marginRight: '0.5rem' }} />
-          Save Changes
+        <button className="btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? <FaSpinner className="spinner" style={{ marginRight: '0.5rem' }} /> : <FaSave style={{ marginRight: '0.5rem' }} />}
+          {saving ? 'Saving...' : 'Save Changes'}
         </button>
       }
     >
+      {error && (
+        <div className="error-banner" style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem' }}>
+          {error}
+        </div>
+      )}
+
       <div className="provider-grid">
         {/* Weekly Schedule */}
         <div className="provider-card" style={{ gridColumn: 'span 2' }}>
@@ -356,7 +430,6 @@ const ProviderAvailability = () => {
           </div>
         </div>
       </div>
-
       <style jsx>{`
         .weekly-schedule {
           display: flex;

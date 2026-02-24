@@ -1,0 +1,128 @@
+.property-detail-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #f8fafc;
+}
+
+.detail-header {
+  background: white;
+  padding: 24px;
+  border-radius: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.back-btn-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-btn-circle:hover { background: #f1f5f9; }
+
+.badge-status {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge-status.rented { background: #dcfce7; color: #166534; }
+.badge-status.vacant { background: #fef3c7; color: #92400e; }
+
+.header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 24px;
+}
+
+.price-tag { text-align: right; }
+.price-tag span { font-size: 12px; color: #64748b; }
+.price-tag h2 { color: #10b981; font-size: 28px; margin: 0; }
+
+.header-actions-row {
+  display: flex;
+  gap: 12px;
+}
+
+/* Updated Button Styles with CSS variables */
+.action-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.action-btn.primary { background: #0f172a; color: white; }
+.action-btn.secondary { background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; }
+
+.detail-tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 24px;
+}
+
+.detail-tabs button {
+  padding: 12px 4px;
+  background: none;
+  border: none;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  position: relative;
+}
+
+.detail-tabs button.active {
+  color: #0f172a;
+}
+
+.detail-tabs button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #0f172a;
+}
+
+.financial-card {
+  background: white;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+  padding: 16px 0;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.text-green { color: #10b981; }

@@ -1,0 +1,102 @@
+/* NewTenantKYCForm.css */
+.new-kyc-card {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+  max-width: 500px;
+  margin: 2rem auto;
+  overflow: hidden;
+}
+
+.reward-header {
+  background: #4f46e5;
+  color: white;
+  padding: 2rem;
+  text-align: center;
+}
+
+.reward-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.2);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.kyc-body {
+  padding: 2rem;
+}
+
+.upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.upload-dropzone {
+  border: 2px dashed #e5e7eb;
+  border-radius: 12px;
+  height: 140px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.upload-dropzone:hover {
+  border-color: #4f46e5;
+  background: #f9fafb;
+}
+
+.upload-dropzone.active {
+  border-style: solid;
+  border-color: #10b981;
+}
+
+.upload-dropzone img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.upload-dropzone input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.submit-kyc-btn {
+  width: 100%;
+  padding: 1rem;
+  background: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.submit-kyc-btn:hover {
+  background: #4338ca;
+}
+
+.info-box {
+  display: flex;
+  gap: 10px;
+  background: #f3f4f6;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: #4b5563;
+}

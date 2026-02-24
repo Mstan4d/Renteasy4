@@ -1,47 +1,252 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
 import { FaSearch, FaPaperPlane, FaPaperclip, FaImage, FaSmile, FaVideo, FaPhone } from 'react-icons/fa';
+import './ProviderMessages.css'; // external CSS
 
 const ProviderMessages = () => {
-  const [conversations, setConversations] = useState([
-    { id: 1, name: 'John Doe', lastMessage: 'Can you send me a quote?', time: '10:30 AM', unread: 2, avatar: 'JD', type: 'tenant' },
-    { id: 2, name: 'Jane Smith', lastMessage: 'Thanks for the great service!', time: 'Yesterday', unread: 0, avatar: 'JS', type: 'landlord' },
-    { id: 3, name: 'Mike Johnson', lastMessage: 'Are you available tomorrow?', time: '2 days ago', unread: 1, avatar: 'MJ', type: 'tenant' },
-    { id: 4, name: 'Sarah Williams', lastMessage: 'I need cleaning service', time: '3 days ago', unread: 0, avatar: 'SW', type: 'estate-firm' },
-    { id: 5, name: 'David Brown', lastMessage: 'Payment sent', time: '1 week ago', unread: 0, avatar: 'DB', type: 'landlord' },
-  ]);
-
-  const [activeChat, setActiveChat] = useState(1);
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'tenant', text: 'Hello, I need cleaning service for my 3-bedroom apartment', time: '10:00 AM' },
-    { id: 2, sender: 'provider', text: 'Hi John! I\'d be happy to help. What date do you need the service?', time: '10:05 AM' },
-    { id: 3, sender: 'tenant', text: 'This Friday, January 15th', time: '10:10 AM' },
-    { id: 4, sender: 'tenant', text: 'Can you send me a quote?', time: '10:30 AM' },
-  ]);
-
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState([]);
+  const [activeChat, setActiveChat] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const messagesEndRef = useRef(null);
+  const subscriptionRef = useRef(null);
 
-  const activeConversation = conversations.find(c => c.id === activeChat);
-
-  const handleSendMessage = () => {
-    if (!newMessage.trim()) return;
-    
-    const newMsg = {
-      id: messages.length + 1,
-      sender: 'provider',
-      text: newMessage,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  // Fetch conversations (chats) for the current user
+  useEffect(() => {
+    if (!user?.id) return;
+    fetchConversations();
+    // Cleanup subscription on unmount
+    return () => {
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+      }
     };
-    
-    setMessages([...messages, newMsg]);
-    setNewMessage('');
-    
-    // Update conversation last message
-    setConversations(prev => prev.map(conv => 
-      conv.id === activeChat 
-        ? { ...conv, lastMessage: newMessage, time: 'Just now', unread: 0 }
-        : conv
-    ));
+  }, [user]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const fetchConversations = async () => {
+    try {
+      setLoading(true);
+      // Get chats where current user is a participant
+      const { data: chats, error } = await supabase
+        .from('chats')
+        .select('*')
+        .contains('participant_ids', [user.id])
+        .order('last_message_at', { ascending: false });
+
+      if (error) throw error;
+
+      // For each chat, fetch the other participant's profile and last message
+      const conversationsData = await Promise.all(
+        chats.map(async (chat) => {
+          // Get other participant ID (assuming 2 participants)
+          const otherParticipantId = chat.participant_ids.find(id => id !== user.id);
+          let profile = { full_name: 'Unknown', role: 'user', avatar_url: null };
+          if (otherParticipantId) {
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('full_name, role, avatar_url')
+              .eq('id', otherParticipantId)
+              .single();
+            profile = profileData || profile;
+          }
+
+          // Get last message
+          const { data: lastMsg } = await supabase
+            .from('messages')
+            .select('content, created_at')
+            .eq('chat_id', chat.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          // Count unread messages (sent by other participant, not read)
+          const { count: unreadCount } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('chat_id', chat.id)
+            .eq('sender_id', otherParticipantId)
+            .is('read_at', null);
+
+          return {
+            id: chat.id,
+            name: profile.full_name,
+            avatar: profile.avatar_url ? null : profile.full_name?.charAt(0) || '?',
+            type: profile.role || 'user',
+            lastMessage: lastMsg?.content || 'No messages yet',
+            time: formatTime(lastMsg?.created_at),
+            unread: unreadCount || 0,
+            otherParticipantId,
+          };
+        })
+      );
+
+      setConversations(conversationsData);
+      if (conversationsData.length > 0 && !activeChat) {
+        setActiveChat(conversationsData[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMessages = async (chatId) => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Format messages
+      const formattedMessages = data.map(msg => ({
+        id: msg.id,
+        sender: msg.sender_id === user.id ? 'provider' : 'client',
+        text: msg.content,
+        time: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }));
+
+      setMessages(formattedMessages);
+
+      // Mark messages as read if they are from other participant
+      const unreadMessages = data.filter(msg => msg.sender_id !== user.id && !msg.read_at);
+      if (unreadMessages.length > 0) {
+        const unreadIds = unreadMessages.map(msg => msg.id);
+        await supabase
+          .from('messages')
+          .update({ read_at: new Date().toISOString() })
+          .in('id', unreadIds);
+
+        // Update unread count in conversation list
+        setConversations(prev =>
+          prev.map(conv =>
+            conv.id === chatId ? { ...conv, unread: 0 } : conv
+          )
+        );
+      }
+
+      // Set up real-time subscription for new messages in this chat
+      subscribeToMessages(chatId);
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+    }
+  };
+
+  const subscribeToMessages = (chatId) => {
+    if (subscriptionRef.current) {
+      supabase.removeChannel(subscriptionRef.current);
+    }
+
+    const subscription = supabase
+      .channel(`chat-${chatId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        (payload) => {
+          const newMsg = payload.new;
+          if (newMsg.sender_id !== user.id) {
+            // Add to messages
+            setMessages(prev => [
+              ...prev,
+              {
+                id: newMsg.id,
+                sender: 'client',
+                text: newMsg.content,
+                time: new Date(newMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              },
+            ]);
+            // Update conversation last message and unread count
+            setConversations(prev =>
+              prev.map(conv =>
+                conv.id === chatId
+                  ? {
+                      ...conv,
+                      lastMessage: newMsg.content,
+                      time: formatTime(newMsg.created_at),
+                      unread: conv.unread + 1,
+                    }
+                  : conv
+              )
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    subscriptionRef.current = subscription;
+  };
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !activeChat) return;
+
+    const chat = conversations.find(c => c.id === activeChat);
+    if (!chat) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          chat_id: activeChat,
+          sender_id: user.id,
+          content: newMessage.trim(),
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update messages state
+      const newMsg = {
+        id: data.id,
+        sender: 'provider',
+        text: data.content,
+        time: new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages(prev => [...prev, newMsg]);
+
+      // Update conversation last message and time
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === activeChat
+            ? {
+                ...conv,
+                lastMessage: data.content,
+                time: formatTime(data.created_at),
+              }
+            : conv
+        )
+      );
+
+      // Update chat's last_message_at
+      await supabase
+        .from('chats')
+        .update({ last_message_at: data.created_at })
+        .eq('id', activeChat);
+
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert('Failed to send message. Please try again.');
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -49,6 +254,21 @@ const ProviderMessages = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'short' });
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
   const getAvatarColor = (type) => {
@@ -70,6 +290,20 @@ const ProviderMessages = () => {
       default: return 'User';
     }
   };
+
+  // Filter conversations by search term
+  const filteredConversations = conversations.filter(conv =>
+    conv.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const activeConversation = conversations.find(c => c.id === activeChat);
+
+  // Load messages when active chat changes
+  useEffect(() => {
+    if (activeChat) {
+      fetchMessages(activeChat);
+    }
+  }, [activeChat]);
 
   return (
     <ProviderPageTemplate
@@ -93,46 +327,54 @@ const ProviderMessages = () => {
                 placeholder="Search conversations..."
                 className="form-control"
                 style={{ paddingLeft: '2.5rem' }}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
 
           <div className="conversations-list">
-            {conversations.map((conversation) => (
-              <div
-                key={conversation.id}
-                className={`conversation-item ${activeChat === conversation.id ? 'active' : ''}`}
-                onClick={() => setActiveChat(conversation.id)}
-              >
-                <div className="conversation-avatar" style={{ background: getAvatarColor(conversation.type) }}>
-                  {conversation.avatar}
-                </div>
-                
-                <div className="conversation-info">
-                  <div className="conversation-header">
-                    <h4 style={{ margin: 0 }}>{conversation.name}</h4>
-                    <span className="conversation-time">{conversation.time}</span>
-                  </div>
-                  
-                  <div className="conversation-preview">
-                    <p style={{ margin: 0, color: '#666' }}>{conversation.lastMessage}</p>
-                    {conversation.unread > 0 && (
-                      <span className="unread-badge">{conversation.unread}</span>
-                    )}
-                  </div>
-                  
-                  <div className="conversation-type">
-                    <span style={{
-                      fontSize: '0.8rem',
-                      color: getAvatarColor(conversation.type),
-                      fontWeight: '600'
-                    }}>
-                      {getTypeLabel(conversation.type)}
-                    </span>
-                  </div>
-                </div>
+            {filteredConversations.length === 0 ? (
+              <div className="empty-conversations">
+                {loading ? 'Loading...' : 'No conversations yet'}
               </div>
-            ))}
+            ) : (
+              filteredConversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className={`conversation-item ${activeChat === conversation.id ? 'active' : ''}`}
+                  onClick={() => setActiveChat(conversation.id)}
+                >
+                  <div className="conversation-avatar" style={{ background: getAvatarColor(conversation.type) }}>
+                    {conversation.avatar || conversation.name.charAt(0)}
+                  </div>
+                  
+                  <div className="conversation-info">
+                    <div className="conversation-header">
+                      <h4 style={{ margin: 0 }}>{conversation.name}</h4>
+                      <span className="conversation-time">{conversation.time}</span>
+                    </div>
+                    
+                    <div className="conversation-preview">
+                      <p style={{ margin: 0, color: '#666' }}>{conversation.lastMessage}</p>
+                      {conversation.unread > 0 && (
+                        <span className="unread-badge">{conversation.unread}</span>
+                      )}
+                    </div>
+                    
+                    <div className="conversation-type">
+                      <span style={{
+                        fontSize: '0.8rem',
+                        color: getAvatarColor(conversation.type),
+                        fontWeight: '600'
+                      }}>
+                        {getTypeLabel(conversation.type)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -144,12 +386,12 @@ const ProviderMessages = () => {
               <div className="chat-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                   <div className="chat-avatar" style={{ background: getAvatarColor(activeConversation.type) }}>
-                    {activeConversation.avatar}
+                    {activeConversation.avatar || activeConversation.name.charAt(0)}
                   </div>
                   <div>
                     <h3 style={{ margin: 0 }}>{activeConversation.name}</h3>
                     <p style={{ margin: '0.2rem 0 0', color: '#666', fontSize: '0.9rem' }}>
-                      {getTypeLabel(activeConversation.type)} • Last seen recently
+                      {getTypeLabel(activeConversation.type)} • Online
                     </p>
                   </div>
                 </div>
@@ -177,6 +419,7 @@ const ProviderMessages = () => {
                     </div>
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
 
               {/* Message Input */}
@@ -222,318 +465,6 @@ const ProviderMessages = () => {
           )}
         </div>
       </div>
-
-      <style jsx>{`
-        .messages-container {
-          display: grid;
-          grid-template-columns: 350px 1fr;
-          height: calc(100vh - 200px);
-          background: white;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        }
-        
-        .conversations-sidebar {
-          border-right: 1px solid #e0e0e0;
-          display: flex;
-          flex-direction: column;
-        }
-        
-        .sidebar-header {
-          padding: 1.5rem;
-          border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .conversations-list {
-          flex: 1;
-          overflow-y: auto;
-        }
-        
-        .conversation-item {
-          display: flex;
-          padding: 1rem 1.5rem;
-          gap: 1rem;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          border-bottom: 1px solid #f0f0f0;
-        }
-        
-        .conversation-item:hover {
-          background: #f8f9fa;
-        }
-        
-        .conversation-item.active {
-          background: #e8f0fe;
-          border-left: 4px solid #1a237e;
-        }
-        
-        .conversation-avatar {
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 1.2rem;
-          flex-shrink: 0;
-        }
-        
-        .conversation-info {
-          flex: 1;
-          min-width: 0;
-        }
-        
-        .conversation-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 0.3rem;
-        }
-        
-        .conversation-time {
-          font-size: 0.8rem;
-          color: #666;
-          white-space: nowrap;
-        }
-        
-        .conversation-preview {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 0.3rem;
-        }
-        
-        .conversation-preview p {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        
-        .unread-badge {
-          background: #1a237e;
-          color: white;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 0.8rem;
-          font-weight: 600;
-          flex-shrink: 0;
-        }
-        
-        .chat-area {
-          display: flex;
-          flex-direction: column;
-        }
-        
-        .chat-header {
-          padding: 1.5rem;
-          border-bottom: 1px solid #e0e0e0;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: white;
-          z-index: 10;
-        }
-        
-        .chat-avatar {
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 1.2rem;
-        }
-        
-        .chat-actions {
-          display: flex;
-          gap: 0.5rem;
-        }
-        
-        .chat-action-btn {
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          border: 1px solid #ddd;
-          background: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .chat-action-btn:hover {
-          background: #f8f9fa;
-          border-color: #1a237e;
-          color: #1a237e;
-        }
-        
-        .messages-list {
-          flex: 1;
-          padding: 1.5rem;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          background: #f8f9fa;
-        }
-        
-        .message {
-          display: flex;
-        }
-        
-        .message.sent {
-          justify-content: flex-end;
-        }
-        
-        .message.received {
-          justify-content: flex-start;
-        }
-        
-        .message-bubble {
-          max-width: 70%;
-          padding: 0.8rem 1rem;
-          border-radius: 18px;
-          position: relative;
-        }
-        
-        .message.sent .message-bubble {
-          background: #1a237e;
-          color: white;
-          border-bottom-right-radius: 4px;
-        }
-        
-        .message.received .message-bubble {
-          background: white;
-          color: #333;
-          border: 1px solid #e0e0e0;
-          border-bottom-left-radius: 4px;
-        }
-        
-        .message-time {
-          display: block;
-          font-size: 0.7rem;
-          opacity: 0.7;
-          margin-top: 0.3rem;
-          text-align: right;
-        }
-        
-        .message-input-area {
-          padding: 1rem 1.5rem;
-          border-top: 1px solid #e0e0e0;
-          display: flex;
-          align-items: flex-end;
-          gap: 1rem;
-          background: white;
-        }
-        
-        .input-actions {
-          display: flex;
-          gap: 0.5rem;
-        }
-        
-        .input-action-btn {
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          border: 1px solid #ddd;
-          background: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .input-action-btn:hover {
-          background: #f8f9fa;
-          border-color: #1a237e;
-          color: #1a237e;
-        }
-        
-        .message-input {
-          flex: 1;
-          border: 1px solid #ddd;
-          border-radius: 24px;
-          padding: 0.8rem 1rem;
-          font-size: 1rem;
-          resize: none;
-          max-height: 120px;
-          min-height: 40px;
-          outline: none;
-          transition: all 0.3s ease;
-        }
-        
-        .message-input:focus {
-          border-color: #1a237e;
-          box-shadow: 0 0 0 3px rgba(26, 35, 126, 0.1);
-        }
-        
-        .send-button {
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          background: #1a237e;
-          color: white;
-          border: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .send-button:hover:not(:disabled) {
-          background: #283593;
-          transform: scale(1.05);
-        }
-        
-        .send-button:disabled {
-          background: #ccc;
-          cursor: not-allowed;
-        }
-        
-        .no-chat-selected {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 100%;
-          background: #f8f9fa;
-        }
-        
-        @media (max-width: 992px) {
-          .messages-container {
-            grid-template-columns: 1fr;
-          }
-          
-          .conversations-sidebar {
-            display: none;
-          }
-        }
-        
-        @media (max-width: 768px) {
-          .chat-header {
-            padding: 1rem;
-          }
-          
-          .message-input-area {
-            padding: 1rem;
-          }
-          
-          .message-bubble {
-            max-width: 85%;
-          }
-        }
-      `}</style>
     </ProviderPageTemplate>
   );
 };

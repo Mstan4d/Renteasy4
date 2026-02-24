@@ -1,110 +1,169 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Briefcase, PlusCircle, TrendingUp, Filter,
   Search, Star, MessageSquare, Clock,
   Eye, Edit, Trash2, MoreVertical
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './EstateServicesPage.css';
 
 const EstateServicesPage = () => {
-  const [services, setServices] = useState([
-    {
-      id: 'svc_001',
-      title: 'Property Management Services',
-      description: 'Complete property management including tenant screening, rent collection, and maintenance coordination.',
-      category: 'property-management',
-      price: '10-15% of monthly rent',
-      location: 'Lagos State',
-      rating: 4.8,
-      reviews: 42,
-      status: 'active',
-      requests: 12,
-      featured: true,
-      created: '2024-10-15',
-      views: 245
-    },
-    {
-      id: 'svc_002',
-      title: 'Real Estate Valuation',
-      description: 'Professional property valuation for sales, purchase, or insurance purposes.',
-      category: 'valuation',
-      price: '₦50,000 - ₦200,000',
-      location: 'Nationwide',
-      rating: 4.9,
-      reviews: 28,
-      status: 'active',
-      requests: 8,
-      featured: true,
-      created: '2024-11-05',
-      views: 189
-    },
-    {
-      id: 'svc_003',
-      title: 'Tenant Screening & Verification',
-      description: 'Comprehensive background checks and verification for potential tenants.',
-      category: 'verification',
-      price: '₦15,000 per tenant',
-      location: 'Lagos & Abuja',
-      rating: 4.7,
-      reviews: 35,
-      status: 'active',
-      requests: 15,
-      featured: false,
-      created: '2024-09-20',
-      views: 312
-    },
-    {
-      id: 'svc_004',
-      title: 'Legal Documentation Services',
-      description: 'Preparation and review of tenancy agreements, leases, and property documents.',
-      category: 'legal',
-      price: '₦30,000 - ₦100,000',
-      location: 'Nationwide',
-      rating: 4.6,
-      reviews: 19,
-      status: 'inactive',
-      requests: 3,
-      featured: false,
-      created: '2024-08-10',
-      views: 156
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [services, setServices] = useState([]);
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    featured: 0,
+    totalRequests: 0,
+    totalViews: 0
+  });
 
-  const filteredServices = services.filter(service => {
-    if (filter === 'active') return service.status === 'active';
-    if (filter === 'inactive') return service.status === 'inactive';
-    if (filter === 'featured') return service.featured;
-    return true;
-  }).filter(service =>
-    service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    service.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    if (user) {
+      loadServices();
+    }
+  }, [user]);
 
-  const stats = {
-    total: services.length,
-    active: services.filter(s => s.status === 'active').length,
-    featured: services.filter(s => s.featured).length,
-    totalRequests: services.reduce((sum, s) => sum + s.requests, 0),
-    totalViews: services.reduce((sum, s) => sum + s.views, 0)
-  };
+  const loadServices = async () => {
+    try {
+      setLoading(true);
 
-  const handleToggleStatus = (serviceId) => {
-    setServices(services.map(svc => 
-      svc.id === serviceId 
-        ? { ...svc, status: svc.status === 'active' ? 'inactive' : 'active' }
-        : svc
-    ));
-  };
+      const { data, error } = await supabase
+        .from('estate_services')
+        .select('*')
+        .eq('estate_firm_id', user.id)
+        .order('created_at', { ascending: false });
 
-  const handleDeleteService = (serviceId) => {
-    if (window.confirm('Are you sure you want to delete this service?')) {
-      setServices(services.filter(svc => svc.id !== serviceId));
+      if (error) throw error;
+
+      setServices(data || []);
+
+      // Calculate stats
+      const total = data?.length || 0;
+      const active = data?.filter(s => s.status === 'active').length || 0;
+      const featured = data?.filter(s => s.featured).length || 0;
+      const totalRequests = data?.reduce((sum, s) => sum + (s.requests || 0), 0) || 0;
+      const totalViews = data?.reduce((sum, s) => sum + (s.views || 0), 0) || 0;
+
+      setStats({ total, active, featured, totalRequests, totalViews });
+
+    } catch (error) {
+      console.error('Error loading services:', error);
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handleToggleStatus = async (serviceId) => {
+    try {
+      const service = services.find(s => s.id === serviceId);
+      const newStatus = service.status === 'active' ? 'inactive' : 'active';
+
+      const { error } = await supabase
+        .from('estate_services')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', serviceId)
+        .eq('estate_firm_id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setServices(services.map(s => 
+        s.id === serviceId ? { ...s, status: newStatus } : s
+      ));
+
+      // Update stats
+      setStats(prev => ({
+        ...prev,
+        active: newStatus === 'active' ? prev.active + 1 : prev.active - 1
+      }));
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'service',
+        action: 'toggle_status',
+        description: `Changed service status to ${newStatus}`,
+        created_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Error toggling service status:', error);
+      alert('Failed to update service status. Please try again.');
+    }
+  };
+
+  const handleDeleteService = async (serviceId, serviceTitle) => {
+    if (!window.confirm(`Are you sure you want to delete "${serviceTitle}"?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('estate_services')
+        .delete()
+        .eq('id', serviceId)
+        .eq('estate_firm_id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setServices(services.filter(s => s.id !== serviceId));
+
+      // Update stats
+      const deletedService = services.find(s => s.id === serviceId);
+      setStats(prev => ({
+        ...prev,
+        total: prev.total - 1,
+        active: deletedService?.status === 'active' ? prev.active - 1 : prev.active,
+        featured: deletedService?.featured ? prev.featured - 1 : prev.featured
+      }));
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'service',
+        action: 'delete',
+        description: `Deleted service: ${serviceTitle}`,
+        created_at: new Date().toISOString()
+      });
+
+      alert('Service deleted successfully!');
+
+    } catch (error) {
+      console.error('Error deleting service:', error);
+      alert('Failed to delete service. Please try again.');
+    }
+  };
+
+  const filteredServices = services
+    .filter(service => {
+      if (filter === 'active') return service.status === 'active';
+      if (filter === 'inactive') return service.status === 'inactive';
+      if (filter === 'featured') return service.featured;
+      return true;
+    })
+    .filter(service =>
+      service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      service.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+  if (loading) {
+    return (
+      <div className="estate-services-page">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Loading services...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="estate-services-page">

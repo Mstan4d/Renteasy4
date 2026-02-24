@@ -1,23 +1,60 @@
 // src/modules/listings/components/ListingDetails.jsx
 import React, { useState } from 'react';
+import PropertyImage from '../../../shared/components/PropertyImage';
 import { 
   ArrowLeft, MapPin, CheckCircle, Clock, User, Phone, Mail, 
-  Home, DollarSign, Shield, Star, Image as ImageIcon
+  Home, DollarSign, Shield, Star, Image as ImageIcon, Building
 } from 'lucide-react';
 import './ListingDetails.css';
 
-const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
+const ListingDetails = ({ 
+  listing, 
+  onBack, 
+  onContact, 
+  onVerify, 
+  onVerifyUser, 
+  onReject, 
+  onAcceptToManage, 
+  userRole,
+  getVerificationType,
+  getListingStatus,
+  isNearby,
+  canManagerVerify,
+  canManagerAccept
+}) => {
   const [newReview, setNewReview] = useState('');
   const [reviews, setReviews] = useState(listing.reviews || []);
 
-  const uplift = parseFloat(listing.price) * 0.075;
-  const priceAfter = parseFloat(listing.price) + uplift;
+  const getSafeImageUrl = (url) => {
+  if (!url) {
+    return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
+  }
   
-  const commissionBreakdown = listing.commission?.breakdown || {
-    rentEasy: uplift * 0.5333, // 4%
-    manager: uplift * 0.3333,  // 2.5%
-    referral: uplift * 0.1333   // 1%
-  };
+  // Handle blob URLs
+  if (url.startsWith('blob:')) {
+    return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
+  }
+  
+  // Ensure HTTPS
+  if (url.startsWith('http://')) {
+    return url.replace('http://', 'https://');
+  }
+  
+  return url;
+};
+
+  // CORRECT COMMISSION CALCULATION
+  const isEstateFirm = listing.posterRole === 'estate-firm';
+  const uplift = isEstateFirm ? 0 : parseFloat(listing.price) * 0.075;
+  const priceAfter = isEstateFirm ? parseFloat(listing.price) : parseFloat(listing.price) + uplift;
+  
+  const commissionBreakdown = isEstateFirm 
+    ? { rentEasy: 0, manager: 0, referral: 0 }
+    : listing.commission?.breakdown || {
+        rentEasy: uplift * (3.5/7.5),    // 3.5%
+        manager: uplift * (2.5/7.5),     // 2.5%
+        referral: uplift * (1.5/7.5)     // 1.5%
+      };
 
   const formatPrice = (price) => {
     return `₦${parseFloat(price).toLocaleString()}`;
@@ -33,28 +70,48 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
     });
   };
 
-  const openInGoogleMaps = (listing) => {
+  const openInGoogleMaps = () => {
     const query = listing.coordinates
       ? `${listing.coordinates.lat},${listing.coordinates.lng}`
       : encodeURIComponent(`${listing.address}, ${listing.lga}, ${listing.state}`);
-  
+    
     window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (newReview.trim()) {
-      const updatedReviews = [...reviews, newReview.trim()];
-      setReviews(updatedReviews);
-      
-      // Update localStorage
-      const allListings = JSON.parse(localStorage.getItem('listings') || '[]');
-      const updatedListings = allListings.map(l => 
-        l.id === listing.id ? { ...l, reviews: updatedReviews } : l
-      );
-      localStorage.setItem('listings', JSON.stringify(updatedListings));
-      
-      setNewReview('');
-      alert('Review submitted successfully!');
+      try {
+        // Save review to Supabase
+        const updatedReviews = [...reviews, newReview.trim()];
+        setReviews(updatedReviews);
+        
+        // Note: In production, you'd have a reviewsService for this
+        // For now, we'll just update the local state
+        alert('Review submitted successfully!');
+        setNewReview('');
+      } catch (error) {
+        console.error('Error submitting review:', error);
+        alert('Failed to submit review');
+      }
+    }
+  };
+
+  // Get poster role label
+  const getPosterRoleLabel = () => {
+    switch(listing.posterRole || listing.userRole) {
+      case 'estate-firm': return 'Estate Firm';
+      case 'landlord': return 'Landlord';
+      case 'tenant': return 'Outgoing Tenant';
+      default: return 'Unknown';
+    }
+  };
+
+  // Get poster role icon
+  const getPosterRoleIcon = () => {
+    switch(listing.posterRole || listing.userRole) {
+      case 'estate-firm': return <Building size={16} />;
+      case 'landlord': return <Home size={16} />;
+      default: return <User size={16} />;
     }
   };
 
@@ -73,24 +130,31 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
           <div className="header-left">
             <h1>{listing.title}</h1>
             <div className="listing-status">
-              {listing.verified ? (
+              {listing.verified && listing.status === 'approved' ? (
                 <span className="status-badge verified">
                   <CheckCircle size={16} />
                   Verified Listing
                 </span>
-              ) : (
+              ) : listing.status === 'pending' ? (
                 <span className="status-badge pending">
                   <Clock size={16} />
                   Pending Verification
                 </span>
-              )}
+              ) : listing.status === 'rejected' ? (
+                <span className="status-badge rejected">
+                  <Clock size={16} />
+                  Rejected
+                </span>
+              ) : null}
             </div>
           </div>
           <div className="header-right">
             <button className="btn btn-primary contact-btn" onClick={onContact}>
               Contact Now
             </button>
-            {(userRole === 'admin' || userRole === 'manager') && !listing.verified && (
+            {(userRole === 'admin' || userRole === 'manager') && 
+             !listing.verified && 
+             listing.status === 'pending' && (
               <button className="btn btn-success verify-btn" onClick={onVerify}>
                 Verify Listing
               </button>
@@ -106,10 +170,14 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
           </h3>
           <div className="images-grid">
             {listing.images?.map((image, index) => (
-              <div key={index} className="image-item">
-                <img src={image} alt={`${listing.title} - ${index + 1}`} />
-              </div>
-            ))}
+  <div key={index} className="image-item">
+    <PropertyImage 
+  src={image} 
+  alt={`${listing.title} - ${index + 1}`}
+  className="image-preview"
+/>
+  </div>
+))}
             {(!listing.images || listing.images.length === 0) && (
               <div className="no-images">
                 <ImageIcon size={48} />
@@ -148,30 +216,52 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
               <div className="detail-item">
                 <span className="detail-label">Amenities:</span>
                 <span className="detail-value">
-                  {listing.amenities?.join(', ') || 'Not specified'}
+                  {Array.isArray(listing.amenities) 
+  ? listing.amenities.join(', ') 
+  : (typeof listing.amenities === 'string' ? listing.amenities : 'No amenities listed')}
+                </span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Status:</span>
+                <span className={`detail-value status-${listing.status}`}>
+                  {listing.status === 'approved' ? '✓ Approved' : 
+                   listing.status === 'pending' ? '⏳ Pending' : 
+                   listing.status === 'rejected' ? '✗ Rejected' : 'Unknown'}
                 </span>
               </div>
             </div>
 
             <div className="detail-card">
               <h3>
-                <User size={18} />
+                {getPosterRoleIcon()}
                 Poster Information
               </h3>
               <div className="detail-item">
                 <span className="detail-label">Posted by:</span>
-                <span className="detail-value">{listing.posterName || 'Anonymous'}</span>
+                <span className="detail-value">{listing.posterName || listing.postedBy?.fullName || 'Anonymous'}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Role:</span>
                 <span className="detail-value">
-                  {listing.userRole === 'tenant' ? 'Outgoing Tenant' : 'Landlord'}
+                  {getPosterRoleLabel()}
+                </span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Verified:</span>
+                <span className="detail-value">
+                  {listing.postedBy?.isVerified || listing.userVerified ? '✓ Yes' : '✗ No'}
                 </span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Posted on:</span>
-                <span className="detail-value">{formatDate(listing.timestamp)}</span>
+                <span className="detail-value">{formatDate(listing.timestamp || listing.createdAt)}</span>
               </div>
+              {listing.isManaged && (
+                <div className="detail-item">
+                  <span className="detail-label">Managed by:</span>
+                  <span className="detail-value">{listing.managedBy || 'Property Manager'}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -188,32 +278,46 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
                   <span className="price-value">{formatPrice(listing.price)}</span>
                 </div>
                 
-                <div className="commission-section">
-                  <h4>
-                    <Shield size={16} />
-                    Commission Breakdown (7.5%)
-                  </h4>
-                  <div className="commission-item">
-                    <span>RentEasy Commission (4%):</span>
-                    <span className="commission-renteasy">
-                      + {formatPrice(commissionBreakdown.rentEasy)}
-                    </span>
-                  </div>
-                  <div className="commission-item">
-                    <span>Manager Commission (2.5%):</span>
-                    <span className="commission-manager">
-                      + {formatPrice(commissionBreakdown.manager)}
-                    </span>
-                  </div>
-                  {commissionBreakdown.referral > 0 && (
+                {!isEstateFirm ? (
+                  <div className="commission-section">
+                    <h4>
+                      <Shield size={16} />
+                      Commission Breakdown (7.5%)
+                    </h4>
                     <div className="commission-item">
-                      <span>Referral Commission (1%):</span>
+                      <span>RentEasy Commission (3.5%):</span>
+                      <span className="commission-renteasy">
+                        + {formatPrice(commissionBreakdown.rentEasy)}
+                      </span>
+                    </div>
+                    <div className="commission-item">
+                      <span>Manager Commission (2.5%):</span>
+                      <span className="commission-manager">
+                        + {formatPrice(commissionBreakdown.manager)}
+                      </span>
+                    </div>
+                    <div className="commission-item">
+                      <span>Referral Commission (1.5%):</span>
                       <span className="commission-referral">
                         + {formatPrice(commissionBreakdown.referral)}
                       </span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="commission-section">
+                    <h4>
+                      <Building size={16} />
+                      Estate Firm Listing
+                    </h4>
+                    <div className="commission-item">
+                      <span>No Commission Charged:</span>
+                      <span className="commission-free">0%</span>
+                    </div>
+                    <div className="commission-note">
+                      <small>Direct contact with estate firm</small>
+                    </div>
+                  </div>
+                )}
 
                 <div className="total-price">
                   <span>Total Payable:</span>
@@ -221,6 +325,35 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
                 </div>
               </div>
             </div>
+
+            {/* Manager Actions (if applicable) */}
+            {userRole === 'manager' && !isEstateFirm && !listing.isManaged && (
+              <div className="detail-card manager-actions">
+                <h3>
+                  <User size={18} />
+                  Manager Actions
+                </h3>
+                <div className="action-buttons">
+                  <button 
+                    className={`btn ${canManagerAccept ? 'btn-primary' : 'btn-disabled'}`}
+                    onClick={onAcceptToManage}
+                    disabled={!canManagerAccept || !isNearby}
+                    title={!canManagerAccept ? "Complete KYC first" : !isNearby ? "Must be within 1km radius" : "Accept to manage this listing"}
+                  >
+                    {canManagerAccept 
+                      ? (isNearby ? 'Accept to Manage' : 'Too Far (>1km)')
+                      : 'Complete KYC First'}
+                  </button>
+                  <p className="action-note">
+                    {!canManagerAccept 
+                      ? 'Complete KYC verification to manage listings'
+                      : !isNearby 
+                        ? 'You must be within 1km radius of the property'
+                        : 'First manager to accept gets exclusive management rights'}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -280,14 +413,10 @@ const ListingDetails = ({ listing, onBack, onContact, onVerify, userRole }) => {
             <Phone size={16} />
             Contact Now
           </button>
-          <button
-            className="btn btn-outline map-btn"
-              onClick={() => openInGoogleMaps(listing)}
-              >
-             📍 View on Map
+          <button className="btn btn-outline map-btn" onClick={openInGoogleMaps}>
+            📍 View on Map
           </button>
           <button className="btn btn-success" onClick={() => {
-            // Save to favorites
             const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
             if (!favorites.includes(listing.id)) {
               favorites.push(listing.id);

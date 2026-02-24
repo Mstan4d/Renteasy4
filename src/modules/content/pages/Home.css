@@ -237,7 +237,7 @@
 
 .filter-btn.primary {
   background: #3b82f6;
-  color: white;
+  color: black;
   border-color: #3b82f6;
 }
 
@@ -263,7 +263,7 @@
 
 .view-all-btn:hover {
   background: #3b82f6;
-  color: white;
+  color: black;
   transform: translateY(-2px);
 }
 
@@ -618,6 +618,7 @@
   font-weight: 600;
   display: inline-block;
   transition: all 0.3s ease;
+  margin: 10px;
 }
 
 .promo-button:hover {
@@ -662,6 +663,7 @@
   font-size: 3rem;
   font-weight: 800;
   margin-bottom: 10px;
+  color: blue;
 }
 
 .stat-label {
@@ -779,7 +781,7 @@
 
 .refresh-btn {
   background: var(--primary-color);
-  color: white;
+  color: black;
   border: none;
   border-radius: 50px;
   padding: 14px 28px;
@@ -1118,4 +1120,69 @@
 @keyframes sparkle {
   0%, 100% { opacity: 0.5; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Add these styles to your Home.css */
+.loading-listings {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.loading-listings .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.property-details {
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.property-details span {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.hero-button {
+  background: #4f46e5;
+  color: white;
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 1.5rem;
+  transition: background 0.2s;
+}
+
+.hero-button:hover {
+  background: #4338ca;
+}
+
+.search-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.filter-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

@@ -1,18 +1,40 @@
 // src/modules/listings/components/ListingCard.jsx
 import React from 'react';
-import { MapPin, CheckCircle, Clock, User } from 'lucide-react';
+import { MapPin, CheckCircle, Clock, User, Building, Home } from 'lucide-react';
 import './ListingCard.css';
 
 const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) => {
-  const imageUrl = listing.images?.[0] || `https://picsum.photos/seed/${listing.id}/600/400`;
-  const uplift = parseFloat(listing.price) * 0.075;
-  const priceAfter = parseFloat(listing.price) + uplift;
+  const imageUrl = listing.images?.[0] || 
+                 listing.image_urls?.[0] || 
+                 https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&h=400&fit=crop;
+
+                 // Fix price display:
+const price = listing.price || listing.rent_amount || 0;
+const formattedPrice = new Intl.NumberFormat('en-NG', {
+  style: 'currency',
+  currency: 'NGN'
+}).format(parseFloat(price));
+
+// Fix role display:
+const posterRole = listing.posterRole || listing.userRole;
+const roleLabel = {
+  'tenant': '👤 Outgoing Tenant',
+  'landlord': '🏠 Landlord',
+  'estate-firm': '🏢 Estate Firm'
+}[posterRole] || 'Unknown';
   
-  const commissionBreakdown = listing.commission?.breakdown || {
-    rentEasy: uplift * 0.5333, // 4%
-    manager: uplift * 0.3333,  // 2.5%
-    referral: uplift * 0.1333   // 1%
-  };
+  // CORRECT COMMISSION CALCULATION
+  const isEstateFirm = listing.posterRole === 'estate-firm';
+  const uplift = isEstateFirm ? 0 : parseFloat(listing.price) * 0.075;
+  const priceAfter = isEstateFirm ? parseFloat(listing.price) : parseFloat(listing.price) + uplift;
+  
+  const commissionBreakdown = isEstateFirm 
+    ? { rentEasy: 0, manager: 0, referral: 0 }
+    : listing.commission?.breakdown || {
+        rentEasy: uplift * (3.5/7.5),    // 3.5%
+        manager: uplift * (2.5/7.5),     // 2.5%
+        referral: uplift * (1.5/7.5)     // 1.5%
+      };
 
   const formatPrice = (price) => {
     return `₦${parseFloat(price).toLocaleString()}`;
@@ -27,8 +49,27 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     });
   };
 
+  // Get role icon
+  const getRoleIcon = () => {
+    switch(listing.posterRole || listing.userRole) {
+      case 'estate-firm': return <Building size={14} />;
+      case 'landlord': return <Home size={14} />;
+      default: return <User size={14} />;
+    }
+  };
+
+  // Get role label
+  const getRoleLabel = () => {
+    switch(listing.posterRole || listing.userRole) {
+      case 'estate-firm': return 'Estate Firm';
+      case 'landlord': return 'Landlord';
+      case 'tenant': return 'Outgoing Tenant';
+      default: return 'Unknown';
+    }
+  };
+
   return (
-    <div className={`listing-card ${!listing.verified ? 'unverified' : ''}`}>
+    <div className={`listing-card ${!listing.verified ? 'unverified' : ''} ${listing.posterRole || ''}`}>
       {/* Image */}
       <div className="listing-image">
         <img src={imageUrl} alt={listing.title} />
@@ -42,6 +83,12 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
           <div className="unverified-badge">
             <Clock size={14} />
             <span>Pending</span>
+          </div>
+        )}
+        {listing.posterRole === 'estate-firm' && (
+          <div className="estate-firm-badge">
+            <Building size={14} />
+            <span>0% Commission</span>
           </div>
         )}
       </div>
@@ -70,26 +117,30 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             <span className="price-amount">{formatPrice(listing.price)}</span>
           </div>
           <div className="commission-price">
-            <span className="commission-label">After 7.5% Commission:</span>
+            <span className="commission-label">
+              {isEstateFirm ? 'Total Payable:' : 'After 7.5% Commission:'}
+            </span>
             <span className="commission-amount">{formatPrice(priceAfter)}</span>
           </div>
-          <div className="commission-breakdown">
-            <small>
-              Includes: RentEasy (₦{Math.round(commissionBreakdown.rentEasy).toLocaleString()}) + 
-              Manager (₦{Math.round(commissionBreakdown.manager).toLocaleString()})
-            </small>
-          </div>
+          {!isEstateFirm && (
+            <div className="commission-breakdown">
+              <small>
+                Breakdown: RentEasy ({formatPrice(Math.round(commissionBreakdown.rentEasy))}) + 
+                Manager ({formatPrice(Math.round(commissionBreakdown.manager))}) + 
+                Referral ({formatPrice(Math.round(commissionBreakdown.referral))})
+              </small>
+            </div>
+          )}
         </div>
 
         {/* Poster Info */}
         <div className="poster-info">
-          <User size={14} />
+          {getRoleIcon()}
           <span>
-            Posted by {listing.posterName || 'Anonymous'} • 
-            {listing.userRole === 'tenant' ? ' Outgoing Tenant' : ' Landlord'}
+            Posted by {listing.posterName || 'Anonymous'} • {getRoleLabel()}
           </span>
           <span className="listing-date">
-            {formatDate(listing.timestamp)}
+            {formatDate(listing.timestamp || listing.createdAt)}
           </span>
         </div>
 

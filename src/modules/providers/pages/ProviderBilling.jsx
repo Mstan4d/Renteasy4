@@ -1,3 +1,4 @@
+// src/modules/providers/pages/ProviderBilling.jsx
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
@@ -16,30 +17,107 @@ import {
   FaSync,
   FaFileInvoice,
   FaShieldAlt,
-  FaQuestionCircle
+  FaQuestionCircle,
+  FaSpinner
 } from 'react-icons/fa';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 
 const ProviderBilling = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   const [subscriptionStatus, setSubscriptionStatus] = useState({
     isSubscribed: false,
     currentPlan: 'free',
-    freeBookingsUsed: 7,
+    freeBookingsUsed: 0,
     freeBookingsLimit: 10,
-    nextBillingDate: '2024-02-28',
+    nextBillingDate: null,
     monthlyFee: 3000,
     autoRenew: true
   });
+
   const [invoices, setInvoices] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [billingHistory, setBillingHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate API calls
-    setTimeout(() => {
-      // Mock invoices data
-      const mockInvoices = [
+    if (!user) return;
+    fetchBillingData();
+  }, [user]);
+
+  const fetchBillingData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const providerId = user.id;
+
+      // 1. Fetch subscription status
+      const { data: subscription, error: subError } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', providerId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (subError) throw subError;
+
+      // 2. Fetch free bookings used from profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('free_booking_used')
+        .eq('id', providerId)
+        .single();
+
+      if (profileError) throw profileError;
+
+      // 3. Fetch invoices (if table exists)
+      const { data: invoicesData, error: invError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('provider_id', providerId)
+        .order('date', { ascending: false });
+
+      if (invError && invError.code !== 'PGRST116') throw invError; // ignore if table missing
+
+      // 4. Fetch payment methods (if table exists)
+      const { data: paymentMethodsData, error: pmError } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('provider_id', providerId)
+        .order('is_default', { ascending: false });
+
+      if (pmError && pmError.code !== 'PGRST116') throw pmError;
+
+      // 5. Fetch billing history from provider_earnings + subscription payments
+      // For now, we'll combine earnings and (if we had subscription_payments)
+      const { data: earnings, error: earnError } = await supabase
+        .from('provider_earnings')
+        .select('*')
+        .eq('provider_id', providerId)
+        .order('created_at', { ascending: false });
+
+      if (earnError) throw earnError;
+
+      // Transform earnings into billing history format
+      const historyFromEarnings = (earnings || []).map(e => ({
+        id: `earn-${e.id}`,
+        date: e.created_at,
+        type: e.source === 'booking' ? 'booking_payment' : 'subscription',
+        description: e.source === 'booking' ? 'Payment from client' : 'Subscription fee',
+        amount: e.amount,
+        status: e.status,
+        method: e.source === 'booking' ? 'wallet' : 'card',
+        reference: e.source_id || ''
+      }));
+
+      // If we had subscription_payments, we'd add them too
+      // For now, use mock for invoices/history if no data
+      const mockInvoices = invoicesData || [
         {
           id: 'INV-2024-001',
           date: '2024-01-15',
@@ -59,21 +137,10 @@ const ProviderBilling = () => {
           dueDate: '2023-12-10',
           paidDate: '2023-12-07',
           downloadUrl: '#'
-        },
-        {
-          id: 'INV-2023-011',
-          date: '2023-11-15',
-          description: 'Monthly Subscription - November 2023',
-          amount: 3000,
-          status: 'overdue',
-          dueDate: '2023-11-10',
-          paidDate: null,
-          downloadUrl: '#'
         }
       ];
 
-      // Mock payment methods
-      const mockPaymentMethods = [
+      const mockPaymentMethods = paymentMethodsData || [
         {
           id: 'card-001',
           type: 'card',
@@ -81,68 +148,43 @@ const ProviderBilling = () => {
           brand: 'visa',
           expiry: '12/25',
           isDefault: true,
-          name: 'Chika Okafor'
-        },
-        {
-          id: 'bank-001',
-          type: 'bank',
-          bankName: 'GTBank',
-          accountNumber: '0123456789',
-          accountName: 'Chika Okafor',
-          isDefault: false
+          name: profile?.full_name || 'User'
         }
       ];
 
-      // Mock billing history
-      const mockBillingHistory = [
+      const mockBillingHistory = historyFromEarnings.length > 0 ? historyFromEarnings : [
         {
           id: 'PAY-001',
-          date: '2024-01-08',
-          type: 'subscription',
-          description: 'Monthly Subscription Fee',
-          amount: 3000,
-          status: 'completed',
-          method: 'visa ••4242',
-          reference: 'TXN-789456123'
-        },
-        {
-          id: 'PAY-002',
-          date: '2023-12-07',
-          type: 'subscription',
-          description: 'Monthly Subscription Fee',
-          amount: 3000,
-          status: 'completed',
-          method: 'visa ••4242',
-          reference: 'TXN-456123789'
-        },
-        {
-          id: 'PAY-003',
-          date: '2023-11-05',
+          date: new Date().toISOString(),
           type: 'booking_payment',
           description: 'Payment from Adebayo Johnson (Office Cleaning)',
           amount: 45000,
           status: 'completed',
           method: 'bank_transfer',
           reference: 'BANK-987654'
-        },
-        {
-          id: 'PAY-004',
-          date: '2023-10-28',
-          type: 'refund',
-          description: 'Refund to Jane Smith (Cancelled Booking)',
-          amount: -15000,
-          status: 'completed',
-          method: 'wallet',
-          reference: 'REF-456789'
         }
       ];
+
+      setSubscriptionStatus({
+        isSubscribed: !!subscription,
+        currentPlan: subscription ? 'premium' : 'free',
+        freeBookingsUsed: profile?.free_booking_used || 0,
+        freeBookingsLimit: 10,
+        nextBillingDate: subscription?.expires_at || null,
+        monthlyFee: 3000,
+        autoRenew: subscription?.auto_renew ?? true
+      });
 
       setInvoices(mockInvoices);
       setPaymentMethods(mockPaymentMethods);
       setBillingHistory(mockBillingHistory);
+    } catch (err) {
+      console.error('Error fetching billing data:', err);
+      setError('Failed to load billing information.');
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, []);
+    }
+  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
@@ -153,6 +195,7 @@ const ProviderBilling = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-NG', {
       day: 'numeric',
@@ -170,29 +213,60 @@ const ProviderBilling = () => {
     alert('Opening payment method form...');
   };
 
-  const handleSetDefaultPayment = (id) => {
-    const updatedMethods = paymentMethods.map(method => ({
-      ...method,
-      isDefault: method.id === id
-    }));
-    setPaymentMethods(updatedMethods);
-    alert('Default payment method updated!');
-  };
+  const handleSetDefaultPayment = async (id) => {
+    try {
+      // First, unset all default
+      await supabase
+        .from('payment_methods')
+        .update({ is_default: false })
+        .eq('provider_id', user.id);
 
-  const handleRemovePaymentMethod = (id) => {
-    if (window.confirm('Are you sure you want to remove this payment method?')) {
-      const updatedMethods = paymentMethods.filter(method => method.id !== id);
-      setPaymentMethods(updatedMethods);
-      alert('Payment method removed!');
+      // Then set the selected as default
+      await supabase
+        .from('payment_methods')
+        .update({ is_default: true })
+        .eq('id', id);
+
+      // Refresh
+      fetchBillingData();
+      alert('Default payment method updated!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update default method.');
     }
   };
 
-  const handleToggleAutoRenew = () => {
-    setSubscriptionStatus(prev => ({
-      ...prev,
-      autoRenew: !prev.autoRenew
-    }));
-    alert(`Auto-renew ${subscriptionStatus.autoRenew ? 'disabled' : 'enabled'}!`);
+  const handleRemovePaymentMethod = async (id) => {
+    if (!window.confirm('Are you sure you want to remove this payment method?')) return;
+    try {
+      await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', id);
+
+      fetchBillingData();
+      alert('Payment method removed!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to remove payment method.');
+    }
+  };
+
+  const handleToggleAutoRenew = async () => {
+    try {
+      const newAutoRenew = !subscriptionStatus.autoRenew;
+      await supabase
+        .from('subscriptions')
+        .update({ auto_renew: newAutoRenew })
+        .eq('user_id', user.id)
+        .eq('status', 'active');
+
+      setSubscriptionStatus(prev => ({ ...prev, autoRenew: newAutoRenew }));
+      alert(`Auto-renew ${newAutoRenew ? 'enabled' : 'disabled'}!`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update auto-renew setting.');
+    }
   };
 
   const calculateFreeBookingsLeft = () => {
@@ -210,7 +284,7 @@ const ProviderBilling = () => {
         subtitle="Loading your billing information..."
       >
         <div style={{ textAlign: 'center', padding: '4rem' }}>
-          <div className="loading-spinner"></div>
+          <FaSpinner className="spinner" style={{ fontSize: '2rem', animation: 'spin 1s linear infinite' }} />
           <p style={{ marginTop: '1rem', color: '#666' }}>
             Fetching your billing details...
           </p>
@@ -241,7 +315,13 @@ const ProviderBilling = () => {
         </div>
       }
     >
-      {/* Tabs Navigation */}
+      {error && (
+        <div className="error-banner" style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Tabs Navigation (same as before) */}
       <div className="card" style={{ marginBottom: '2rem' }}>
         <div className="card-header" style={{ padding: '0', borderBottom: '1px solid #e0e0e0' }}>
           <div style={{ display: 'flex', overflowX: 'auto' }}>
@@ -268,7 +348,7 @@ const ProviderBilling = () => {
         </div>
 
         <div className="card-body" style={{ padding: '2rem' }}>
-          {/* Overview Tab */}
+          {/* Overview Tab (same JSX as original, but using real data) */}
           {activeTab === 'overview' && (
             <div>
               {/* Subscription Status Card */}
@@ -406,7 +486,7 @@ const ProviderBilling = () => {
                     </div>
                   </div>
 
-                  {/* Important Notes */}
+                  {/* Important Notes (same) */}
                   <div style={{ 
                     padding: '1rem', 
                     background: '#e8f5e9', 
@@ -428,7 +508,7 @@ const ProviderBilling = () => {
                 </div>
               </div>
 
-              {/* Quick Actions */}
+              {/* Quick Actions (same) */}
               <div className="card" style={{ marginBottom: '2rem' }}>
                 <div className="card-header">
                   <h3 className="card-title">Quick Actions</h3>

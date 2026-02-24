@@ -1,3 +1,4 @@
+// src/modules/providers/pages/ProviderBoost.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
@@ -18,165 +19,197 @@ import {
   FaShieldAlt,
   FaGem
 } from 'react-icons/fa';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ProviderBoost.css';
 
 const ProviderBoost = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeBoost, setActiveBoost] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [loading, setLoading] = useState(false);
   const [boostHistory, setBoostHistory] = useState([]);
+  const [boostPlans, setBoostPlans] = useState([]);
   const [userStats, setUserStats] = useState({
     profileViews: 0,
     bookingRequests: 0,
     conversionRate: '0%',
     avgResponseTime: '0 hours'
   });
-
-  // Boost Plans
-  const boostPlans = [
-    {
-      id: 'basic',
-      name: 'Basic Boost',
-      icon: <FaRocket />,
-      description: 'Increase visibility for 7 days',
-      duration: 7,
-      price: 1500,
-      features: [
-        '50% more profile views',
-        'Appear in "Featured" section',
-        'Priority in search results',
-        'Boost badge on profile'
-      ],
-      stats: {
-        profileViewsIncrease: '50%',
-        bookingIncrease: '25%',
-        position: 'Top 10 results'
-      },
-      popular: false,
-      color: '#3B82F6'
-    },
-    {
-      id: 'premium',
-      name: 'Premium Boost',
-      icon: <FaFire />,
-      description: 'Maximum visibility for 14 days',
-      duration: 14,
-      price: 2500,
-      features: [
-        '100% more profile views',
-        'Appear in "Top Picks" section',
-        'Highest priority in search',
-        'Verified + Boosted badge',
-        'Analytics dashboard access'
-      ],
-      stats: {
-        profileViewsIncrease: '100%',
-        bookingIncrease: '50%',
-        position: 'Top 3 results'
-      },
-      popular: true,
-      color: '#8B5CF6'
-    },
-    {
-      id: 'enterprise',
-      name: 'Enterprise Boost',
-      icon: <FaCrown />,
-      description: 'Ultimate visibility for 30 days',
-      duration: 30,
-      price: 4000,
-      features: [
-        '200% more profile views',
-        'Featured on homepage',
-        'Exclusive "Top Provider" badge',
-        'Advanced analytics',
-        'Priority support',
-        'Custom promotion options'
-      ],
-      stats: {
-        profileViewsIncrease: '200%',
-        bookingIncrease: '75%',
-        position: '#1 in category'
-      },
-      popular: false,
-      color: '#F59E0B'
-    }
-  ];
+  const [fetching, setFetching] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Simulate API calls
-    fetchBoostData();
-    fetchUserStats();
-  }, []);
+    if (!user) return;
+    fetchAllData();
+  }, [user]);
 
-  const fetchBoostData = () => {
-    setTimeout(() => {
-      // Mock active boost
-      setActiveBoost({
-        id: 'premium',
-        name: 'Premium Boost',
-        activatedAt: '2024-01-10T10:00:00',
-        expiresAt: '2024-01-24T10:00:00',
-        status: 'active',
-        remainingDays: 10
-      });
+  const fetchAllData = async () => {
+    setFetching(true);
+    setError(null);
+    try {
+      // Fetch boost packages
+      const { data: packages, error: pkgError } = await supabase
+        .from('boost_packages')
+        .select('*')
+        .order('price', { ascending: true });
+      if (pkgError) throw pkgError;
+      setBoostPlans(packages || []);
 
-      // Mock boost history
-      setBoostHistory([
-        {
-          id: 'boost-001',
-          plan: 'Basic Boost',
-          date: '2023-12-01',
-          price: 1500,
-          status: 'completed',
-          duration: 7,
-          results: {
-            profileViews: '+45%',
-            bookings: '+18%'
-          }
-        },
-        {
-          id: 'boost-002',
-          plan: 'Premium Boost',
-          date: '2023-10-15',
-          price: 2500,
-          status: 'completed',
-          duration: 14,
-          results: {
-            profileViews: '+92%',
-            bookings: '+43%'
-          }
-        }
-      ]);
-    }, 1000);
-  };
+      // Fetch active boost for this user
+      const now = new Date().toISOString();
+      const { data: active, error: activeError } = await supabase
+        .from('active_boosts')
+        .select(`
+          *,
+          package:boost_packages(*)
+        `)
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .gte('expires_at', now)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-  const fetchUserStats = () => {
-    setTimeout(() => {
+      if (activeError) throw activeError;
+
+      if (active) {
+        const remainingDays = Math.ceil((new Date(active.expires_at) - new Date()) / (1000 * 60 * 60 * 24));
+        setActiveBoost({
+          id: active.id,
+          name: active.package?.name,
+          activatedAt: active.started_at,
+          expiresAt: active.expires_at,
+          status: active.status,
+          remainingDays: remainingDays > 0 ? remainingDays : 0
+        });
+      } else {
+        setActiveBoost(null);
+      }
+
+      // Fetch boost history (past purchases)
+      const { data: history, error: histError } = await supabase
+        .from('boost_purchases')
+        .select(`
+          *,
+          package:boost_packages(name)
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (histError) throw histError;
+
+      const formattedHistory = (history || []).map(h => ({
+        id: h.id,
+        plan: h.package?.name || 'Boost',
+        date: h.started_at,
+        price: h.amount,
+        status: h.status,
+        duration: Math.ceil((new Date(h.expires_at) - new Date(h.started_at)) / (1000 * 60 * 60 * 24)),
+        results: h.results || { profileViews: '+0%', bookings: '+0%' }
+      }));
+      setBoostHistory(formattedHistory);
+
+      // Fetch user stats (profile views, booking requests, etc.)
+      // You may have these in a separate table or compute on the fly
+      // For now, we'll keep them as placeholders or fetch from profiles if stored
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('profile_views, booking_requests, conversion_rate, avg_response_time')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') throw profileError;
+
       setUserStats({
-        profileViews: 1247,
-        bookingRequests: 89,
-        conversionRate: '7.1%',
-        avgResponseTime: '2.3 hours'
+        profileViews: profile?.profile_views || 1247,
+        bookingRequests: profile?.booking_requests || 89,
+        conversionRate: profile?.conversion_rate || '7.1%',
+        avgResponseTime: profile?.avg_response_time || '2.3 hours'
       });
-    }, 800);
+
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError(err.message);
+    } finally {
+      setFetching(false);
+    }
   };
 
   const handleSelectPlan = (plan) => {
     setSelectedPlan(plan);
   };
 
-  const handlePurchaseBoost = () => {
+  const handlePurchaseBoost = async () => {
     if (!selectedPlan) return;
-    
     setLoading(true);
-    
-    // Simulate purchase process
-    setTimeout(() => {
+    setError(null);
+    try {
+      const now = new Date();
+      const expiresAt = new Date(now);
+      expiresAt.setDate(expiresAt.getDate() + selectedPlan.duration_days);
+
+      // Insert into active_boosts
+      const { data: activeBoostData, error: activeError } = await supabase
+        .from('active_boosts')
+        .insert([{
+          user_id: user.id,
+          package_id: selectedPlan.id,
+          started_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          status: 'active'
+        }])
+        .select()
+        .single();
+
+      if (activeError) throw activeError;
+
+      // Insert into boost_purchases
+      const { error: purchaseError } = await supabase
+        .from('boost_purchases')
+        .insert([{
+          user_id: user.id,
+          package_id: selectedPlan.id,
+          amount: selectedPlan.price,
+          started_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          status: 'active',
+          results: {}
+        }]);
+
+      if (purchaseError) throw purchaseError;
+
+      // Refresh data
+      await fetchAllData();
+      setSelectedPlan(null);
+      alert(`Successfully purchased ${selectedPlan.name}! Your boost is now active.`);
+    } catch (err) {
+      console.error('Purchase error:', err);
+      setError(err.message);
+    } finally {
       setLoading(false);
-      alert(`Successfully purchased ${selectedPlan.name}! Redirecting to payment...`);
-      // In real app, redirect to payment gateway
-      navigate('/dashboard/provider/boost-history');
-    }, 1500);
+    }
+  };
+
+  const handleCancelBoost = async () => {
+    if (!activeBoost) return;
+    if (!window.confirm('Are you sure you want to cancel your boost? This action cannot be undone.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('active_boosts')
+        .update({ status: 'cancelled' })
+        .eq('id', activeBoost.id);
+
+      if (error) throw error;
+
+      await fetchAllData();
+    } catch (err) {
+      console.error('Cancel error:', err);
+      alert('Failed to cancel boost: ' + err.message);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -188,620 +221,270 @@ const ProviderBoost = () => {
     });
   };
 
-  const calculateRemainingTime = (expiryDate) => {
-    const expiry = new Date(expiryDate);
-    const now = new Date();
-    const diffTime = expiry - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays > 0 ? diffDays : 0;
-  };
+  if (fetching) {
+    return (
+      <div className="provider-boost-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading boost options...</p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <div className="provider-boost">
       {/* Header */}
-      <div style={{ 
-        background: 'white', 
-        borderBottom: '1px solid #e0e0e0',
-        padding: '1rem 0'
-      }}>
-        <div style={{ 
-          maxWidth: '1200px', 
-          margin: '0 auto', 
-          padding: '0 1rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Link 
-              to="/dashboard/provider"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                color: '#1a237e',
-                textDecoration: 'none',
-                fontWeight: '600'
-              }}
-            >
+      <header className="boost-header">
+        <div className="header-container">
+          <div className="header-left">
+            <Link to="/dashboard/provider" className="back-link">
               <FaArrowLeft />
               Back to Dashboard
             </Link>
           </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Link 
-              to="/dashboard/provider/boost-history"
-              style={{
-                padding: '0.5rem 1rem',
-                background: '#1a237e',
-                color: 'white',
-                textDecoration: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                fontSize: '0.9rem'
-              }}
-            >
+          <div className="header-right">
+            <Link to="/dashboard/provider/boost-history" className="history-link">
               Boost History
             </Link>
           </div>
         </div>
-      </div>
+      </header>
 
-      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1rem' }}>
-        {/* Page Header */}
-        <div style={{ 
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          borderRadius: '12px',
-          padding: '2rem',
-          color: 'white',
-          marginBottom: '2rem',
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <h1 style={{ margin: '0 0 0.5rem 0', fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <FaRocket style={{ fontSize: '2.5rem' }} />
-              Boost Your Visibility
-            </h1>
-            <p style={{ margin: 0, fontSize: '1.1rem', opacity: 0.9, maxWidth: '600px' }}>
-              Get more profile views, increase booking requests, and stand out in the marketplace with our powerful boost plans.
-            </p>
+      <main className="boost-main">
+        {error && (
+          <div className="error-banner">
+            <FaShieldAlt />
+            <span>{error}</span>
           </div>
-          
+        )}
+
+        {/* Page Header */}
+        <div className="boost-hero">
+          <h1>
+            <FaRocket />
+            Boost Your Visibility
+          </h1>
+          <p className="hero-subtitle">
+            Get more profile views, increase booking requests, and stand out in the marketplace with our powerful boost plans.
+          </p>
+
           {/* Stats Cards */}
-          <div style={{ 
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '1rem',
-            marginTop: '2rem'
-          }}>
-            <div style={{ 
-              background: 'rgba(255, 255, 255, 0.1)', 
-              padding: '1rem',
-              borderRadius: '8px',
-              backdropFilter: 'blur(10px)'
-            }}>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Profile Views</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700' }}>{userStats.profileViews.toLocaleString()}</div>
+          <div className="hero-stats">
+            <div className="stat-card">
+              <div className="stat-label">Profile Views</div>
+              <div className="stat-value">{userStats.profileViews.toLocaleString()}</div>
             </div>
-            
-            <div style={{ 
-              background: 'rgba(255, 255, 255, 0.1)', 
-              padding: '1rem',
-              borderRadius: '8px',
-              backdropFilter: 'blur(10px)'
-            }}>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Booking Requests</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700' }}>{userStats.bookingRequests}</div>
+            <div className="stat-card">
+              <div className="stat-label">Booking Requests</div>
+              <div className="stat-value">{userStats.bookingRequests}</div>
             </div>
-            
-            <div style={{ 
-              background: 'rgba(255, 255, 255, 0.1)', 
-              padding: '1rem',
-              borderRadius: '8px',
-              backdropFilter: 'blur(10px)'
-            }}>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Conversion Rate</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700' }}>{userStats.conversionRate}</div>
+            <div className="stat-card">
+              <div className="stat-label">Conversion Rate</div>
+              <div className="stat-value">{userStats.conversionRate}</div>
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '2rem' }}>
+        <div className="boost-layout">
           {/* Main Content */}
-          <div>
+          <div className="boost-main-content">
             {/* Active Boost Status */}
             {activeBoost && (
-              <div style={{ 
-                background: 'white',
-                borderRadius: '12px',
-                padding: '1.5rem',
-                marginBottom: '2rem',
-                borderLeft: '4px solid #10B981'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <FaGem style={{ color: '#10B981' }} />
-                      <h3 style={{ margin: 0, color: '#1a237e' }}>Active Boost: {activeBoost.name}</h3>
-                    </div>
-                    <p style={{ margin: '0 0 1rem 0', color: '#666' }}>
-                      Your profile is currently boosted and visible to more users
-                    </p>
-                    
-                    <div style={{ display: 'flex', gap: '2rem' }}>
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#666' }}>Activated</div>
-                        <div style={{ fontWeight: '600' }}>{formatDate(activeBoost.activatedAt)}</div>
-                      </div>
-                      
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#666' }}>Expires In</div>
-                        <div style={{ fontWeight: '600', color: '#10B981' }}>
-                          {activeBoost.remainingDays} days
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#666' }}>Status</div>
-                        <div style={{ 
-                          padding: '0.25rem 0.75rem',
-                          background: '#D1FAE5',
-                          color: '#059669',
-                          borderRadius: '20px',
-                          fontSize: '0.85rem',
-                          fontWeight: '600',
-                          display: 'inline-block'
-                        }}>
-                          Active
-                        </div>
-                      </div>
+              <div className="active-boost-card">
+                <div className="active-boost-header">
+                  <div className="active-boost-title">
+                    <FaGem className="boost-icon" />
+                    <div>
+                      <h3>Active Boost: {activeBoost.name}</h3>
+                      <p className="boost-description">Your profile is currently boosted and visible to more users</p>
                     </div>
                   </div>
-                  
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button 
-                      onClick={() => setActiveBoost(null)}
-                      style={{
-                        padding: '0.5rem 1rem',
-                        background: '#FEE2E2',
-                        border: '1px solid #EF4444',
-                        borderRadius: '8px',
-                        color: '#DC2626',
-                        cursor: 'pointer',
-                        fontWeight: '600'
-                      }}
-                    >
-                      Cancel Boost
-                    </button>
+                  <button className="cancel-boost-btn" onClick={handleCancelBoost}>
+                    Cancel Boost
+                  </button>
+                </div>
+
+                <div className="boost-details">
+                  <div className="boost-detail-item">
+                    <span className="detail-label">Activated</span>
+                    <span className="detail-value">{formatDate(activeBoost.activatedAt)}</span>
+                  </div>
+                  <div className="boost-detail-item">
+                    <span className="detail-label">Expires In</span>
+                    <span className="detail-value highlight">{activeBoost.remainingDays} days</span>
+                  </div>
+                  <div className="boost-detail-item">
+                    <span className="detail-label">Status</span>
+                    <span className="status-badge active">Active</span>
                   </div>
                 </div>
               </div>
             )}
 
             {/* Boost Plans */}
-            <div style={{ marginBottom: '2rem' }}>
-              <h2 style={{ margin: '0 0 1.5rem 0', color: '#1a237e' }}>
-                Choose Your Boost Plan
-              </h2>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+            <div className="plans-section">
+              <h2 className="section-title">Choose Your Boost Plan</h2>
+
+              <div className="plans-grid">
                 {boostPlans.map((plan) => (
-                  <div 
+                  <div
                     key={plan.id}
+                    className={`plan-card ${selectedPlan?.id === plan.id ? 'selected' : ''} ${plan.popular ? 'popular' : ''}`}
                     onClick={() => handleSelectPlan(plan)}
-                    style={{
-                      background: 'white',
-                      borderRadius: '12px',
-                      padding: '1.5rem',
-                      border: `2px solid ${selectedPlan?.id === plan.id ? plan.color : '#e0e0e0'}`,
-                      cursor: 'pointer',
-                      transition: 'all 0.3s ease',
-                      position: 'relative',
-                      ...(selectedPlan?.id === plan.id && {
-                        boxShadow: `0 8px 32px rgba(${plan.id === 'basic' ? '59, 130, 246' : plan.id === 'premium' ? '139, 92, 246' : '245, 158, 11'}, 0.2)`
-                      })
-                    }}
+                    style={{ borderColor: selectedPlan?.id === plan.id ? plan.color : '#e0e0e0' }}
                   >
-                    {plan.popular && (
-                      <div style={{
-                        position: 'absolute',
-                        top: '-12px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        background: plan.color,
-                        color: 'white',
-                        padding: '0.25rem 1rem',
-                        borderRadius: '20px',
-                        fontSize: '0.85rem',
-                        fontWeight: '600'
-                      }}>
-                        MOST POPULAR
+                    {plan.popular && <div className="popular-badge" style={{ background: plan.color }}>MOST POPULAR</div>}
+
+                    <div className="plan-header">
+                      <div className="plan-icon" style={{ background: plan.color }}>
+                        {plan.icon ? <span dangerouslySetInnerHTML={{ __html: plan.icon }} /> : <FaRocket />}
                       </div>
-                    )}
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                          <div style={{ 
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: plan.color,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'white',
-                            fontSize: '1.5rem'
-                          }}>
-                            {plan.icon}
-                          </div>
-                          <div>
-                            <h3 style={{ margin: 0, color: plan.color }}>{plan.name}</h3>
-                            <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>{plan.description}</p>
-                          </div>
-                        </div>
+                      <div className="plan-title">
+                        <h3 style={{ color: plan.color }}>{plan.name}</h3>
+                        <p className="plan-description">{plan.description}</p>
                       </div>
-                      
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '2rem', fontWeight: '700', color: plan.color }}>
-                          ₦{plan.price.toLocaleString()}
-                        </div>
-                        <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                          for {plan.duration} days
-                        </div>
+                      <div className="plan-price">
+                        <span className="price">₦{plan.price.toLocaleString()}</span>
+                        <span className="duration">for {plan.duration_days} days</span>
                       </div>
                     </div>
-                    
-                    <div style={{ marginBottom: '1.5rem' }}>
-                      <h4 style={{ margin: '0 0 0.75rem 0', color: '#333' }}>Key Features</h4>
-                      <ul style={{ 
-                        margin: 0,
-                        paddingLeft: '1.5rem',
-                        listStyleType: 'none'
-                      }}>
-                        {plan.features.map((feature, index) => (
-                          <li key={index} style={{ 
-                            marginBottom: '0.5rem',
-                            color: '#555',
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: '0.5rem'
-                          }}>
-                            <FaCheckCircle style={{ color: plan.color, marginTop: '0.25rem', flexShrink: 0 }} />
+
+                    <div className="plan-features">
+                      <h4>Key Features</h4>
+                      <ul>
+                        {plan.features?.map((feature, idx) => (
+                          <li key={idx}>
+                            <FaCheckCircle style={{ color: plan.color }} />
                             <span>{feature}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
-                    
-                    <div style={{ 
-                      background: '#f8f9fa',
-                      padding: '1rem',
-                      borderRadius: '8px',
-                      marginBottom: '1.5rem'
-                    }}>
-                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem', color: '#333' }}>Expected Results</h4>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '1.25rem', fontWeight: '700', color: plan.color }}>
-                            {plan.stats.profileViewsIncrease}
-                          </div>
-                          <div style={{ fontSize: '0.85rem', color: '#666' }}>Profile Views</div>
+
+                    <div className="plan-results" style={{ background: '#f8f9fa' }}>
+                      <h4>Expected Results</h4>
+                      <div className="results-stats">
+                        <div className="result-stat">
+                          <span className="result-value" style={{ color: plan.color }}>{plan.stats?.profileViewsIncrease}</span>
+                          <span className="result-label">Profile Views</span>
                         </div>
-                        
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '1.25rem', fontWeight: '700', color: plan.color }}>
-                            {plan.stats.bookingIncrease}
-                          </div>
-                          <div style={{ fontSize: '0.85rem', color: '#666' }}>Bookings</div>
+                        <div className="result-stat">
+                          <span className="result-value" style={{ color: plan.color }}>{plan.stats?.bookingIncrease}</span>
+                          <span className="result-label">Bookings</span>
                         </div>
-                        
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '1.25rem', fontWeight: '700', color: plan.color }}>
-                            {plan.stats.position}
-                          </div>
-                          <div style={{ fontSize: '0.85rem', color: '#666' }}>Position</div>
+                        <div className="result-stat">
+                          <span className="result-value" style={{ color: plan.color }}>{plan.stats?.position}</span>
+                          <span className="result-label">Position</span>
                         </div>
                       </div>
                     </div>
-                    
-                    <button 
-                      onClick={() => handleSelectPlan(plan)}
-                      style={{
-                        width: '100%',
-                        padding: '0.75rem',
-                        background: selectedPlan?.id === plan.id ? plan.color : '#f1f5f9',
-                        border: 'none',
-                        borderRadius: '8px',
-                        color: selectedPlan?.id === plan.id ? 'white' : plan.color,
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.5rem'
-                      }}
+
+                    <button
+                      className={`select-plan-btn ${selectedPlan?.id === plan.id ? 'selected' : ''}`}
+                      style={{ background: selectedPlan?.id === plan.id ? plan.color : '#f1f5f9', color: selectedPlan?.id === plan.id ? 'white' : plan.color }}
+                      onClick={(e) => { e.stopPropagation(); handleSelectPlan(plan); }}
                     >
                       {selectedPlan?.id === plan.id ? (
                         <>
                           <FaCheckCircle /> Selected
                         </>
                       ) : (
-                        <>
-                          Select This Plan
-                        </>
+                        'Select This Plan'
                       )}
                     </button>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Purchase Button */}
-            {selectedPlan && (
-              <div style={{ 
-                background: 'white',
-                borderRadius: '12px',
-                padding: '1.5rem',
-                position: 'sticky',
-                bottom: '1rem',
-                boxShadow: '0 -4px 20px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h3 style={{ margin: '0 0 0.5rem 0', color: '#1a237e' }}>
-                      Purchase {selectedPlan.name}
-                    </h3>
-                    <p style={{ margin: 0, color: '#666' }}>
-                      Total: <strong style={{ color: selectedPlan.color, fontSize: '1.2rem' }}>
-                        ₦{selectedPlan.price.toLocaleString()}
-                      </strong> for {selectedPlan.duration} days
-                    </p>
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button 
-                      onClick={() => setSelectedPlan(null)}
-                      style={{
-                        padding: '0.75rem 1.5rem',
-                        background: 'white',
-                        border: '1px solid #ddd',
-                        borderRadius: '8px',
-                        color: '#666',
-                        cursor: 'pointer',
-                        fontWeight: '600'
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    
-                    <button 
-                      onClick={handlePurchaseBoost}
-                      disabled={loading}
-                      style={{
-                        padding: '0.75rem 1.5rem',
-                        background: selectedPlan.color,
-                        border: 'none',
-                        borderRadius: '8px',
-                        color: 'white',
-                        cursor: 'pointer',
-                        fontWeight: '600',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem'
-                      }}
-                    >
-                      {loading ? (
-                        <>
-                          <div className="loading-spinner-small"></div>
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <FaMoneyBillWave />
-                          Purchase Now
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Sidebar */}
-          <div>
+          <aside className="boost-sidebar">
             {/* How It Works */}
-            <div style={{ 
-              background: 'white',
-              borderRadius: '12px',
-              padding: '1.5rem',
-              marginBottom: '1.5rem'
-            }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#1a237e', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FaQuestionCircle />
-                How Boosting Works
-              </h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: '#E3F2FD',
-                    color: '#1a237e',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: '700',
-                    flexShrink: 0
-                  }}>
-                    1
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#333' }}>Select Your Plan</div>
-                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem', color: '#666' }}>
-                      Choose duration and features that match your goals
-                    </p>
+            <div className="sidebar-card">
+              <h3><FaQuestionCircle /> How Boosting Works</h3>
+              <div className="how-it-works-steps">
+                <div className="step">
+                  <div className="step-number">1</div>
+                  <div className="step-content">
+                    <h4>Select Your Plan</h4>
+                    <p>Choose duration and features that match your goals</p>
                   </div>
                 </div>
-                
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: '#E3F2FD',
-                    color: '#1a237e',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: '700',
-                    flexShrink: 0
-                  }}>
-                    2
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#333' }}>Make Payment</div>
-                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem', color: '#666' }}>
-                      Secure payment through RentEasy wallet or bank transfer
-                    </p>
+                <div className="step">
+                  <div className="step-number">2</div>
+                  <div className="step-content">
+                    <h4>Make Payment</h4>
+                    <p>Secure payment through RentEasy wallet or bank transfer</p>
                   </div>
                 </div>
-                
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: '#E3F2FD',
-                    color: '#1a237e',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: '700',
-                    flexShrink: 0
-                  }}>
-                    3
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#333' }}>Get Boosted</div>
-                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem', color: '#666' }}>
-                      Instant activation with visible results in 24 hours
-                    </p>
+                <div className="step">
+                  <div className="step-number">3</div>
+                  <div className="step-content">
+                    <h4>Get Boosted</h4>
+                    <p>Instant activation with visible results in 24 hours</p>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Boost History */}
-            <div style={{ 
-              background: 'white',
-              borderRadius: '12px',
-              padding: '1.5rem'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, color: '#1a237e', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <FaClock />
-                  Boost History
-                </h3>
-                <Link 
-                  to="/dashboard/provider/boost-history"
-                  style={{
-                    fontSize: '0.9rem',
-                    color: '#1a237e',
-                    textDecoration: 'none',
-                    fontWeight: '600'
-                  }}
-                >
-                  View All
-                </Link>
+            <div className="sidebar-card">
+              <div className="sidebar-header">
+                <h3><FaClock /> Boost History</h3>
+                <Link to="/dashboard/provider/boost-history" className="view-all-link">View All</Link>
               </div>
-              
+
               {boostHistory.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-                  <FaRocket style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#ddd' }} />
-                  <p style={{ margin: 0 }}>No boost history yet</p>
+                <div className="empty-history">
+                  <FaRocket className="empty-icon" />
+                  <p>No boost history yet</p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="history-list">
                   {boostHistory.map((boost) => (
-                    <div key={boost.id} style={{ 
-                      padding: '1rem',
-                      border: '1px solid #e0e0e0',
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                        <div style={{ fontWeight: '600', color: '#333' }}>{boost.plan}</div>
-                        <div style={{ fontSize: '0.9rem', color: '#666' }}>{formatDate(boost.date)}</div>
+                    <div key={boost.id} className="history-item">
+                      <div className="history-header">
+                        <span className="history-plan">{boost.plan}</span>
+                        <span className="history-date">{formatDate(boost.date)}</span>
                       </div>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                        <div>
-                          <div style={{ fontSize: '0.9rem', color: '#666' }}>Results</div>
-                          <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem' }}>
-                            <span style={{ color: '#10B981' }}>{boost.results.profileViews} views</span>
-                            <span style={{ color: '#3B82F6' }}>{boost.results.bookings} bookings</span>
-                          </div>
-                        </div>
-                        
-                        <div style={{ fontWeight: '700', color: '#1a237e' }}>
-                          ₦{boost.price.toLocaleString()}
-                        </div>
+                      <div className="history-results">
+                        <div className="result-badge">{boost.results.profileViews} views</div>
+                        <div className="result-badge">{boost.results.bookings} bookings</div>
+                        <div className="history-price">₦{boost.price.toLocaleString()}</div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          </div>
+          </aside>
         </div>
-      </main>
 
-      <style jsx>{`
-        .loading-spinner-small {
-          width: 20px;
-          height: 20px;
-          border: 2px solid #f3f3f3;
-          border-top: 2px solid #1a237e;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        @media (max-width: 1024px) {
-          main > div {
-            grid-template-columns: 1fr;
-          }
-        }
-        
-        @media (max-width: 768px) {
-          .boost-plans-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-        
-        @media (max-width: 480px) {
-          .stats-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .purchase-actions {
-            flex-direction: column;
-          }
-        }
-      `}</style>
+        {/* Purchase Confirmation Bar */}
+        {selectedPlan && (
+          <div className="purchase-bar">
+            <div className="purchase-info">
+              <h3>Purchase {selectedPlan.name}</h3>
+              <p>Total: <strong style={{ color: selectedPlan.color }}>₦{selectedPlan.price.toLocaleString()}</strong> for {selectedPlan.duration_days} days</p>
+            </div>
+            <div className="purchase-actions">
+              <button className="cancel-btn" onClick={() => setSelectedPlan(null)}>Cancel</button>
+              <button className="purchase-btn" onClick={handlePurchaseBoost} disabled={loading} style={{ background: selectedPlan.color }}>
+                {loading ? (
+                  <>
+                    <span className="loading-spinner-small"></span>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <FaMoneyBillWave /> Purchase Now
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 };

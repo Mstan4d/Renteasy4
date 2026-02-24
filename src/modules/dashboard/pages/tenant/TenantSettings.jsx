@@ -1,15 +1,24 @@
-// src/modules/dashboard/pages/tenant/TenantSettings.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../shared/context/AuthContext';
+import { supabase } from '../../../../shared/lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import './TenantSettings.css';
 
 const TenantSettings = () => {
-  const { user, updateUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('account');
+  const [saving, setSaving] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [password, setPassword] = useState({ current: '', new: '', confirm: '' });
+  const [userMeta, setUserMeta] = useState({
+    memberSince: null,
+    trustScore: 85,
+    verified: false
+  });
+
+  // Initial settings with all possible fields
   const [settings, setSettings] = useState({
-    // Account Settings
     notifications: {
       emailNotifications: true,
       pushNotifications: true,
@@ -18,62 +27,92 @@ const TenantSettings = () => {
       maintenanceUpdates: true,
       paymentReminders: true
     },
-    
-    // Privacy Settings
     privacy: {
       profileVisibility: 'verified_users',
       showContactInfo: 'after_verification',
-      showRentalHistory: 'summary_only',
+      showRentalHistory: 'verified_only',
       dataSharing: {
         analytics: true,
         marketing: false,
         thirdParty: false
       }
     },
-    
-    // Security Settings
     security: {
       twoFactorAuth: false,
       loginAlerts: true,
-      deviceManagement: true
+      deviceManagement: false
     },
-    
-    // Communication Preferences
     communication: {
-      preferredContact: 'email',
-      contactHours: '9am-6pm',
       language: 'en',
       timezone: 'Africa/Lagos'
     }
   });
 
-  const [password, setPassword] = useState({
-    current: '',
-    new: '',
-    confirm: ''
-  });
-
-  const [saving, setSaving] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-
+  // Load settings from Supabase on mount
   useEffect(() => {
-    loadSettings();
-  }, []);
+    const fetchSettings = async () => {
+      if (!user) return;
 
-  const loadSettings = () => {
-    const savedSettings = JSON.parse(localStorage.getItem(`tenant_settings_${user?.id}`) || 'null');
-    if (savedSettings) {
-      setSettings(savedSettings);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('settings, created_at, trust_score, verification_status')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error loading settings:', error);
+        return;
+      }
+
+      if (data?.settings) {
+        // Merge loaded settings with defaults to ensure all fields exist
+        setSettings(prev => ({
+          ...prev,
+          ...data.settings,
+          notifications: { ...prev.notifications, ...data.settings.notifications },
+          privacy: {
+            ...prev.privacy,
+            ...data.settings.privacy,
+            dataSharing: { ...prev.privacy.dataSharing, ...data.settings.privacy?.dataSharing }
+          },
+          security: { ...prev.security, ...data.settings.security },
+          communication: { ...prev.communication, ...data.settings.communication }
+        }));
+      }
+
+      // Set user meta for account stats
+      setUserMeta({
+        memberSince: data?.created_at || null,
+        trustScore: data?.trust_score || 85,
+        verified: data?.verification_status === 'verified'
+      });
+    };
+
+    fetchSettings();
+  }, [user]);
+
+  // Save settings to Supabase
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ settings })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      alert('Settings saved successfully!');
+    } catch (err) {
+      alert('Error saving: ' + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleSettingChange = (section, key, value) => {
     setSettings(prev => ({
       ...prev,
-      [section]: {
-        ...prev[section],
-        [key]: value
-      }
+      [section]: { ...prev[section], [key]: value }
     }));
   };
 
@@ -90,52 +129,48 @@ const TenantSettings = () => {
     }));
   };
 
-  const saveSettings = () => {
-    setSaving(true);
-    
-    setTimeout(() => {
-      localStorage.setItem(`tenant_settings_${user?.id}`, JSON.stringify(settings));
-      setSaving(false);
-      alert('Settings saved successfully!');
-    }, 1000);
-  };
-
   const handlePasswordChange = async () => {
     if (password.new !== password.confirm) {
       alert('New passwords do not match!');
       return;
     }
-
     if (password.new.length < 8) {
       alert('Password must be at least 8 characters long');
       return;
     }
 
-    // In a real app, this would make an API call
-    alert('Password changed successfully!');
-    setPassword({ current: '', new: '', confirm: '' });
+    const { error } = await supabase.auth.updateUser({ password: password.new });
+    if (error) {
+      alert('Password update failed: ' + error.message);
+    } else {
+      alert('Password changed successfully!');
+      setPassword({ current: '', new: '', confirm: '' });
+    }
   };
 
-  const handleDeleteAccount = () => {
-    if (window.confirm('Are you sure? This action cannot be undone.')) {
-      // In a real app, this would make an API call
-      logout();
-      navigate('/');
-    }
+  const handleDeleteAccount = async () => {
+    // In a real app, you would call a secure edge function or admin API to delete the user.
+    // For demonstration, we just log out.
+    // const { error } = await supabase.rpc('delete_user'); // you would need a custom RPC
+    // if (error) {
+    //   alert('Deletion failed: ' + error.message);
+    // } else {
+    //   logout();
+    //   navigate('/');
+    // }
+    logout();
+    navigate('/');
   };
 
   const exportData = () => {
     const data = {
       userInfo: user,
-      settings: settings,
+      settings,
       timestamp: new Date().toISOString()
     };
-    
     const dataStr = JSON.stringify(data, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
     const exportFileDefaultName = `renteasy-data-${new Date().toISOString().split('T')[0]}.json`;
-    
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
@@ -152,37 +187,37 @@ const TenantSettings = () => {
       <div className="settings-container">
         {/* Settings Sidebar */}
         <div className="settings-sidebar">
-          <button 
+          <button
             className={`sidebar-btn ${activeTab === 'account' ? 'active' : ''}`}
             onClick={() => setActiveTab('account')}
           >
             👤 Account
           </button>
-          <button 
+          <button
             className={`sidebar-btn ${activeTab === 'notifications' ? 'active' : ''}`}
             onClick={() => setActiveTab('notifications')}
           >
             🔔 Notifications
           </button>
-          <button 
+          <button
             className={`sidebar-btn ${activeTab === 'privacy' ? 'active' : ''}`}
             onClick={() => setActiveTab('privacy')}
           >
             🔒 Privacy
           </button>
-          <button 
+          <button
             className={`sidebar-btn ${activeTab === 'security' ? 'active' : ''}`}
             onClick={() => setActiveTab('security')}
           >
             🛡️ Security
           </button>
-          <button 
+          <button
             className={`sidebar-btn ${activeTab === 'communication' ? 'active' : ''}`}
             onClick={() => setActiveTab('communication')}
           >
             💬 Communication
           </button>
-          <button 
+          <button
             className={`sidebar-btn ${activeTab === 'preferences' ? 'active' : ''}`}
             onClick={() => setActiveTab('preferences')}
           >
@@ -196,7 +231,7 @@ const TenantSettings = () => {
           {activeTab === 'account' && (
             <div className="settings-section">
               <h2>Account Settings</h2>
-              
+
               <div className="account-info-card">
                 <div className="account-header">
                   <div className="user-avatar-large">
@@ -208,19 +243,27 @@ const TenantSettings = () => {
                     <span className="user-role">{user?.role || 'Tenant'}</span>
                   </div>
                 </div>
-                
+
                 <div className="account-stats">
                   <div className="stat-item">
                     <span className="stat-label">Member Since</span>
-                    <span className="stat-value">December 2024</span>
+                    <span className="stat-value">
+                      {userMeta.memberSince
+                        ? new Date(userMeta.memberSince).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                        : 'N/A'}
+                    </span>
                   </div>
                   <div className="stat-item">
                     <span className="stat-label">Trust Score</span>
-                    <span className="stat-value score-high">85/100</span>
+                    <span className={`stat-value ${userMeta.trustScore >= 70 ? 'score-high' : 'score-low'}`}>
+                      {userMeta.trustScore}/100
+                    </span>
                   </div>
                   <div className="stat-item">
                     <span className="stat-label">Verification</span>
-                    <span className="stat-value verified">Verified</span>
+                    <span className={`stat-value ${userMeta.verified ? 'verified' : 'unverified'}`}>
+                      {userMeta.verified ? 'Verified' : 'Unverified'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -234,7 +277,7 @@ const TenantSettings = () => {
                     <input
                       type="password"
                       value={password.current}
-                      onChange={(e) => setPassword({...password, current: e.target.value})}
+                      onChange={(e) => setPassword({ ...password, current: e.target.value })}
                       placeholder="Enter current password"
                     />
                   </div>
@@ -243,7 +286,7 @@ const TenantSettings = () => {
                     <input
                       type="password"
                       value={password.new}
-                      onChange={(e) => setPassword({...password, new: e.target.value})}
+                      onChange={(e) => setPassword({ ...password, new: e.target.value })}
                       placeholder="Enter new password"
                     />
                   </div>
@@ -252,11 +295,11 @@ const TenantSettings = () => {
                     <input
                       type="password"
                       value={password.confirm}
-                      onChange={(e) => setPassword({...password, confirm: e.target.value})}
+                      onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
                       placeholder="Confirm new password"
                     />
                   </div>
-                  <button 
+                  <button
                     className="btn btn-primary"
                     onClick={handlePasswordChange}
                     disabled={!password.current || !password.new || !password.confirm}
@@ -278,7 +321,7 @@ const TenantSettings = () => {
                     <span className="action-icon">⏸️</span>
                     <span className="action-label">Deactivate Account</span>
                   </button>
-                  <button 
+                  <button
                     className="btn-action delete"
                     onClick={() => setShowDeleteModal(true)}
                   >
@@ -294,7 +337,7 @@ const TenantSettings = () => {
           {activeTab === 'notifications' && (
             <div className="settings-section">
               <h2>Notification Settings</h2>
-              
+
               <div className="notifications-list">
                 <div className="notification-category">
                   <h4>Email Notifications</h4>
@@ -302,24 +345,28 @@ const TenantSettings = () => {
                     <input
                       type="checkbox"
                       checked={settings.notifications.emailNotifications}
-                      onChange={(e) => handleSettingChange('notifications', 'emailNotifications', e.target.checked)}
+                      onChange={(e) =>
+                        handleSettingChange('notifications', 'emailNotifications', e.target.checked)
+                      }
                     />
                     <span>Receive email notifications</span>
                   </label>
                 </div>
-                
+
                 <div className="notification-category">
                   <h4>Push Notifications</h4>
                   <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={settings.notifications.pushNotifications}
-                      onChange={(e) => handleSettingChange('notifications', 'pushNotifications', e.target.checked)}
+                      onChange={(e) =>
+                        handleSettingChange('notifications', 'pushNotifications', e.target.checked)
+                      }
                     />
                     <span>Receive push notifications</span>
                   </label>
                 </div>
-                
+
                 <div className="notification-category">
                   <h4>SMS Alerts</h4>
                   <label className="checkbox-label">
@@ -331,38 +378,44 @@ const TenantSettings = () => {
                     <span>Receive SMS alerts</span>
                   </label>
                 </div>
-                
+
                 <div className="notification-category">
                   <h4>Rental Alerts</h4>
                   <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={settings.notifications.rentalAlerts}
-                      onChange={(e) => handleSettingChange('notifications', 'rentalAlerts', e.target.checked)}
+                      onChange={(e) =>
+                        handleSettingChange('notifications', 'rentalAlerts', e.target.checked)
+                      }
                     />
                     <span>New rental opportunities</span>
                   </label>
                 </div>
-                
+
                 <div className="notification-category">
                   <h4>Maintenance Updates</h4>
                   <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={settings.notifications.maintenanceUpdates}
-                      onChange={(e) => handleSettingChange('notifications', 'maintenanceUpdates', e.target.checked)}
+                      onChange={(e) =>
+                        handleSettingChange('notifications', 'maintenanceUpdates', e.target.checked)
+                      }
                     />
                     <span>Maintenance request updates</span>
                   </label>
                 </div>
-                
+
                 <div className="notification-category">
                   <h4>Payment Reminders</h4>
                   <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={settings.notifications.paymentReminders}
-                      onChange={(e) => handleSettingChange('notifications', 'paymentReminders', e.target.checked)}
+                      onChange={(e) =>
+                        handleSettingChange('notifications', 'paymentReminders', e.target.checked)
+                      }
                     />
                     <span>Payment due reminders</span>
                   </label>
@@ -375,7 +428,7 @@ const TenantSettings = () => {
           {activeTab === 'privacy' && (
             <div className="settings-section">
               <h2>Privacy Settings</h2>
-              
+
               <div className="privacy-settings">
                 <div className="privacy-category">
                   <h4>Profile Visibility</h4>
@@ -389,7 +442,7 @@ const TenantSettings = () => {
                     <option value="private">Private (Only Me)</option>
                   </select>
                 </div>
-                
+
                 <div className="privacy-category">
                   <h4>Contact Information</h4>
                   <select
@@ -402,7 +455,7 @@ const TenantSettings = () => {
                     <option value="never">Never Show</option>
                   </select>
                 </div>
-                
+
                 <div className="privacy-category">
                   <h4>Rental History</h4>
                   <select
@@ -415,7 +468,7 @@ const TenantSettings = () => {
                     <option value="private">Private</option>
                   </select>
                 </div>
-                
+
                 <div className="privacy-category">
                   <h4>Data Sharing Preferences</h4>
                   <div className="data-sharing">
@@ -423,7 +476,9 @@ const TenantSettings = () => {
                       <input
                         type="checkbox"
                         checked={settings.privacy.dataSharing.analytics}
-                        onChange={(e) => handleNestedChange('privacy', 'dataSharing', 'analytics', e.target.checked)}
+                        onChange={(e) =>
+                          handleNestedChange('privacy', 'dataSharing', 'analytics', e.target.checked)
+                        }
                       />
                       <span>Allow analytics data collection</span>
                     </label>
@@ -431,7 +486,9 @@ const TenantSettings = () => {
                       <input
                         type="checkbox"
                         checked={settings.privacy.dataSharing.marketing}
-                        onChange={(e) => handleNestedChange('privacy', 'dataSharing', 'marketing', e.target.checked)}
+                        onChange={(e) =>
+                          handleNestedChange('privacy', 'dataSharing', 'marketing', e.target.checked)
+                        }
                       />
                       <span>Receive marketing communications</span>
                     </label>
@@ -439,7 +496,9 @@ const TenantSettings = () => {
                       <input
                         type="checkbox"
                         checked={settings.privacy.dataSharing.thirdParty}
-                        onChange={(e) => handleNestedChange('privacy', 'dataSharing', 'thirdParty', e.target.checked)}
+                        onChange={(e) =>
+                          handleNestedChange('privacy', 'dataSharing', 'thirdParty', e.target.checked)
+                        }
                       />
                       <span>Share data with trusted partners</span>
                     </label>
@@ -453,7 +512,7 @@ const TenantSettings = () => {
           {activeTab === 'security' && (
             <div className="settings-section">
               <h2>Security Settings</h2>
-              
+
               <div className="security-settings">
                 <div className="security-item">
                   <div className="security-info">
@@ -469,7 +528,7 @@ const TenantSettings = () => {
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
-                
+
                 <div className="security-item">
                   <div className="security-info">
                     <h4>Login Alerts</h4>
@@ -484,7 +543,7 @@ const TenantSettings = () => {
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
-                
+
                 <div className="security-item">
                   <div className="security-info">
                     <h4>Device Management</h4>
@@ -499,25 +558,21 @@ const TenantSettings = () => {
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
-                
+
                 <div className="security-actions">
-                  <button className="btn btn-outline">
-                    View Login History
-                  </button>
-                  <button className="btn btn-outline">
-                    Manage Devices
-                  </button>
-                  <button className="btn btn-outline">
-                    Change Security Questions
-                  </button>
+                  <button className="btn btn-outline">View Login History</button>
+                  <button className="btn btn-outline">Manage Devices</button>
+                  <button className="btn btn-outline">Change Security Questions</button>
                 </div>
               </div>
             </div>
           )}
 
+          {/* Communication & Preferences tabs can be added similarly */}
+
           {/* Save Button for all tabs */}
           <div className="settings-actions">
-            <button 
+            <button
               className="btn btn-primary"
               onClick={saveSettings}
               disabled={saving}
@@ -531,14 +586,14 @@ const TenantSettings = () => {
       {/* Delete Account Modal */}
       {showDeleteModal && (
         <div className="delete-modal-overlay" onClick={() => setShowDeleteModal(false)}>
-          <div className="delete-modal" onClick={e => e.stopPropagation()}>
+          <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Delete Account</h3>
               <button className="close-modal" onClick={() => setShowDeleteModal(false)}>
                 ×
               </button>
             </div>
-            
+
             <div className="modal-content">
               <div className="warning-icon">⚠️</div>
               <h4>Are you sure you want to delete your account?</h4>
@@ -550,18 +605,12 @@ const TenantSettings = () => {
                 <li>Saved properties</li>
                 <li>All uploaded documents</li>
               </ul>
-              
+
               <div className="modal-actions">
-                <button 
-                  className="btn btn-danger"
-                  onClick={handleDeleteAccount}
-                >
+                <button className="btn btn-danger" onClick={handleDeleteAccount}>
                   Delete Account
                 </button>
-                <button 
-                  className="btn btn-outline"
-                  onClick={() => setShowDeleteModal(false)}
-                >
+                <button className="btn btn-outline" onClick={() => setShowDeleteModal(false)}>
                   Cancel
                 </button>
               </div>

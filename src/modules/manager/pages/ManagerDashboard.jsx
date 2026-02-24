@@ -6,6 +6,7 @@ import ManagerKYCStatus from '../components/ManagerKYCStatus'
 import ManagerNotificationsPanel from '../components/ManagerNotificationsPanel'
 import ManagerQuickActions from '../components/ManagerQuickActions'
 import ManagerCommissionSummary from '../components/ManagerCommissionSummary'
+import ProximityAlert from '../components/ProximityAlert';
 import './ManagerDashboard.css'
 
 const ManagerDashboard = () => {
@@ -41,49 +42,43 @@ const ManagerDashboard = () => {
   /* ---------------------------------------------
      LOAD PROXIMITY NOTIFICATIONS (1km radius)
   ----------------------------------------------*/
-  const loadProximityNotifications = () => {
-    // Simulating proximity check
-    const allListings = JSON.parse(localStorage.getItem('listings') || '[]')
-    const allChats = JSON.parse(localStorage.getItem('chats') || '[]')
-    const managerAssignments = JSON.parse(localStorage.getItem('managerAssignments') || '[]')
+ useEffect(() => {
+  if (!user) return;
 
-    // Filter listings within 1km radius that need managers
-    const proximityListings = allListings.filter(listing => {
-      // Skip estate firm listings
-      if (listing.posterRole === 'estate_firm') return false
-      
-      // Check if already has a manager
-      const hasManager = allChats.some(chat => 
-        chat.listingId === listing.id && chat.managerAssigned
-      )
-      
-      if (hasManager) return false
-      
-      // BUSINESS RULE: Check if manager has accepted this before
-      const alreadyAccepted = managerAssignments.some(
-        assignment => assignment.listingId === listing.id && assignment.managerId === user.id
-      )
-      
-      return !alreadyAccepted
-    })
+  // 1. Initial Load of active notifications
+  const fetchInitialNotifications = async () => {
+    const { data } = await supabase
+      .from('manager_notifications')
+      .select('*')
+      .eq('manager_id', user.id)
+      .eq('accepted', false)
+      .gt('expires_at', new Date().toISOString());
+    
+    setProximityNotifications(data || []);
+  };
 
-    // Transform to notifications
-    const notifications = proximityListings.map(listing => ({
-      id: `notif_${listing.id}_${Date.now()}`,
-      type: 'proximity_listing',
-      listingId: listing.id,
-      title: listing.title,
-      location: `${listing.state}, ${listing.lga}`,
-      price: listing.price,
-      posterRole: listing.posterRole,
-      commission: listing.price * 0.025,
-      distance: 'Within 1km radius',
-      expiresIn: '15 min', // First come, first serve
-      createdAt: new Date().toISOString()
-    }))
+  fetchInitialNotifications();
 
-    setProximityNotifications(notifications)
-  }
+  // 2. Realtime Subscription for NEW notifications
+  const channel = supabase
+    .channel('manager_alerts')
+    .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'manager_notifications',
+        filter: `manager_id=eq.${user.id}` 
+      }, 
+      (payload) => {
+        setProximityNotifications(prev => [payload.new, ...prev]);
+        // Optional: Play a notification sound here
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [user.id]);
 
   /* ---------------------------------------------
      INITIALIZE DASHBOARD DATA
@@ -440,6 +435,7 @@ const ManagerDashboard = () => {
   return (
     <div className="manager-dashboard">
       {/* HEADER WITH KYC STATUS */}
+      <ProximityAlert managerId={user.id} managerState={user.state} />
       <header className="manager-header">
         <div className="header-left">
           <h1>👨‍💼 RentEasy Manager Dashboard</h1>

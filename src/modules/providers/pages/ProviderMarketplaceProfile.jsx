@@ -1,45 +1,138 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
-import { FaEye, FaSave, FaGlobe, FaPhone, FaEnvelope, FaMapMarkerAlt, FaFacebook, FaInstagram, FaTwitter } from 'react-icons/fa';
+import { 
+  FaEye, FaSave, FaGlobe, FaPhone, FaEnvelope, FaMapMarkerAlt, 
+  FaFacebook, FaInstagram, FaTwitter 
+} from 'react-icons/fa';
+import './ProviderMarketplaceProfile.css'; // external CSS
 
 const ProviderMarketplaceProfile = () => {
+  const { user } = useAuth();
   const [profile, setProfile] = useState({
-    businessName: 'Professional Cleaners NG',
-    tagline: 'Professional cleaning services for homes & offices',
-    description: 'We provide top-notch cleaning services with eco-friendly products. Serving Lagos for over 5 years with certified professionals and modern equipment. Our team is trained in deep cleaning, sanitization, and maintenance.',
-    categories: ['Cleaning', 'Home Services'],
-    serviceArea: 'Lagos, Nigeria',
-    contactPhone: '+2348012345678',
-    contactEmail: 'info@cleanersng.com',
-    website: 'https://www.cleanersng.com',
+    businessName: '',
+    tagline: '',
+    description: '',
+    categories: [],
+    serviceArea: '',
+    contactPhone: '',
+    contactEmail: '',
+    website: '',
     socialMedia: {
-      facebook: 'facebook.com/cleanersng',
-      instagram: '@cleanersng',
-      twitter: '@cleanersng'
+      facebook: '',
+      instagram: '',
+      twitter: ''
     },
     operatingHours: {
-      mondayToFriday: '8:00 AM - 6:00 PM',
-      saturday: '9:00 AM - 4:00 PM',
-      sunday: 'Emergency Services Only'
+      mondayToFriday: '',
+      saturday: '',
+      sunday: ''
     },
-    servicesOffered: [
-      'Deep House Cleaning',
-      'Office Cleaning',
-      'Carpet Cleaning',
-      'Window Cleaning',
-      'Post-Construction Cleaning'
-    ]
+    servicesOffered: []
   });
 
   const [activeTab, setActiveTab] = useState('basic');
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [profileId, setProfileId] = useState(null);
 
-  const handleSave = () => {
-    setIsEditing(false);
-    alert('Profile saved successfully! Your marketplace profile has been updated.');
+  // Fetch profile on mount
+  useEffect(() => {
+    if (user?.id) {
+      fetchProfile();
+    }
+  }, [user]);
+
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('marketplace_profiles')
+        .select('*')
+        .eq('provider_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        // Map database fields to component state
+        setProfile({
+          businessName: data.business_name || '',
+          tagline: data.tagline || '',
+          description: data.description || '',
+          categories: data.categories || [],
+          serviceArea: data.service_area || '',
+          contactPhone: data.contact_phone || '',
+          contactEmail: data.contact_email || user.email || '',
+          website: data.website || '',
+          socialMedia: data.social_media || { facebook: '', instagram: '', twitter: '' },
+          operatingHours: data.operating_hours || { mondayToFriday: '', saturday: '', sunday: '' },
+          servicesOffered: data.services_offered || []
+        });
+        setProfileId(data.id);
+      } else {
+        // No profile yet, we'll create one on save
+        // Pre-fill email from auth
+        setProfile(prev => ({ ...prev, contactEmail: user.email || '' }));
+      }
+    } catch (error) {
+      console.error('Error fetching marketplace profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      // Prepare data for Supabase (convert camelCase to snake_case)
+      const profileData = {
+        provider_id: user.id,
+        business_name: profile.businessName,
+        tagline: profile.tagline,
+        description: profile.description,
+        categories: profile.categories,
+        service_area: profile.serviceArea,
+        contact_phone: profile.contactPhone,
+        contact_email: profile.contactEmail,
+        website: profile.website,
+        social_media: profile.socialMedia,
+        operating_hours: profile.operatingHours,
+        services_offered: profile.servicesOffered
+      };
+
+      let result;
+      if (profileId) {
+        // Update existing
+        result = await supabase
+          .from('marketplace_profiles')
+          .update(profileData)
+          .eq('id', profileId);
+      } else {
+        // Insert new
+        result = await supabase
+          .from('marketplace_profiles')
+          .insert([profileData])
+          .select();
+      }
+
+      if (result.error) throw result.error;
+
+      // If insert, get the new id
+      if (!profileId && result.data) {
+        setProfileId(result.data[0].id);
+      }
+
+      setIsEditing(false);
+      alert('Profile saved successfully! Your marketplace profile has been updated.');
+    } catch (error) {
+      console.error('Error saving marketplace profile:', error);
+      alert('Failed to save profile. Please try again.');
+    }
   };
 
   const handlePreview = () => {
+    // Could open a modal or navigate to public view
     alert('Opening preview of your marketplace profile...');
   };
 
@@ -48,6 +141,8 @@ const ProviderMarketplaceProfile = () => {
   };
 
   const handleCancel = () => {
+    // Revert changes by re-fetching
+    fetchProfile();
     setIsEditing(false);
   };
 
@@ -68,6 +163,20 @@ const ProviderMarketplaceProfile = () => {
       servicesOffered: updatedServices
     });
   };
+
+  const handleAddCategory = () => {
+    const newCategory = prompt('Enter new category:');
+    if (newCategory && newCategory.trim()) {
+      setProfile({
+        ...profile,
+        categories: [...profile.categories, newCategory.trim()]
+      });
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Loading profile...</div>;
+  }
 
   return (
     <ProviderPageTemplate
@@ -198,15 +307,7 @@ const ProviderMarketplaceProfile = () => {
                   {isEditing && (
                     <button 
                       className="tag-add"
-                      onClick={() => {
-                        const newCategory = prompt('Enter new category:');
-                        if (newCategory && newCategory.trim()) {
-                          setProfile({
-                            ...profile,
-                            categories: [...profile.categories, newCategory.trim()]
-                          });
-                        }
-                      }}
+                      onClick={handleAddCategory}
                     >
                       + Add
                     </button>
@@ -224,11 +325,11 @@ const ProviderMarketplaceProfile = () => {
               <div className="marketplace-preview">
                 <div className="preview-header">
                   <div className="preview-avatar">
-                    PC
+                    {profile.businessName.charAt(0) || 'PC'}
                   </div>
                   <div>
-                    <h4 style={{ margin: '0 0 0.25rem 0' }}>{profile.businessName}</h4>
-                    <p style={{ margin: '0 0 0.5rem 0', color: '#666' }}>{profile.tagline}</p>
+                    <h4 style={{ margin: '0 0 0.25rem 0' }}>{profile.businessName || 'Your Business Name'}</h4>
+                    <p style={{ margin: '0 0 0.5rem 0', color: '#666' }}>{profile.tagline || 'Your tagline here'}</p>
                     <div className="rating-badge">
                       ⭐ 4.8 (128 reviews)
                     </div>
@@ -236,7 +337,7 @@ const ProviderMarketplaceProfile = () => {
                 </div>
                 
                 <div className="preview-description">
-                  <p>{profile.description.substring(0, 200)}...</p>
+                  <p>{profile.description ? profile.description.substring(0, 200) + '...' : 'Your description will appear here.'}</p>
                 </div>
                 
                 <div className="preview-categories">
@@ -596,355 +697,6 @@ const ProviderMarketplaceProfile = () => {
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        /* Tabs */
-        .tabs-container {
-          border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .tabs {
-          display: flex;
-          overflow-x: auto;
-          gap: 0;
-        }
-        
-        .tab-btn {
-          padding: 1rem 1.5rem;
-          border: none;
-          background: none;
-          border-bottom: 3px solid transparent;
-          color: #666;
-          font-weight: 500;
-          cursor: pointer;
-          white-space: nowrap;
-          transition: all 0.3s ease;
-        }
-        
-        .tab-btn:hover {
-          color: #1a237e;
-          background: #f5f5f5;
-        }
-        
-        .tab-btn.active {
-          color: #1a237e;
-          border-bottom-color: #1a237e;
-          font-weight: 600;
-        }
-        
-        /* Cards */
-        .card-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-          gap: 1.5rem;
-          margin-bottom: 2rem;
-        }
-        
-        .card {
-          background: white;
-          border: 1px solid #e0e0e0;
-          border-radius: 12px;
-          overflow: hidden;
-        }
-        
-        .card-header {
-          padding: 1.25rem 1.5rem;
-          border-bottom: 1px solid #e0e0e0;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: #f8f9fa;
-        }
-        
-        .card-title {
-          margin: 0;
-          font-size: 1.1rem;
-          color: #1a237e;
-        }
-        
-        .card-body {
-          padding: 1.5rem;
-        }
-        
-        /* Forms */
-        .form-group {
-          margin-bottom: 1.5rem;
-        }
-        
-        .form-label {
-          display: block;
-          margin-bottom: 0.5rem;
-          font-weight: 600;
-          color: #333;
-          display: flex;
-          align-items: center;
-        }
-        
-        .form-control {
-          width: 100%;
-          padding: 0.75rem 1rem;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          font-size: 0.95rem;
-          transition: all 0.3s ease;
-        }
-        
-        .form-control:focus {
-          outline: none;
-          border-color: #1a237e;
-          box-shadow: 0 0 0 3px rgba(26, 35, 126, 0.1);
-        }
-        
-        .form-control:disabled {
-          background: #f5f5f5;
-          cursor: not-allowed;
-        }
-        
-        .form-help {
-          display: block;
-          margin-top: 0.5rem;
-          font-size: 0.85rem;
-          color: #666;
-        }
-        
-        /* Tags */
-        .tags-container {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-          margin-top: 0.5rem;
-        }
-        
-        .tag {
-          padding: 0.4rem 0.8rem;
-          background: #e3f2fd;
-          color: #1565c0;
-          border-radius: 20px;
-          font-size: 0.85rem;
-          font-weight: 500;
-        }
-        
-        .tag-add {
-          padding: 0.4rem 0.8rem;
-          background: transparent;
-          color: #1a237e;
-          border: 1px dashed #1a237e;
-          border-radius: 20px;
-          font-size: 0.85rem;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .tag-add:hover {
-          background: #1a237e;
-          color: white;
-        }
-        
-        /* Marketplace Preview */
-        .marketplace-preview {
-          border: 1px solid #e0e0e0;
-          border-radius: 12px;
-          padding: 1.5rem;
-          background: #f8f9fa;
-        }
-        
-        .preview-header {
-          display: flex;
-          gap: 1rem;
-          margin-bottom: 1.5rem;
-        }
-        
-        .preview-avatar {
-          width: 60px;
-          height: 60px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1.5rem;
-          font-weight: 700;
-        }
-        
-        .rating-badge {
-          display: inline-block;
-          padding: 0.25rem 0.75rem;
-          background: #fff3e0;
-          color: #ef6c00;
-          border-radius: 20px;
-          font-size: 0.85rem;
-          font-weight: 600;
-        }
-        
-        .preview-description {
-          margin-bottom: 1.5rem;
-          color: #666;
-          line-height: 1.6;
-        }
-        
-        .preview-categories {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-          margin-bottom: 1.5rem;
-        }
-        
-        .category-tag {
-          padding: 0.3rem 0.7rem;
-          background: white;
-          border: 1px solid #e0e0e0;
-          border-radius: 20px;
-          font-size: 0.85rem;
-          color: #666;
-        }
-        
-        .preview-actions {
-          display: flex;
-          gap: 0.75rem;
-        }
-        
-        /* Services List */
-        .services-list {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-        
-        .service-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 1rem;
-          border: 1px solid #e0e0e0;
-          border-radius: 8px;
-          transition: all 0.3s ease;
-        }
-        
-        .service-item:hover {
-          border-color: #1a237e;
-          background: #f8f9fa;
-        }
-        
-        .service-icon {
-          width: 36px;
-          height: 36px;
-          border-radius: 8px;
-          background: #e3f2fd;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1.2rem;
-        }
-        
-        /* Info Cards */
-        .info-card {
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border: 1px solid #e0e0e0;
-          border-radius: 12px;
-          border-left: 4px solid #1a237e;
-        }
-        
-        .tip-card {
-          padding: 1rem;
-          background: #f5f5f5;
-          border-radius: 8px;
-          border-left: 4px solid #4caf50;
-        }
-        
-        /* Empty State */
-        .empty-state {
-          text-align: center;
-          padding: 2rem;
-          color: #666;
-        }
-        
-        /* Buttons */
-        .btn-primary, .btn-secondary {
-          padding: 0.75rem 1.5rem;
-          border-radius: 8px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          border: none;
-          font-size: 0.95rem;
-        }
-        
-        .btn-primary {
-          background: #1a237e;
-          color: white;
-        }
-        
-        .btn-primary:hover {
-          background: #0d145c;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(26, 35, 126, 0.2);
-        }
-        
-        .btn-secondary {
-          background: white;
-          color: #1a237e;
-          border: 1px solid #1a237e;
-        }
-        
-        .btn-secondary:hover {
-          background: #f5f5f5;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-          .card-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .tabs {
-            flex-wrap: nowrap;
-            overflow-x: auto;
-          }
-          
-          .tab-btn {
-            padding: 0.75rem 1rem;
-            font-size: 0.9rem;
-          }
-          
-          .card-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 1rem;
-          }
-          
-          .preview-header {
-            flex-direction: column;
-            text-align: center;
-          }
-          
-          .preview-avatar {
-            align-self: center;
-          }
-          
-          .preview-actions {
-            flex-direction: column;
-          }
-        }
-        
-        @media (max-width: 480px) {
-          .card-body {
-            padding: 1rem;
-          }
-          
-          .form-control {
-            padding: 0.6rem 0.8rem;
-          }
-          
-          .btn-primary, .btn-secondary {
-            padding: 0.6rem 1rem;
-            font-size: 0.9rem;
-          }
-        }
-      `}</style>
     </ProviderPageTemplate>
   );
 };

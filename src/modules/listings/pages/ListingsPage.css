@@ -737,3 +737,133 @@
   top: auto !important;
   z-index: auto !important;
 }
+
+/* ADD TO EXISTING ListingsPage.css */
+
+/* Fix for results count collision */
+.results-count {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 16px 24px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative; /* Changed from static */
+  z-index: 5; /* Ensure it stays above grid */
+  min-height: 70px; /* Prevent collapse */
+}
+
+/* Fix for listings grid spacing */
+.listings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+  margin-top: 0; /* Remove any top margin causing overlap */
+  position: relative;
+  z-index: 1;
+}
+
+/* Fix for content area overflow */
+.listings-content {
+  position: relative;
+  overflow: visible;
+  margin-bottom: 24px;
+  min-height: 500px; /* Ensure enough space for content */
+}
+
+/* Fix for filter bar sticking */
+.filter-bar {
+  position: relative !important;
+  top: auto !important;
+  z-index: 10 !important;
+  margin-bottom: 20px;
+  background: white;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Fix for verification legend spacing */
+.verification-legend {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-top: 24px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  clear: both; /* Clear any floats */
+  position: relative;
+  z-index: 2;
+}
+
+/* Fix for quick stats layout */
+.quick-stats {
+  display: flex;
+  gap: 16px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+  clear: both;
+}
+
+/* Fix for user role stats alignment */
+.user-role-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 0.85rem;
+  color: #6b7280;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Fix for count info spacing */
+.count-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px; /* Prevent squeezing */
+}
+
+/* Fix for admin actions in listing cards */
+.admin-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+/* Responsive fixes for mobile */
+@media (max-width: 768px) {
+  .results-count {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    min-height: auto;
+  }
+  
+  .count-info {
+    width: 100%;
+  }
+  
+  .user-role-stats {
+    justify-content: flex-start;
+  }
+  
+  .sort-select {
+    width: 100%;
+    margin-top: 8px;
+  }
+  
+  .listings-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .filter-bar {
+    padding: 12px;
+  }
+}

@@ -1,90 +1,127 @@
 // src/modules/messaging/pages/ChatListPage.jsx
-import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../../shared/context/AuthContext'
-import './Messages.css'
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './Messages.css';
 
 const ChatListPage = () => {
-  const navigate = useNavigate()
-  const { user } = useAuth()
-  const [chats, setChats] = useState([])
-  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [listingsCache, setListingsCache] = useState({}); // cache listing titles
 
   useEffect(() => {
     if (!user) {
-      navigate('/login')
-      return
+      navigate('/login');
+      return;
     }
+    loadChats();
+  }, [user]);
 
-    loadChats()
-  }, [user, navigate])
+  const loadChats = async () => {
+    try {
+      setLoading(true);
 
-  const loadChats = () => {
-    const allChats = JSON.parse(localStorage.getItem('chats') || '[]')
-    const userChats = allChats.filter(chat => shouldUserHaveAccess(chat, user))
-    setChats(userChats)
-    setLoading(false)
-  }
+      // Fetch chats where user is a participant
+      // We'll use the participants JSONB column to check
+      const { data: chatsData, error } = await supabase
+        .from('chats')
+        .select('*')
+        .order('updated_at', { ascending: false });
 
-  const shouldUserHaveAccess = (chat, user) => {
-    const { participants } = chat
-    
-    if (user.role === 'super-admin' || user.role === 'admin') return true
-    if (user.role === 'manager' && participants.manager === user.id) return true
-    if (user.role === 'tenant') {
-      if (participants.tenant === user.id) return true
-      if (participants.incomingTenant === user.id) return true
-      // New incoming tenant trying to access
-      if (!participants.incomingTenant && user.id !== participants.tenant) {
-        return false // Don't show empty chats they haven't initiated
+      if (error) throw error;
+
+      // Filter client-side: only chats where user is in participants.all_participants
+      // Alternatively, you can use a Postgres function, but this is simpler for now.
+      const userChats = chatsData.filter(chat => {
+        const participants = chat.participants || {};
+        const allParticipants = participants.all_participants || [];
+        return allParticipants.includes(user.id);
+      });
+
+      // Get unique listing IDs
+      const listingIds = [...new Set(userChats.map(c => c.listing_id))];
+
+      // Fetch all relevant listings
+      if (listingIds.length > 0) {
+        const { data: listingsData, error: listingsError } = await supabase
+          .from('listings')
+          .select('id, title')
+          .in('id', listingIds);
+
+        if (listingsError) throw listingsError;
+
+        const cache = {};
+        listingsData.forEach(l => { cache[l.id] = l.title; });
+        setListingsCache(cache);
       }
+
+      // For each chat, fetch the last message
+      const chatsWithLastMsg = await Promise.all(
+        userChats.map(async (chat) => {
+          const { data: lastMsg } = await supabase
+            .from('messages')
+            .select('content, created_at, is_system')
+            .eq('chat_id', chat.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          return {
+            ...chat,
+            lastMessage: lastMsg || null,
+          };
+        })
+      );
+
+      setChats(chatsWithLastMsg);
+    } catch (error) {
+      console.error('Error loading chats:', error);
+    } finally {
+      setLoading(false);
     }
-    if (user.role === 'landlord' && participants.landlord === user.id) return true
-    if (user.role === 'estate-firm' && participants.estateFirm === user.id) return true
-    
-    return false
-  }
+  };
 
   const getChatTitle = (chat) => {
-    const listings = JSON.parse(localStorage.getItem('listings') || '[]')
-    const listing = listings.find(l => l.id === chat.listingId)
-    return listing ? listing.title : 'Unknown Listing'
-  }
+    return listingsCache[chat.listing_id] || 'Unknown Listing';
+  };
 
-  const getLastMessage = (chat) => {
-    const messages = chat.messages || []
-    if (messages.length === 0) return 'No messages yet'
-    const lastMsg = messages[messages.length - 1]
-    return lastMsg.isSystem ? 'System message' : lastMsg.text
-  }
+  const getLastMessageText = (chat) => {
+    if (!chat.lastMessage) return 'No messages yet';
+    if (chat.lastMessage.is_system) return 'System message';
+    return chat.lastMessage.content;
+  };
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffTime = Math.abs(now - date)
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
     if (diffDays === 0) {
-      return 'Today'
+      return 'Today';
     } else if (diffDays === 1) {
-      return 'Yesterday'
+      return 'Yesterday';
     } else if (diffDays < 7) {
-      return `${diffDays} days ago`
+      return `${diffDays} days ago`;
     } else {
-      return date.toLocaleDateString()
+      return date.toLocaleDateString();
     }
-  }
+  };
 
   const getChatParticipantInfo = (chat) => {
-    const { participants } = chat
-    if (participants.landlord) return { role: 'Landlord', icon: '🏠' }
-    if (participants.estateFirm) return { role: 'Estate Firm', icon: '🏢' }
-    if (participants.tenant && participants.incomingTenant) return { role: 'Tenant Chat', icon: '👤' }
-    if (participants.manager) return { role: 'Manager Chat', icon: '👨‍💼' }
-    return { role: 'Chat', icon: '💬' }
-  }
+    const participants = chat.participants || {};
+    if (participants.landlord) return { role: 'Landlord', icon: '🏠' };
+    if (participants.estateFirm) return { role: 'Estate Firm', icon: '🏢' };
+    if (participants.manager) return { role: 'Manager', icon: '👨‍💼' };
+    if (participants.tenant && participants.incomingTenant) return { role: 'Tenant Chat', icon: '👤' };
+    return { role: 'Chat', icon: '💬' };
+  };
 
-  if (loading) return <div className="messages-loading">Loading chats...</div>
+  if (loading) return <div className="messages-loading">Loading chats...</div>;
 
   return (
     <div className="chat-list-page">
@@ -110,7 +147,8 @@ const ChatListPage = () => {
           </div>
         ) : (
           chats.map(chat => {
-            const participantInfo = getChatParticipantInfo(chat)
+            const participantInfo = getChatParticipantInfo(chat);
+            const lastMsgTime = chat.lastMessage?.created_at ? formatDate(chat.lastMessage.created_at) : '';
             return (
               <div 
                 key={chat.id} 
@@ -121,25 +159,25 @@ const ChatListPage = () => {
                   <div className="chat-icon">{participantInfo.icon}</div>
                   <div className="chat-info">
                     <h4>{getChatTitle(chat)}</h4>
-                    <p className="chat-preview">{getLastMessage(chat)}</p>
+                    <p className="chat-preview">{getLastMessageText(chat)}</p>
                   </div>
-                  <span className="chat-time">{formatDate(chat.createdAt)}</span>
+                  <span className="chat-time">{lastMsgTime}</span>
                 </div>
                 <div className="chat-meta">
                   <span className={`status-badge status-${chat.state}`}>
-                    {chat.state.replace('_', ' ')}
+                    {chat.state?.replace('_', ' ') || 'unknown'}
                   </span>
                   <small>{participantInfo.role}</small>
-                  {chat.estateFirmListing && <small>🏢 No Commission</small>}
-                  {chat.commissionApplied && <small>💰 7.5% Commission</small>}
+                  {chat.estate_firm_listing && <small>🏢 No Commission</small>}
+                  {chat.commission_applied && <small>💰 7.5% Commission</small>}
                 </div>
               </div>
-            )
+            );
           })
         )}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ChatListPage
+export default ChatListPage;

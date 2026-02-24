@@ -1,15 +1,19 @@
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, CheckCircle, XCircle, Download, FileSpreadsheet } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './BulkPropertyUpload.css';
 
 const BulkPropertyUpload = ({ onUpload }) => {
+  const { user } = useAuth();
   const [file, setFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState('idle'); // idle, uploading, success, error
+  const [uploadStatus, setUploadStatus] = useState('idle');
   const [validationResults, setValidationResults] = useState(null);
+  const [parsedData, setParsedData] = useState([]);
   const fileInputRef = useRef(null);
 
-  const handleFileSelect = (event) => {
+  const handleFileSelect = async (event) => {
     const selectedFile = event.target.files[0];
     if (selectedFile) {
       const validTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
@@ -19,76 +23,180 @@ const BulkPropertyUpload = ({ onUpload }) => {
         return;
       }
 
-      if (selectedFile.size > 5 * 1024 * 1024) { // 5MB limit
+      if (selectedFile.size > 5 * 1024 * 1024) {
         alert('File size must be less than 5MB');
         return;
       }
 
       setFile(selectedFile);
-      validateFile(selectedFile);
+      await validateAndParseFile(selectedFile);
     }
   };
 
-  const validateFile = (file) => {
-    // Mock validation
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target.result;
-      // Simulate validation
-      setTimeout(() => {
-        const mockValidation = {
-          valid: true,
-          totalRows: 25,
-          validRows: 22,
-          invalidRows: 3,
-          errors: [
-            { row: 3, column: 'Rent Amount', error: 'Invalid number format' },
-            { row: 7, column: 'Property Type', error: 'Missing required field' },
-            { row: 15, column: 'Location', error: 'Invalid location format' }
-          ],
-          columns: [
-            'Property Name',
-            'Address',
-            'Property Type',
-            'Rent Amount',
-            'Rent Frequency',
-            'Client Name',
-            'Commission Rate',
-            'Status'
-          ]
+  const validateAndParseFile = async (file) => {
+    try {
+      const text = await file.text();
+      const rows = text.split('\n').map(row => row.split(','));
+      const headers = rows[0].map(h => h.trim().toLowerCase());
+      
+      // Check required columns
+      const requiredColumns = ['property name', 'address', 'property type', 'rent amount', 'client name'];
+      const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+      
+      if (missingColumns.length > 0) {
+        setValidationResults({
+          valid: false,
+          totalRows: rows.length - 1,
+          validRows: 0,
+          invalidRows: rows.length - 1,
+          errors: [{ row: 0, column: 'File Structure', error: `Missing columns: ${missingColumns.join(', ')}` }]
+        });
+        return;
+      }
+
+      // Parse data rows
+      const dataRows = [];
+      const errors = [];
+      
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length < 5) continue;
+        
+        const rowData = {
+          rowNumber: i + 1,
+          title: row[headers.indexOf('property name')]?.trim() || '',
+          address: row[headers.indexOf('address')]?.trim() || '',
+          property_type: row[headers.indexOf('property type')]?.trim() || 'residential',
+          price: parseFloat(row[headers.indexOf('rent amount')]?.trim()) || 0,
+          client_name: row[headers.indexOf('client name')]?.trim() || '',
+          description: row[headers.indexOf('description')]?.trim() || '',
+          category: row[headers.indexOf('category')]?.trim() || 'residential',
+          status: (row[headers.indexOf('status')]?.trim() || 'available').toLowerCase(),
+          bedrooms: parseInt(row[headers.indexOf('bedrooms')]?.trim()) || 0,
+          bathrooms: parseInt(row[headers.indexOf('bathrooms')]?.trim()) || 0,
+          area_sqm: parseFloat(row[headers.indexOf('area')]?.trim()) || 0,
+          rent_frequency: (row[headers.indexOf('rent frequency')]?.trim() || 'monthly').toLowerCase(),
+          commission_rate: parseFloat(row[headers.indexOf('commission rate')]?.trim()) || 0
         };
-        setValidationResults(mockValidation);
-      }, 1000);
-    };
-    reader.readAsText(file.slice(0, 1024)); // Read first 1KB for validation
+
+        // Validate row
+        const rowErrors = [];
+        if (!rowData.title) rowErrors.push('Property name is required');
+        if (!rowData.address) rowErrors.push('Address is required');
+        if (rowData.price <= 0) rowErrors.push('Rent amount must be greater than 0');
+        
+        if (rowErrors.length === 0) {
+          dataRows.push(rowData);
+        } else {
+          errors.push({
+            row: i + 1,
+            column: 'Multiple',
+            error: rowErrors.join(', ')
+          });
+        }
+      }
+
+      setParsedData(dataRows);
+      setValidationResults({
+        valid: errors.length === 0,
+        totalRows: rows.length - 1,
+        validRows: dataRows.length,
+        invalidRows: errors.length,
+        errors: errors,
+        columns: headers
+      });
+
+    } catch (error) {
+      console.error('Error parsing file:', error);
+      setValidationResults({
+        valid: false,
+        totalRows: 0,
+        validRows: 0,
+        invalidRows: 0,
+        errors: [{ row: 0, column: 'File', error: 'Error parsing file. Please check the format.' }]
+      });
+    }
   };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (!parsedData.length || !user) return;
 
     setUploadStatus('uploading');
     setUploadProgress(0);
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setUploadStatus('success');
-          onUpload(file);
-          return 100;
+    try {
+      const totalRows = parsedData.length;
+      let successfulUploads = 0;
+
+      for (let i = 0; i < parsedData.length; i++) {
+        const property = parsedData[i];
+        
+        // Upload property to Supabase
+        const { error } = await supabase
+          .from('listings')
+          .insert({
+            title: property.title,
+            description: property.description || `Property at ${property.address}`,
+            address: property.address,
+            category: property.property_type,
+            property_type: property.property_type,
+            price: property.price,
+            status: property.status,
+            bedrooms: property.bedrooms,
+            bathrooms: property.bathrooms,
+            area_sqm: property.area_sqm,
+            rent_frequency: property.rent_frequency,
+            commission_rate: property.commission_rate,
+            user_id: user.id,
+            estate_firm_id: user.id,
+            source: 'estate-firm-bulk-upload',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+
+        if (error) {
+          console.error('Error uploading property:', error);
+          // Continue with other properties
+        } else {
+          successfulUploads++;
         }
-        return prev + 10;
+
+        // Update progress
+        const progress = Math.round(((i + 1) / totalRows) * 100);
+        setUploadProgress(progress);
+      }
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'bulk_upload',
+        action: 'upload',
+        description: `Bulk uploaded ${successfulUploads} properties`,
+        details: { total: parsedData.length, successful: successfulUploads },
+        created_at: new Date().toISOString()
       });
-    }, 200);
+
+      setUploadStatus('success');
+      
+      if (onUpload) {
+        onUpload(successfulUploads);
+      }
+
+      alert(`Successfully uploaded ${successfulUploads} out of ${parsedData.length} properties`);
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadStatus('error');
+      alert('Error uploading properties. Please try again.');
+    }
   };
 
   const downloadTemplate = () => {
     const templateContent = [
-      ['Property Name', 'Address', 'Property Type', 'Rent Amount', 'Rent Frequency', 'Client Name', 'Commission Rate', 'Status', 'Notes'],
-      ['3-Bedroom Duplex, Lekki', 'Lekki Phase 1, Lagos', 'residential', '2500000', 'yearly', 'Mr. Johnson Ade', '10', 'occupied', 'Sample property'],
-      ['2-Bedroom Flat, Ikeja', 'Ikeja GRA, Lagos', 'residential', '1200000', 'yearly', 'Mrs. Bola Ahmed', '8', 'occupied', ''],
-      ['Office Space, VI', 'Adeola Odeku, VI, Lagos', 'commercial', '5000000', 'yearly', 'Tech Corp Ltd', '12', 'occupied', 'Corporate lease']
+      ['Property Name', 'Address', 'Property Type', 'Rent Amount', 'Rent Frequency', 'Client Name', 'Commission Rate', 'Status', 'Bedrooms', 'Bathrooms', 'Area (sqm)', 'Description'],
+      ['3-Bedroom Duplex, Lekki', 'Lekki Phase 1, Lagos', 'residential', '2500000', 'yearly', 'Mr. Johnson Ade', '0', 'available', '3', '3', '300', 'Luxury duplex with swimming pool'],
+      ['2-Bedroom Flat, Ikeja', 'Ikeja GRA, Lagos', 'residential', '1200000', 'yearly', 'Mrs. Bola Ahmed', '0', 'available', '2', '2', '150', 'Modern flat in secure estate'],
+      ['Office Space, VI', 'Adeola Odeku, VI, Lagos', 'commercial', '5000000', 'yearly', 'Tech Corp Ltd', '0', 'available', '0', '5', '500', 'Corporate office space']
     ].map(row => row.join(',')).join('\n');
 
     const blob = new Blob([templateContent], { type: 'text/csv' });
@@ -104,6 +212,7 @@ const BulkPropertyUpload = ({ onUpload }) => {
     setUploadProgress(0);
     setUploadStatus('idle');
     setValidationResults(null);
+    setParsedData([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -136,7 +245,7 @@ const BulkPropertyUpload = ({ onUpload }) => {
             <div className="validation-results">
               <div className="validation-header">
                 <h4>File Validation Results</h4>
-                <span className="validation-status">
+                <span className={`validation-status ${validationResults.valid ? 'valid' : 'invalid'}`}>
                   {validationResults.valid ? '✓ Valid' : '✗ Invalid'}
                 </span>
               </div>
@@ -170,7 +279,11 @@ const BulkPropertyUpload = ({ onUpload }) => {
               )}
 
               <div className="upload-actions">
-                <button className="btn btn-primary" onClick={handleUpload}>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleUpload}
+                  disabled={validationResults.validRows === 0}
+                >
                   Upload {validationResults.validRows} Properties
                 </button>
                 <button className="btn btn-outline" onClick={resetUpload}>
@@ -198,6 +311,15 @@ const BulkPropertyUpload = ({ onUpload }) => {
                 Upload Another File
               </button>
             </div>
+          ) : uploadStatus === 'error' ? (
+            <div className="upload-error">
+              <XCircle size={48} color="#ef4444" />
+              <h4>Upload Failed</h4>
+              <p>There was an error uploading your properties.</p>
+              <button className="btn btn-primary" onClick={resetUpload}>
+                Try Again
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -208,6 +330,7 @@ const BulkPropertyUpload = ({ onUpload }) => {
           </button>
           <div className="upload-help">
             <small>Required columns: Property Name, Address, Rent Amount, Client Name</small>
+            <small>Commission rate is 0% for estate firms</small>
           </div>
         </div>
       </div>

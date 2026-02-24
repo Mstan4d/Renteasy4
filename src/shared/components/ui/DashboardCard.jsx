@@ -34,9 +34,9 @@ const DashboardCard = ({
       style={{ cursor: onClick ? 'pointer' : 'default' }}
     >
       <div className="card-header">
-        <div className="card-icon" style={{ color: colorClasses.text.replace('text-', '') }}>
-          {icon}
-        </div>
+        <div className="card-icon" style={{ backgroundColor: '#f1f5f9', padding: '10px', borderRadius: '8px' }}>
+    {icon}
+  </div>
         <div className="card-title">
           <h3>{title}</h3>
           {subtitle && <span className="card-subtitle">{subtitle}</span>}

@@ -773,3 +773,49 @@
     align-items: center;
     gap: 6px;
   }
+
+  /* Reports Specific Buttons */
+.btn-back {
+  background: transparent;
+  color: #64748b;
+  border: none;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.btn-warning {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fef3c7;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.unread-row {
+  background-color: #f0f4ff !important;
+}
+
+.new-dot {
+  height: 8px;
+  width: 8px;
+  background-color: #4f46e5;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 8px;
+}
+
+.status-select {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-weight: 600;
+  margin-top: 8px;
+}

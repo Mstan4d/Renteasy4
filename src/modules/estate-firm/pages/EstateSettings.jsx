@@ -1,44 +1,39 @@
-// src/modules/estate-firm/pages/EstateSettings.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, Save, Bell, Shield, 
   Globe, User, CreditCard, Lock,
   Mail, Smartphone, Home, Building,
   Users, Key, Eye, EyeOff
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './EstateSettings.css';
 
 const EstateSettings = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState({
-    // General Settings
-    firmName: 'Prestige Properties Ltd',
-    businessEmail: 'contact@prestigeproperties.com',
-    businessPhone: '+2348012345678',
-    businessAddress: '123 Business Avenue, Lagos',
-    website: 'www.prestigeproperties.com',
-    
-    // Notification Settings
+    firmName: '',
+    businessEmail: '',
+    businessPhone: '',
+    businessAddress: '',
+    website: '',
     emailNotifications: true,
     smsNotifications: true,
     newListingAlerts: true,
     rentDueAlerts: true,
     maintenanceAlerts: true,
     marketingEmails: false,
-    
-    // Security Settings
     twoFactorAuth: false,
-    sessionTimeout: 30, // minutes
+    sessionTimeout: 30,
     loginAlerts: true,
     suspiciousActivity: true,
-    
-    // Payment Settings
     paymentMethod: 'bank-transfer',
-    bankName: 'First Bank',
-    accountNumber: '1234567890',
-    accountName: 'Prestige Properties Ltd',
-    
-    // Display Settings
+    bankName: '',
+    accountNumber: '',
+    accountName: '',
     theme: 'light',
     language: 'en',
     dateFormat: 'DD/MM/YYYY',
@@ -57,7 +52,44 @@ const EstateSettings = () => {
     confirm: false
   });
 
-  const handleInputChange = (section, field, value) => {
+  useEffect(() => {
+    if (user) {
+      loadSettings();
+    }
+  }, [user]);
+
+  const loadSettings = async () => {
+    try {
+      setLoading(true);
+      
+      // Load estate firm profile
+      const { data: profile, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (profile) {
+        setSettings(prev => ({
+          ...prev,
+          firmName: profile.firm_name || '',
+          businessEmail: profile.business_email || user.email || '',
+          businessPhone: profile.business_phone || '',
+          businessAddress: profile.address || '',
+          website: profile.website || '',
+          ...profile.settings
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
     setSettings(prev => ({
       ...prev,
       [field]: value
@@ -78,31 +110,123 @@ const EstateSettings = () => {
     }));
   };
 
-  const saveSettings = () => {
-    // Here you would typically save to backend
-    console.log('Saving settings:', settings);
-    alert('Settings saved successfully!');
+  const saveSettings = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+
+      const settingsData = {
+        notifications: {
+          email: settings.emailNotifications,
+          sms: settings.smsNotifications,
+          new_listings: settings.newListingAlerts,
+          rent_due: settings.rentDueAlerts,
+          maintenance: settings.maintenanceAlerts,
+          marketing: settings.marketingEmails
+        },
+        display: {
+          theme: settings.theme,
+          language: settings.language,
+          date_format: settings.dateFormat,
+          timezone: settings.timeZone
+        },
+        payment: {
+          method: settings.paymentMethod,
+          bank_name: settings.bankName,
+          account_number: settings.accountNumber,
+          account_name: settings.accountName
+        }
+      };
+
+      // Update estate firm profile
+      const { error } = await supabase
+        .from('estate_firm_profiles')
+        .upsert({
+          user_id: user.id,
+          firm_name: settings.firmName,
+          business_email: settings.businessEmail,
+          business_phone: settings.businessPhone,
+          address: settings.businessAddress,
+          website: settings.website,
+          settings: settingsData
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'settings',
+        action: 'update',
+        description: 'Updated estate firm settings',
+        created_at: new Date().toISOString()
+      });
+
+      alert('Settings saved successfully!');
+
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('Failed to save settings. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const changePassword = () => {
+  const changePassword = async () => {
+    if (!user) return;
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       alert('New passwords do not match!');
       return;
     }
-    
+
     if (passwordData.newPassword.length < 8) {
       alert('Password must be at least 8 characters long');
       return;
     }
-    
-    console.log('Changing password:', passwordData);
-    alert('Password changed successfully!');
-    setPasswordData({
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    });
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: passwordData.newPassword
+      });
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'security',
+        action: 'change_password',
+        description: 'Changed account password',
+        created_at: new Date().toISOString()
+      });
+
+      alert('Password changed successfully!');
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+
+    } catch (error) {
+      console.error('Error changing password:', error);
+      alert('Failed to change password. Please try again.');
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="estate-settings">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   const renderGeneralSettings = () => (
     <div className="settings-section">

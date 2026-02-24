@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   Bell, MessageSquare, Clock, CheckCircle,
   XCircle, Filter, Search, MapPin, DollarSign,
@@ -24,10 +25,10 @@ const ProviderLeads = () => {
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all, new, contacted, quoted, booked, lost
+  const [statusFilter, setStatusFilter] = useState('all');
   const [serviceFilter, setServiceFilter] = useState('all');
-  const [urgencyFilter, setUrgencyFilter] = useState('all'); // all, high, medium, low
-  const [dateFilter, setDateFilter] = useState('all'); // all, today, week, month
+  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
   
   // Lead stats
   const [leadStats, setLeadStats] = useState({
@@ -41,202 +42,77 @@ const ProviderLeads = () => {
     avgResponseTime: '2h'
   });
   
-  // Available services for filter
+  // Available services for filter (will be populated from leads)
   const [availableServices, setAvailableServices] = useState([]);
-  
-  // Mock lead data
-  const mockLeads = [
-    {
-      id: 'lead_001',
-      date: '2024-02-15T10:30:00',
-      service: 'Interior Design',
-      clientName: 'Adeola Williams',
-      clientEmail: 'adeola@email.com',
-      clientPhone: '08012345678',
-      location: 'Lekki Phase 1, Lagos',
-      budget: '₦75,000 - ₦100,000',
-      description: 'Need interior design for 3-bedroom apartment. Modern style preferred.',
-      urgency: 'high',
-      status: 'new',
-      lastContact: null,
-      messages: 0,
-      source: 'Marketplace Search',
-      preferredDate: '2024-03-01',
-      duration: '2-3 weeks'
-    },
-    {
-      id: 'lead_002',
-      date: '2024-02-14T14:20:00',
-      service: 'Electrical Installation',
-      clientName: 'Michael Johnson',
-      clientEmail: 'michael@email.com',
-      clientPhone: '08023456789',
-      location: 'Victoria Island, Lagos',
-      budget: '₦40,000 - ₦60,000',
-      description: 'Complete electrical wiring for new office space.',
-      urgency: 'medium',
-      status: 'contacted',
-      lastContact: '2024-02-14T15:00:00',
-      messages: 2,
-      source: 'Direct Referral',
-      preferredDate: '2024-02-20',
-      duration: '1 week'
-    },
-    {
-      id: 'lead_003',
-      date: '2024-02-13T09:15:00',
-      service: 'Plumbing Repair',
-      clientName: 'Sarah Ahmed',
-      clientEmail: 'sarah@email.com',
-      clientPhone: '08034567890',
-      location: 'Ikeja, Lagos',
-      budget: '₦20,000 - ₦30,000',
-      description: 'Kitchen sink leakage needs immediate repair.',
-      urgency: 'high',
-      status: 'quoted',
-      lastContact: '2024-02-13T11:30:00',
-      messages: 5,
-      source: 'Marketplace Search',
-      preferredDate: 'ASAP',
-      duration: '2-3 hours'
-    },
-    {
-      id: 'lead_004',
-      date: '2024-02-12T16:45:00',
-      service: 'Painting Service',
-      clientName: 'David Okafor',
-      clientEmail: 'david@email.com',
-      clientPhone: '08045678901',
-      location: 'Ajah, Lagos',
-      budget: '₦60,000 - ₦80,000',
-      description: 'Exterior painting for duplex. Need color consultation.',
-      urgency: 'medium',
-      status: 'booked',
-      lastContact: '2024-02-13T10:00:00',
-      messages: 8,
-      source: 'Repeat Client',
-      preferredDate: '2024-02-25',
-      duration: '1 week'
-    },
-    {
-      id: 'lead_005',
-      date: '2024-02-10T11:20:00',
-      service: 'Cleaning Service',
-      clientName: 'Grace Oluwaseun',
-      clientEmail: 'grace@email.com',
-      clientPhone: '08056789012',
-      location: 'Surulere, Lagos',
-      budget: '₦15,000 - ₦25,000',
-      description: 'Deep cleaning for 2-bedroom apartment after renovation.',
-      urgency: 'low',
-      status: 'lost',
-      lastContact: '2024-02-11T09:00:00',
-      messages: 3,
-      source: 'Marketplace Search',
-      preferredDate: '2024-02-18',
-      duration: '1 day'
-    },
-    {
-      id: 'lead_006',
-      date: '2024-02-15T08:00:00',
-      service: 'Interior Design',
-      clientName: 'James Adebayo',
-      clientEmail: 'james@email.com',
-      clientPhone: '08067890123',
-      location: 'Ikoyi, Lagos',
-      budget: '₦150,000+',
-      description: 'Luxury interior design for penthouse. Looking for premium service.',
-      urgency: 'high',
-      status: 'new',
-      lastContact: null,
-      messages: 0,
-      source: 'Premium Lead',
-      preferredDate: '2024-03-15',
-      duration: '1 month'
-    }
-  ];
-  
-  // Available services
-  const servicesList = [
-    'Interior Design',
-    'Electrical Installation',
-    'Plumbing Repair',
-    'Painting Service',
-    'Cleaning Service',
-    'Carpentry',
-    'Landscaping',
-    'Moving Services'
-  ];
-  
+
   useEffect(() => {
-    loadLeadsData();
-  }, []);
-  
+    if (user?.id) {
+      loadLeadsData();
+    }
+  }, [user]);
+
   useEffect(() => {
     filterLeads();
     calculateLeadStats();
   }, [leads, searchTerm, statusFilter, serviceFilter, urgencyFilter, dateFilter]);
-  
-  const loadLeadsData = () => {
+
+  const loadLeadsData = async () => {
     try {
       setLoading(true);
       
-      // Load provider data
-      const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-      const userProvider = providers.find(p => p.userId === user?.id || p.email === user?.email);
+      // Fetch leads for this provider from Supabase
+      const { data: leadsData, error } = await supabase
+        .from('provider_leads')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform to match component's expected fields (if needed)
+      const formattedLeads = leadsData.map(lead => ({
+        ...lead,
+        // Ensure date field exists (created_at)
+        date: lead.created_at,
+        // Map any field name differences (e.g., service -> service)
+      }));
+
+      setLeads(formattedLeads || []);
+
+      // Extract unique services for filter
+      const services = [...new Set(formattedLeads.map(l => l.service))];
+      setAvailableServices(services);
       
-      if (userProvider) {
-        setProvider(userProvider);
-        
-        // For now, use mock leads
-        // In production, you would fetch from localStorage or API
-        setLeads(mockLeads);
-        setFilteredLeads(mockLeads);
-        setAvailableServices(servicesList);
-        
-        // Calculate initial stats
-        calculateLeadStats(mockLeads);
-      }
     } catch (error) {
-      console.error('Error loading leads data:', error);
+      console.error('Error loading leads:', error);
     } finally {
       setLoading(false);
     }
   };
-  
+
   const filterLeads = () => {
     let filtered = leads.filter(lead => {
       // Filter by status
-      if (statusFilter !== 'all' && lead.status !== statusFilter) {
-        return false;
-      }
+      if (statusFilter !== 'all' && lead.status !== statusFilter) return false;
       
       // Filter by service
-      if (serviceFilter !== 'all' && lead.service !== serviceFilter) {
-        return false;
-      }
+      if (serviceFilter !== 'all' && lead.service !== serviceFilter) return false;
       
       // Filter by urgency
-      if (urgencyFilter !== 'all' && lead.urgency !== urgencyFilter) {
-        return false;
-      }
+      if (urgencyFilter !== 'all' && lead.urgency !== urgencyFilter) return false;
       
       // Filter by date
       if (dateFilter !== 'all') {
-        const leadDate = new Date(lead.date);
+        const leadDate = new Date(lead.created_at);
         const now = new Date();
         const diffTime = Math.abs(now - leadDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
         switch (dateFilter) {
-          case 'today':
-            return diffDays === 0;
-          case 'week':
-            return diffDays <= 7;
-          case 'month':
-            return diffDays <= 30;
-          default:
-            return true;
+          case 'today': return diffDays === 0;
+          case 'week': return diffDays <= 7;
+          case 'month': return diffDays <= 30;
+          default: return true;
         }
       }
       
@@ -244,31 +120,28 @@ const ProviderLeads = () => {
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         return (
-          lead.clientName.toLowerCase().includes(term) ||
-          lead.service.toLowerCase().includes(term) ||
-          lead.location.toLowerCase().includes(term) ||
-          lead.description.toLowerCase().includes(term)
+          lead.client_name?.toLowerCase().includes(term) ||
+          lead.service?.toLowerCase().includes(term) ||
+          lead.location?.toLowerCase().includes(term) ||
+          lead.description?.toLowerCase().includes(term)
         );
       }
       
       return true;
     });
     
-    // Sort by urgency and date (newest first)
+    // Sort by urgency and date
     filtered.sort((a, b) => {
-      // First by urgency
       const urgencyOrder = { high: 3, medium: 2, low: 1 };
       if (urgencyOrder[b.urgency] !== urgencyOrder[a.urgency]) {
         return urgencyOrder[b.urgency] - urgencyOrder[a.urgency];
       }
-      
-      // Then by date (newest first)
-      return new Date(b.date) - new Date(a.date);
+      return new Date(b.created_at) - new Date(a.created_at);
     });
     
     setFilteredLeads(filtered);
   };
-  
+
   const calculateLeadStats = (leadsList = filteredLeads) => {
     const stats = {
       total: leadsList.length,
@@ -278,10 +151,9 @@ const ProviderLeads = () => {
       booked: leadsList.filter(lead => lead.status === 'booked').length,
       lost: leadsList.filter(lead => lead.status === 'lost').length,
       conversionRate: 0,
-      avgResponseTime: '2h'
+      avgResponseTime: '2h' // You can calculate this from data if available
     };
     
-    // Calculate conversion rate
     const convertedLeads = stats.booked;
     const totalContacted = stats.contacted + stats.quoted + stats.booked + stats.lost;
     stats.conversionRate = totalContacted > 0 
@@ -290,71 +162,81 @@ const ProviderLeads = () => {
     
     setLeadStats(stats);
   };
-  
-  const updateLeadStatus = (leadId, newStatus) => {
-    const updatedLeads = leads.map(lead => {
-      if (lead.id === leadId) {
-        const updatedLead = {
-          ...lead,
+
+  const updateLeadStatus = async (leadId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('provider_leads')
+        .update({ 
           status: newStatus,
-          lastContact: newStatus !== 'new' ? new Date().toISOString() : lead.lastContact
-        };
-        
-        // If selecting a lead, update the selected one too
-        if (selectedLead && selectedLead.id === leadId) {
-          setSelectedLead(updatedLead);
+          last_contact: newStatus !== 'new' ? new Date().toISOString() : null
+        })
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      // Update local state
+      const updatedLeads = leads.map(lead => {
+        if (lead.id === leadId) {
+          const updated = {
+            ...lead,
+            status: newStatus,
+            last_contact: newStatus !== 'new' ? new Date().toISOString() : lead.last_contact
+          };
+          if (selectedLead && selectedLead.id === leadId) setSelectedLead(updated);
+          return updated;
         }
-        
-        return updatedLead;
+        return lead;
+      });
+      
+      setLeads(updatedLeads);
+
+      const statusMessages = {
+        contacted: 'Lead marked as contacted',
+        quoted: 'Quote sent to client',
+        booked: '🎉 Congratulations! Lead converted to booking!',
+        lost: 'Lead marked as lost'
+      };
+      
+      if (statusMessages[newStatus]) {
+        alert(statusMessages[newStatus]);
       }
-      return lead;
-    });
-    
-    setLeads(updatedLeads);
-    
-    // Show success message
-    const statusMessages = {
-      contacted: 'Lead marked as contacted',
-      quoted: 'Quote sent to client',
-      booked: '🎉 Congratulations! Lead converted to booking!',
-      lost: 'Lead marked as lost'
-    };
-    
-    if (statusMessages[newStatus]) {
-      alert(statusMessages[newStatus]);
+    } catch (error) {
+      console.error('Error updating lead status:', error);
+      alert('Failed to update status. Please try again.');
     }
   };
-  
+
   const openLeadDetails = (lead) => {
     setSelectedLead(lead);
     setShowLeadDetails(true);
   };
-  
+
   const closeLeadDetails = () => {
     setShowLeadDetails(false);
     setSelectedLead(null);
   };
-  
+
   const startChat = (lead) => {
     // Navigate to chat with this lead
     navigate(`/messages/chat/new`, { 
       state: { 
-        recipientId: `client_${lead.id}`,
-        recipientName: lead.clientName,
+        recipientId: `client_${lead.id}`, // Or use a real user ID if available
+        recipientName: lead.client_name,
         leadId: lead.id,
         service: lead.service
       }
     });
   };
-  
+
   const sendQuote = (lead) => {
-    const quoteAmount = prompt(`Enter quote amount for ${lead.service}:`, lead.budget.split(' - ')[0]);
+    const quoteAmount = prompt(`Enter quote amount for ${lead.service}:`, lead.budget?.split(' - ')[0] || '');
     if (quoteAmount) {
       updateLeadStatus(lead.id, 'quoted');
-      alert(`Quote of ₦${quoteAmount} sent to ${lead.clientName}`);
+      alert(`Quote of ₦${quoteAmount} sent to ${lead.client_name}`);
     }
   };
-  
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'new': return '#3b82f6';
@@ -365,7 +247,7 @@ const ProviderLeads = () => {
       default: return '#6b7280';
     }
   };
-  
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'new': return <Bell size={14} />;
@@ -376,7 +258,7 @@ const ProviderLeads = () => {
       default: return <Bell size={14} />;
     }
   };
-  
+
   const getUrgencyBadge = (urgency) => {
     const config = {
       high: { color: '#ef4444', label: 'High', icon: '🚨' },
@@ -392,7 +274,7 @@ const ProviderLeads = () => {
       </span>
     );
   };
-  
+
   const getTimeSince = (dateString) => {
     if (!dateString) return 'Just now';
     
@@ -411,15 +293,13 @@ const ProviderLeads = () => {
       return `${diffDays}d ago`;
     }
   };
-  
-  const refreshLeads = () => {
+
+  const refreshLeads = async () => {
     setLoading(true);
-    setTimeout(() => {
-      loadLeadsData();
-      alert('Leads refreshed!');
-    }, 1000);
+    await loadLeadsData();
+    alert('Leads refreshed!');
   };
-  
+
   const clearFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
@@ -427,7 +307,7 @@ const ProviderLeads = () => {
     setUrgencyFilter('all');
     setDateFilter('all');
   };
-  
+
   if (loading) {
     return (
       <div className="leads-loading">
@@ -436,8 +316,7 @@ const ProviderLeads = () => {
       </div>
     );
   }
-  
-  
+
   return (
     <div className="provider-leads">
       <div className="leads-container">
@@ -543,7 +422,6 @@ const ProviderLeads = () => {
             <button 
               className="btn btn-small btn-primary"
               onClick={() => {
-                // Filter to show only new leads
                 setStatusFilter('new');
                 setUrgencyFilter('high');
               }}
@@ -711,7 +589,7 @@ const ProviderLeads = () => {
                     <div className="lead-meta">
                       <span className="client-info">
                         <User size={14} />
-                        {lead.clientName}
+                        {lead.client_name}
                       </span>
                       <span className="location-info">
                         <MapPin size={14} />
@@ -719,7 +597,7 @@ const ProviderLeads = () => {
                       </span>
                       <span className="date-info">
                         <Calendar size={14} />
-                        {getTimeSince(lead.date)}
+                        {getTimeSince(lead.created_at)}
                       </span>
                     </div>
                   </div>
@@ -749,7 +627,7 @@ const ProviderLeads = () => {
                     </div>
                     <div className="detail-item">
                       <Clock size={14} />
-                      <span>Preferred: {lead.preferredDate}</span>
+                      <span>Preferred: {lead.preferred_date}</span>
                     </div>
                     <div className="detail-item">
                       <span className="source-badge">{lead.source}</span>
@@ -759,9 +637,9 @@ const ProviderLeads = () => {
                 
                 <div className="lead-footer">
                   <div className="footer-left">
-                    {lead.lastContact && (
+                    {lead.last_contact && (
                       <span className="last-contact">
-                        Last contact: {getTimeSince(lead.lastContact)}
+                        Last contact: {getTimeSince(lead.last_contact)}
                       </span>
                     )}
                     {lead.messages > 0 && (
@@ -928,7 +806,7 @@ const ProviderLeads = () => {
                 <div className="lead-meta-details">
                   <div className="meta-item">
                     <strong>Received:</strong>
-                    <span>{new Date(selectedLead.date).toLocaleString()}</span>
+                    <span>{new Date(selectedLead.created_at).toLocaleString()}</span>
                   </div>
                   <div className="meta-item">
                     <strong>Source:</strong>
@@ -950,17 +828,17 @@ const ProviderLeads = () => {
                   <div className="detail-row">
                     <div className="detail-column">
                       <strong>Name:</strong>
-                      <span>{selectedLead.clientName}</span>
+                      <span>{selectedLead.client_name}</span>
                     </div>
                     <div className="detail-column">
                       <strong>Phone:</strong>
-                      <span>{selectedLead.clientPhone}</span>
+                      <span>{selectedLead.client_phone}</span>
                     </div>
                   </div>
                   <div className="detail-row">
                     <div className="detail-column">
                       <strong>Email:</strong>
-                      <span>{selectedLead.clientEmail}</span>
+                      <span>{selectedLead.client_email}</span>
                     </div>
                     <div className="detail-column">
                       <strong>Location:</strong>
@@ -982,7 +860,7 @@ const ProviderLeads = () => {
                   </div>
                   <div className="detail-item-full">
                     <strong>Preferred Date:</strong>
-                    <span>{selectedLead.preferredDate}</span>
+                    <span>{selectedLead.preferred_date}</span>
                   </div>
                   <div className="detail-item-full">
                     <strong>Project Description:</strong>
@@ -996,11 +874,11 @@ const ProviderLeads = () => {
                   <MessageSquare size={18} />
                   Communication History
                 </h4>
-                {selectedLead.lastContact ? (
+                {selectedLead.last_contact ? (
                   <div className="history-item">
                     <div className="history-content">
                       <strong>Last Contact:</strong>
-                      <span>{new Date(selectedLead.lastContact).toLocaleString()}</span>
+                      <span>{new Date(selectedLead.last_contact).toLocaleString()}</span>
                     </div>
                     <div className="history-content">
                       <strong>Total Messages:</strong>
@@ -1029,7 +907,7 @@ const ProviderLeads = () => {
                   <button 
                     className="btn btn-outline"
                     onClick={() => {
-                      navigator.clipboard.writeText(selectedLead.clientPhone);
+                      navigator.clipboard.writeText(selectedLead.client_phone);
                       alert('Phone number copied to clipboard!');
                     }}
                   >
@@ -1040,7 +918,7 @@ const ProviderLeads = () => {
                   <button 
                     className="btn btn-outline"
                     onClick={() => {
-                      navigator.clipboard.writeText(selectedLead.clientEmail);
+                      navigator.clipboard.writeText(selectedLead.client_email);
                       alert('Email copied to clipboard!');
                     }}
                   >

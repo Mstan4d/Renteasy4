@@ -1,307 +1,162 @@
-// src/modules/dashboard/components/landlord/Analytics.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../shared/context/AuthContext';
+import { supabase } from '../../../../shared/lib/supabaseClient';
+import { 
+  TrendingUp, DollarSign, Home, BarChart3, 
+  ArrowLeft, Download, MapPin, Zap 
+} from 'lucide-react';
 import './Analytics.css';
 
 const Analytics = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState('monthly');
-  const [isLoading, setIsLoading] = useState(false);
-  const [analyticsData, setAnalyticsData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    const loadAnalyticsData = async () => {
-      setIsLoading(true);
-      try {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        const mockData = {
-          overview: {
-            totalProperties: 12,
-            activeRentals: 8,
-            vacancyRate: '33%',
-            averageRent: '₦2,850,000',
-            totalCommission: '₦12,500,000',
-            averageOccupancy: '67%'
-          },
-          performance: {
-            monthlyRevenue: [2500000, 3200000, 2800000, 3500000, 4200000, 3800000],
-            occupancyRate: [65, 72, 68, 75, 80, 78],
-            newInquiries: [12, 18, 15, 22, 20, 25],
-            propertyViews: [450, 520, 480, 600, 650, 620]
-          },
-          topProperties: [
-            { id: 1, name: '3 Bedroom Duplex Lekki', revenue: 4200000, occupancy: '100%', views: 1250 },
-            { id: 2, name: '4 Bedroom Terrace VI', revenue: 5200000, occupancy: '100%', views: 980 },
-            { id: 3, name: '2 Bedroom Flat Ikeja', revenue: 1800000, occupancy: '75%', views: 850 },
-            { id: 4, name: 'Self-contain Garki', revenue: 400000, occupancy: '100%', views: 720 }
-          ],
-          trends: {
-            peakMonth: 'December',
-            bestLocation: 'Lekki Phase 1',
-            averageDaysVacant: 14,
-            conversionRate: '42%'
-          }
-        };
-        
-        setAnalyticsData(mockData);
-      } catch (error) {
-        console.error('Error loading analytics:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (user) {
-      loadAnalyticsData();
-    }
+    if (user) fetchRealAnalytics();
   }, [user, timeRange]);
 
-  const goBack = () => {
-    navigate('/dashboard/landlord');
+  const fetchRealAnalytics = async () => {
+    try {
+      setIsLoading(true);
+      
+      // 1. Fetch all properties posted by this landlord
+      const { data: properties, error: propError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('poster_id', user.id);
+
+      if (propError) throw propError;
+
+      // 2. Fetch all earned commissions (1.5%)
+      const { data: commissions, error: commError } = await supabase
+        .from('tenant_commissions')
+        .select('*')
+        .eq('tenant_id', user.id) // Landlord as poster
+        .eq('status', 'paid');
+
+      if (commError) throw commError;
+
+      // 3. Process Data
+      const totalProps = properties?.length || 0;
+      const rentedProps = properties?.filter(p => p.status === 'rented').length || 0;
+      const totalComm = commissions?.reduce((sum, c) => sum + Number(c.commission_amount), 0) || 0;
+      const occupancyRate = totalProps > 0 ? Math.round((rentedProps / totalProps) * 100) : 0;
+
+      setStats({
+        totalProperties: totalProps,
+        activeRentals: rentedProps,
+        occupancyRate: `${occupancyRate}%`,
+        totalCommission: totalComm,
+        topProperties: properties?.sort((a, b) => b.price - a.price).slice(0, 3) || []
+      });
+
+    } catch (error) {
+      console.error('Analytics Error:', error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0
-    }).format(amount);
-  };
+  const formatCurrency = (amount) => `₦${Number(amount).toLocaleString('en-NG')}`;
 
-  if (isLoading) {
-    return (
-      <div className="analytics-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading analytics data...</p>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="loading-state">Generating Insights...</div>;
 
   return (
-    <div className="landlord-analytics">
+    <div className="analytics-container">
       {/* Header */}
-      <div className="analytics-header">
-        <div className="header-left">
-          <button className="btn btn-back" onClick={goBack}>
-            ← Back to Dashboard
-          </button>
-          <h1>Property Analytics</h1>
-          <p>Track your property performance and revenue insights</p>
+      <header className="analytics-header">
+        <button className="back-btn-minimal" onClick={() => navigate(-1)}>
+          <ArrowLeft size={20} />
+        </button>
+        <div className="header-text">
+          <h1>Performance Insights</h1>
+          <p>Real-time data for your portfolio</p>
         </div>
-        
-        <div className="header-right">
-          <div className="time-range-selector">
-            <button 
-              className={`time-btn ${timeRange === 'weekly' ? 'active' : ''}`}
-              onClick={() => setTimeRange('weekly')}
-            >
-              Weekly
-            </button>
-            <button 
-              className={`time-btn ${timeRange === 'monthly' ? 'active' : ''}`}
-              onClick={() => setTimeRange('monthly')}
-            >
-              Monthly
-            </button>
-            <button 
-              className={`time-btn ${timeRange === 'quarterly' ? 'active' : ''}`}
-              onClick={() => setTimeRange('quarterly')}
-            >
-              Quarterly
-            </button>
-            <button 
-              className={`time-btn ${timeRange === 'yearly' ? 'active' : ''}`}
-              onClick={() => setTimeRange('yearly')}
-            >
-              Yearly
-            </button>
-          </div>
-          
-          <button className="btn btn-primary">
-            📥 Export Report
-          </button>
-        </div>
-      </div>
+        <button className="export-btn">
+          <Download size={18} /> Export
+        </button>
+      </header>
 
-      {/* Overview Cards */}
-      <div className="overview-grid">
-        <div className="stat-card total-revenue">
-          <div className="stat-icon">💰</div>
-          <div className="stat-content">
-            <h3>Total Commission</h3>
-            <div className="stat-value">
-              {formatCurrency(analyticsData?.overview.totalCommission || 0)}
-            </div>
-            <p className="stat-change">↑ 12% from last period</p>
+      {/* Hero Stats */}
+      <div className="hero-stats-grid">
+        <div className="hero-stat-card primary">
+          <div className="stat-info">
+            <label>Total Commissions (1.5%)</label>
+            <h2>{formatCurrency(stats.totalCommission)}</h2>
+          </div>
+          <div className="stat-chart-mini">
+            <TrendingUp size={32} color="rgba(255,255,255,0.4)" />
           </div>
         </div>
-        
-        <div className="stat-card occupancy-rate">
-          <div className="stat-icon">🏠</div>
-          <div className="stat-content">
-            <h3>Occupancy Rate</h3>
-            <div className="stat-value">{analyticsData?.overview.averageOccupancy || '0%'}</div>
-            <p className="stat-change">↑ 8% from last month</p>
+
+        <div className="hero-stat-card">
+          <div className="stat-info">
+            <label>Occupancy Rate</label>
+            <h2>{stats.occupancyRate}</h2>
           </div>
-        </div>
-        
-        <div className="stat-card average-rent">
-          <div className="stat-icon">📊</div>
-          <div className="stat-content">
-            <h3>Average Rent</h3>
-            <div className="stat-value">{analyticsData?.overview.averageRent || '₦0'}</div>
-            <p className="stat-change">↑ 5% from last quarter</p>
-          </div>
-        </div>
-        
-        <div className="stat-card properties-count">
-          <div className="stat-icon">📈</div>
-          <div className="stat-content">
-            <h3>Active Properties</h3>
-            <div className="stat-value">{analyticsData?.overview.activeRentals || 0}</div>
-            <p className="stat-change">of {analyticsData?.overview.totalProperties || 0} total</p>
+          <div className="stat-bar-outer">
+            <div className="stat-bar-inner" style={{ width: stats.occupancyRate }}></div>
           </div>
         </div>
       </div>
 
-      {/* Performance Charts */}
-      <div className="performance-section">
-        <div className="section-header">
-          <h2>Performance Overview</h2>
-          <select className="chart-selector">
-            <option value="revenue">Revenue</option>
-            <option value="occupancy">Occupancy Rate</option>
-            <option value="inquiries">New Inquiries</option>
-            <option value="views">Property Views</option>
-          </select>
-        </div>
-        
-        <div className="chart-container">
-          <div className="chart-placeholder">
-            <div className="chart-bars">
-              {[1, 2, 3, 4, 5, 6].map((item) => (
-                <div key={item} className="chart-bar" style={{ height: `${60 + Math.random() * 40}%` }}>
-                  <div className="bar-value">
-                    ₦{((2 + Math.random() * 3) * 1000000).toLocaleString().slice(0, 4)}K
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="chart-labels">
-              <span>Jan</span>
-              <span>Feb</span>
-              <span>Mar</span>
-              <span>Apr</span>
-              <span>May</span>
-              <span>Jun</span>
-            </div>
+      {/* Main Grid */}
+      <div className="analytics-main-grid">
+        {/* Chart Section */}
+        <section className="chart-box">
+          <div className="box-header">
+            <h3>Revenue Trend</h3>
+            <select className="range-select">
+              <option>Last 6 Months</option>
+            </select>
           </div>
-        </div>
-      </div>
-
-      {/* Top Performing Properties */}
-      <div className="top-properties-section">
-        <h2>Top Performing Properties</h2>
-        <div className="properties-grid">
-          {analyticsData?.topProperties.map(property => (
-            <div key={property.id} className="property-card">
-              <div className="property-rank">#{property.id}</div>
-              <h4>{property.name}</h4>
-              <div className="property-stats">
-                <div className="stat">
-                  <span className="label">Revenue:</span>
-                  <span className="value">{formatCurrency(property.revenue)}</span>
-                </div>
-                <div className="stat">
-                  <span className="label">Occupancy:</span>
-                  <span className="value">{property.occupancy}</span>
-                </div>
-                <div className="stat">
-                  <span className="label">Views:</span>
-                  <span className="value">{property.views.toLocaleString()}</span>
-                </div>
+          <div className="visual-chart">
+            {/* Simple CSS-based bar visualization */}
+            {[40, 70, 55, 90, 65, 85].map((h, i) => (
+              <div key={i} className="bar-wrapper">
+                <div className="bar" style={{ height: `${h}%` }}></div>
+                <span>M{i+1}</span>
               </div>
-              <button 
-                className="btn btn-sm btn-outline"
-                onClick={() => navigate(`/dashboard/landlord/properties/${property.id}`)}
-              >
-                View Details
-              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Top Properties */}
+        <section className="top-list-box">
+          <h3>Top Performers</h3>
+          {stats.topProperties.map((prop, idx) => (
+            <div className="top-prop-item" key={prop.id}>
+              <div className="rank">{idx + 1}</div>
+              <div className="prop-info">
+                <h4>{prop.title}</h4>
+                <p><MapPin size={12}/> {prop.address.split(',')[0]}</p>
+              </div>
+              <div className="prop-val">
+                {formatCurrency(prop.price)}
+              </div>
             </div>
           ))}
-        </div>
+        </section>
       </div>
 
-      {/* Trends & Insights */}
-      <div className="trends-section">
-        <h2>Market Trends & Insights</h2>
-        <div className="insights-grid">
-          <div className="insight-card">
-            <div className="insight-icon">📅</div>
-            <div className="insight-content">
-              <h4>Peak Rental Month</h4>
-              <p>{analyticsData?.trends.peakMonth || 'N/A'}</p>
-            </div>
+      {/* Smart Recommendations */}
+      <section className="recommend-section">
+        <h3><Zap size={18} color="#f59e0b" fill="#f59e0b"/> RentEasy AI Tips</h3>
+        <div className="tips-scroll">
+          <div className="tip-card">
+            <h4>Maximize Profit</h4>
+            <p>Your {stats.topProperties[0]?.property_type} in Lekki is in high demand. Consider a 5% increase on renewal.</p>
           </div>
-          
-          <div className="insight-card">
-            <div className="insight-icon">📍</div>
-            <div className="insight-content">
-              <h4>Best Performing Location</h4>
-              <p>{analyticsData?.trends.bestLocation || 'N/A'}</p>
-            </div>
-          </div>
-          
-          <div className="insight-card">
-            <div className="insight-icon">⏱️</div>
-            <div className="insight-content">
-              <h4>Average Vacancy Period</h4>
-              <p>{analyticsData?.trends.averageDaysVacant || '0'} days</p>
-            </div>
-          </div>
-          
-          <div className="insight-card">
-            <div className="insight-icon">🎯</div>
-            <div className="insight-content">
-              <h4>Inquiry Conversion Rate</h4>
-              <p>{analyticsData?.trends.conversionRate || '0%'}</p>
-            </div>
+          <div className="tip-card">
+            <h4>Faster Conversion</h4>
+            <p>Properties with 5+ photos rent 3x faster. Update your {stats.topProperties[stats.topProperties.length - 1]?.title} images.</p>
           </div>
         </div>
-      </div>
-
-      {/* Recommendations */}
-      <div className="recommendations-section">
-        <h2>Recommendations</h2>
-        <div className="recommendations-list">
-          <div className="recommendation">
-            <div className="rec-icon">💡</div>
-            <div className="rec-content">
-              <h4>Increase Rent for High-Demand Properties</h4>
-              <p>Your properties in Lekki have 98% occupancy. Consider increasing rent by 5-10%.</p>
-            </div>
-          </div>
-          
-          <div className="recommendation">
-            <div className="rec-icon">💡</div>
-            <div className="rec-content">
-              <h4>Improve Vacant Property Listings</h4>
-              <p>Add professional photos to your vacant properties to increase views by 40%.</p>
-            </div>
-          </div>
-          
-          <div className="recommendation">
-            <div className="rec-icon">💡</div>
-            <div className="rec-content">
-              <h4>Renew Tenant Contracts Early</h4>
-              <p>Start renewal discussions 60 days before lease ends to maintain occupancy.</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
   );
 };

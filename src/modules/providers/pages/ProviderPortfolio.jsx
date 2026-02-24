@@ -1,100 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
 import { 
   FaPlus, FaEdit, FaTrash, FaStar, FaEye, FaDownload, 
   FaFilter, FaSearch, FaImage, FaVideo, FaFilePdf, FaShare
 } from 'react-icons/fa';
+import './ProviderPortfolio.css'; // external CSS
 
 const ProviderPortfolio = () => {
-  const [portfolioItems, setPortfolioItems] = useState([
-    {
-      id: 1,
-      title: 'Modern Apartment Painting',
-      description: 'Complete interior painting for 3-bedroom apartment in Lekki',
-      category: 'Painting',
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400',
-      date: '2024-01-10',
-      rating: 4.8,
-      views: 245,
-      tags: ['interior', 'modern', 'apartment'],
-      featured: true
-    },
-    {
-      id: 2,
-      title: 'Office Deep Cleaning',
-      description: 'Commercial cleaning for 10-story office building',
-      category: 'Cleaning',
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w-400',
-      date: '2024-01-05',
-      rating: 4.9,
-      views: 189,
-      tags: ['commercial', 'office', 'deep-clean'],
-      featured: true
-    },
-    {
-      id: 3,
-      title: 'Kitchen Renovation',
-      description: 'Complete kitchen remodeling with modern fixtures',
-      category: 'Renovation',
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1556911220-bff31c812dba?w=400',
-      date: '2023-12-20',
-      rating: 4.7,
-      views: 312,
-      tags: ['kitchen', 'renovation', 'modern'],
-      featured: false
-    },
-    {
-      id: 4,
-      title: 'Garden Landscape Design',
-      description: 'Landscaping and garden setup for residential property',
-      category: 'Landscaping',
-      type: 'video',
-      url: 'https://example.com/video1.mp4',
-      thumbnail: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=400',
-      date: '2023-12-15',
-      rating: 4.6,
-      views: 156,
-      tags: ['garden', 'landscaping', 'outdoor'],
-      featured: false
-    },
-    {
-      id: 5,
-      title: 'Plumbing System Upgrade',
-      description: 'Complete plumbing system replacement',
-      category: 'Plumbing',
-      type: 'document',
-      url: 'https://example.com/report1.pdf',
-      thumbnail: 'https://images.unsplash.com/photo-1600566752355-35792bedcfea?w=400',
-      date: '2023-12-10',
-      rating: 4.5,
-      views: 98,
-      tags: ['plumbing', 'system', 'upgrade'],
-      featured: false
-    },
-    {
-      id: 6,
-      title: 'Electrical Wiring Project',
-      description: 'New electrical wiring for residential building',
-      category: 'Electrical',
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=400',
-      date: '2023-11-28',
-      rating: 4.8,
-      views: 201,
-      tags: ['electrical', 'wiring', 'safety'],
-      featured: true
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [portfolioItems, setPortfolioItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [categories] = useState(['All', 'Painting', 'Cleaning', 'Renovation', 'Plumbing', 'Electrical', 'Landscaping']);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [showFeaturedOnly, setShowFeaturedOnly] = useState(false);
-
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [newItem, setNewItem] = useState({
     title: '',
     description: '',
@@ -105,75 +30,152 @@ const ProviderPortfolio = () => {
     featured: false
   });
 
-  const [showAddModal, setShowAddModal] = useState(false);
-
-  const filteredItems = portfolioItems.filter(item => {
-    if (selectedCategory !== 'All' && item.category !== selectedCategory) return false;
-    if (showFeaturedOnly && !item.featured) return false;
-    if (searchTerm) {
-      return (
-        item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+  useEffect(() => {
+    if (user?.id) {
+      fetchPortfolioItems();
     }
-    return true;
-  }).sort((a, b) => {
-    switch(sortBy) {
-      case 'date': return new Date(b.date) - new Date(a.date);
-      case 'rating': return b.rating - a.rating;
-      case 'views': return b.views - a.views;
-      case 'title': return a.title.localeCompare(b.title);
-      default: return 0;
-    }
-  });
+  }, [user]);
 
-  const handleAddItem = () => {
-    if (!newItem.title || !newItem.category) {
-      alert('Please fill in required fields');
+  const fetchPortfolioItems = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('provider_portfolio')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPortfolioItems(data || []);
+    } catch (err) {
+      console.error('Error fetching portfolio:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const uploadFile = async (file) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+    const filePath = `portfolio/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('portfolio')
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from('portfolio')
+      .getPublicUrl(filePath);
+
+    return urlData.publicUrl;
+  };
+
+  const handleAddItem = async () => {
+    if (!newItem.title || !newItem.category || !newItem.file) {
+      alert('Please fill in required fields and select a file');
       return;
     }
 
-    const newPortfolioItem = {
-      id: portfolioItems.length + 1,
-      title: newItem.title,
-      description: newItem.description,
-      category: newItem.category,
-      type: newItem.type,
-      url: newItem.type === 'image' ? 'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=400' :
-           newItem.type === 'video' ? 'https://example.com/video.mp4' : 'https://example.com/document.pdf',
-      thumbnail: newItem.type === 'video' ? 'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=400' :
-                newItem.type === 'document' ? 'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=400' : null,
-      date: new Date().toISOString().split('T')[0],
-      rating: 0,
-      views: 0,
-      tags: newItem.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-      featured: newItem.featured
-    };
+    try {
+      setUploading(true);
+      const fileUrl = await uploadFile(newItem.file);
 
-    setPortfolioItems([newPortfolioItem, ...portfolioItems]);
-    setShowAddModal(false);
-    setNewItem({
-      title: '',
-      description: '',
-      category: '',
-      type: 'image',
-      file: null,
-      tags: '',
-      featured: false
-    });
-  };
+      const tagsArray = newItem.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag);
 
-  const handleDeleteItem = (id) => {
-    if (window.confirm('Are you sure you want to delete this portfolio item?')) {
-      setPortfolioItems(portfolioItems.filter(item => item.id !== id));
+      const { data, error } = await supabase
+        .from('provider_portfolio')
+        .insert([{
+          provider_id: user.id,
+          title: newItem.title,
+          description: newItem.description,
+          category: newItem.category,
+          type: newItem.type,
+          url: fileUrl,
+          thumbnail: newItem.type !== 'image' ? fileUrl : null,
+          tags: tagsArray,
+          featured: newItem.featured,
+          views: 0,
+          rating: 0
+        }])
+        .select();
+
+      if (error) throw error;
+
+      setPortfolioItems([data[0], ...portfolioItems]);
+      setShowAddModal(false);
+      setNewItem({
+        title: '',
+        description: '',
+        category: '',
+        type: 'image',
+        file: null,
+        tags: '',
+        featured: false
+      });
+    } catch (err) {
+      console.error('Error adding portfolio item:', err);
+      alert('Failed to add item. Please try again.');
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleToggleFeatured = (id) => {
-    setPortfolioItems(portfolioItems.map(item => 
-      item.id === id ? { ...item, featured: !item.featured } : item
-    ));
+  const handleDeleteItem = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this portfolio item?')) return;
+
+    try {
+      const item = portfolioItems.find(i => i.id === id);
+      if (!item) return;
+
+      // Delete from storage
+      if (item.url) {
+        const urlParts = item.url.split('/portfolio/');
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1];
+          await supabase.storage.from('portfolio').remove([filePath]);
+        }
+      }
+
+      const { error } = await supabase
+        .from('provider_portfolio')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setPortfolioItems(portfolioItems.filter(item => item.id !== id));
+    } catch (err) {
+      console.error('Error deleting item:', err);
+      alert('Failed to delete item. Please try again.');
+    }
+  };
+
+  const handleToggleFeatured = async (id) => {
+    const item = portfolioItems.find(i => i.id === id);
+    if (!item) return;
+
+    try {
+      const newFeatured = !item.featured;
+      const { error } = await supabase
+        .from('provider_portfolio')
+        .update({ featured: newFeatured })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setPortfolioItems(portfolioItems.map(item =>
+        item.id === id ? { ...item, featured: newFeatured } : item
+      ));
+    } catch (err) {
+      console.error('Error toggling featured:', err);
+      alert('Failed to update featured status.');
+    }
   };
 
   const getTypeIcon = (type) => {
@@ -185,12 +187,41 @@ const ProviderPortfolio = () => {
     }
   };
 
+  // Calculate stats
   const stats = {
     totalItems: portfolioItems.length,
     featuredItems: portfolioItems.filter(item => item.featured).length,
-    totalViews: portfolioItems.reduce((sum, item) => sum + item.views, 0),
-    averageRating: (portfolioItems.reduce((sum, item) => sum + item.rating, 0) / portfolioItems.length).toFixed(1)
+    totalViews: portfolioItems.reduce((sum, item) => sum + (item.views || 0), 0),
+    averageRating: portfolioItems.length > 0
+      ? (portfolioItems.reduce((sum, item) => sum + (item.rating || 0), 0) / portfolioItems.length).toFixed(1)
+      : '0.0'
   };
+
+  // Filtering and sorting
+  const filteredItems = portfolioItems.filter(item => {
+    if (selectedCategory !== 'All' && item.category !== selectedCategory) return false;
+    if (showFeaturedOnly && !item.featured) return false;
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      return (
+        item.title.toLowerCase().includes(term) ||
+        item.description?.toLowerCase().includes(term) ||
+        item.tags?.some(tag => tag.toLowerCase().includes(term))
+      );
+    }
+    return true;
+  }).sort((a, b) => {
+    switch(sortBy) {
+      case 'date': return new Date(b.created_at || b.date) - new Date(a.created_at || a.date);
+      case 'rating': return (b.rating || 0) - (a.rating || 0);
+      case 'views': return (b.views || 0) - (a.views || 0);
+      case 'title': return (a.title || '').localeCompare(b.title || '');
+      default: return 0;
+    }
+  });
+
+  if (loading) return <div className="loading">Loading your portfolio...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
 
   return (
     <ProviderPageTemplate
@@ -344,7 +375,7 @@ const ProviderPortfolio = () => {
               <div className="item-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   {getTypeIcon(item.type)}
-                  <span className="item-type">{item.type.toUpperCase()}</span>
+                  <span className="item-type">{item.type?.toUpperCase()}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button
@@ -395,12 +426,14 @@ const ProviderPortfolio = () => {
                 
                 <div className="item-meta">
                   <span className="item-category">{item.category}</span>
-                  <span className="item-date">{item.date}</span>
+                  <span className="item-date">
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </span>
                 </div>
 
                 {/* Tags */}
                 <div className="item-tags">
-                  {item.tags.map(tag => (
+                  {item.tags?.map(tag => (
                     <span key={tag} className="tag">{tag}</span>
                   ))}
                 </div>
@@ -409,11 +442,11 @@ const ProviderPortfolio = () => {
                 <div className="item-stats">
                   <div className="stat">
                     <FaStar />
-                    <span>{item.rating}</span>
+                    <span>{item.rating || 0}</span>
                   </div>
                   <div className="stat">
                     <FaEye />
-                    <span>{item.views} views</span>
+                    <span>{item.views || 0} views</span>
                   </div>
                 </div>
 
@@ -518,7 +551,7 @@ const ProviderPortfolio = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Upload File</label>
+                  <label className="form-label">Upload File *</label>
                   <input
                     type="file"
                     className="form-control"
@@ -545,276 +578,21 @@ const ProviderPortfolio = () => {
               <button 
                 className="btn-secondary"
                 onClick={() => setShowAddModal(false)}
+                disabled={uploading}
               >
                 Cancel
               </button>
               <button 
                 className="btn-primary"
                 onClick={handleAddItem}
+                disabled={uploading}
               >
-                Add Item
+                {uploading ? 'Uploading...' : 'Add Item'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .portfolio-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-          gap: 1.5rem;
-        }
-        
-        .portfolio-item {
-          background: white;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-          transition: all 0.3s ease;
-          display: flex;
-          flex-direction: column;
-          border: 1px solid #e0e0e0;
-        }
-        
-        .portfolio-item:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
-          border-color: #1a237e;
-        }
-        
-        .item-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 1rem 1.5rem;
-          background: #f8f9fa;
-          border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .item-type {
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: #666;
-          text-transform: uppercase;
-        }
-        
-        .item-action-btn {
-          width: 30px;
-          height: 30px;
-          border-radius: 6px;
-          border: 1px solid #ddd;
-          background: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .item-action-btn:hover {
-          background: #f8f9fa;
-          border-color: #1a237e;
-          color: #1a237e;
-        }
-        
-        .item-thumbnail {
-          position: relative;
-          height: 200px;
-          overflow: hidden;
-        }
-        
-        .item-thumbnail img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          transition: transform 0.3s ease;
-        }
-        
-        .portfolio-item:hover .item-thumbnail img {
-          transform: scale(1.05);
-        }
-        
-        .featured-badge {
-          position: absolute;
-          top: 1rem;
-          right: 1rem;
-          background: linear-gradient(135deg, #ffd700 0%, #ff9800 100%);
-          color: white;
-          padding: 0.3rem 0.8rem;
-          border-radius: 20px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          display: flex;
-          align-items: center;
-          gap: 0.3rem;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .item-info {
-          padding: 1.5rem;
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-        }
-        
-        .item-title {
-          margin: 0 0 0.5rem 0;
-          font-size: 1.2rem;
-          font-weight: 600;
-          color: #1a237e;
-        }
-        
-        .item-description {
-          margin: 0 0 1rem 0;
-          color: #666;
-          font-size: 0.9rem;
-          line-height: 1.5;
-          flex: 1;
-        }
-        
-        .item-meta {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 1rem;
-          padding: 0.5rem 0;
-          border-top: 1px solid #e0e0e0;
-          border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .item-category {
-          background: #e8f0fe;
-          color: #1a237e;
-          padding: 0.3rem 0.8rem;
-          border-radius: 12px;
-          font-size: 0.8rem;
-          font-weight: 600;
-        }
-        
-        .item-date {
-          color: #666;
-          font-size: 0.8rem;
-        }
-        
-        .item-tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-          margin-bottom: 1rem;
-        }
-        
-        .tag {
-          background: #f0f0f0;
-          color: #666;
-          padding: 0.2rem 0.6rem;
-          border-radius: 12px;
-          font-size: 0.8rem;
-        }
-        
-        .item-stats {
-          display: flex;
-          gap: 1rem;
-          margin-bottom: 1rem;
-        }
-        
-        .stat {
-          display: flex;
-          align-items: center;
-          gap: 0.3rem;
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .item-actions {
-          display: flex;
-          gap: 0.5rem;
-          margin-top: auto;
-        }
-        
-        .item-actions button {
-          flex: 1;
-          padding: 0.5rem;
-          font-size: 0.9rem;
-        }
-        
-        /* Modal Styles */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 1rem;
-        }
-        
-        .modal-content {
-          background: white;
-          border-radius: 12px;
-          width: 100%;
-          max-width: 800px;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-        
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 1.5rem;
-          border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .modal-header h3 {
-          margin: 0;
-        }
-        
-        .modal-close {
-          background: none;
-          border: none;
-          font-size: 2rem;
-          cursor: pointer;
-          color: #666;
-          line-height: 1;
-        }
-        
-        .modal-body {
-          padding: 1.5rem;
-        }
-        
-        .modal-footer {
-          padding: 1.5rem;
-          border-top: 1px solid #e0e0e0;
-          display: flex;
-          justify-content: flex-end;
-          gap: 1rem;
-        }
-        
-        .form-text {
-          display: block;
-          margin-top: 0.3rem;
-          color: #666;
-          font-size: 0.8rem;
-        }
-        
-        @media (max-width: 768px) {
-          .portfolio-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .item-actions {
-            flex-direction: column;
-          }
-          
-          .modal-content {
-            margin: 1rem;
-          }
-        }
-      `}</style>
     </ProviderPageTemplate>
   );
 };

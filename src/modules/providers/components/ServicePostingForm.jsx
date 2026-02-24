@@ -2,51 +2,52 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   Upload, Tag, DollarSign, Clock, MapPin,
-  Calendar, Users, Shield, Star, X
+  Calendar, Users, Shield, Star, X, AlertCircle, CheckCircle
 } from 'lucide-react';
 import './ServicePostingForm.css';
 
 const ServicePostingForm = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  
+  const { user, profile } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+
   const [formData, setFormData] = useState({
     title: '',
     category: '',
     subCategory: '',
     description: '',
     detailedDescription: '',
-    priceType: 'hourly', // hourly, project, monthly, custom
+    pricing_model: 'hourly', // will match DB column
     price: '',
-    priceRange: { min: '', max: '' },
+    price_min: '',
+    price_max: '',
     discount: '',
-    availability: {
-      startDate: '',
-      endDate: '',
-      slots: []
-    },
+    availability_start: '',
+    availability_end: '',
     requirements: [],
     deliverables: [],
     tags: [],
-    serviceArea: {
-      type: 'specific', // specific, city-wide, state-wide, nationwide
-      locations: []
-    },
-    estimatedTime: '',
-    teamSize: 1,
-    experienceLevel: 'intermediate', // beginner, intermediate, expert
-    certificationRequired: false,
-    portfolioImages: [],
+    service_area_type: 'specific',
+    service_locations: [],
+    estimated_time: '',
+    team_size: 1,
+    experience_level: 'intermediate', // optional
+    certification_required: false,
+    portfolio_images: [],
     faqs: []
   });
-  
+
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
-  
+
+  // Load categories from a categories table or static data
   useEffect(() => {
-    // Load categories from your data
+    // You can later fetch categories from Supabase if you have a categories table
     const serviceCategories = [
       { id: 'property-management', name: 'Property Management', subCategories: [
         { id: 'full-management', name: 'Full Property Management' },
@@ -58,52 +59,150 @@ const ServicePostingForm = () => {
         { id: 'plumber', name: 'Plumber' },
         { id: 'carpenter', name: 'Carpenter' }
       ]},
-      // Add more categories as needed
+      { id: 'cleaning', name: 'Cleaning Services', subCategories: [
+        { id: 'deep-cleaning', name: 'Deep Cleaning' },
+        { id: 'office-cleaning', name: 'Office Cleaning' },
+        { id: 'move-in-out', name: 'Move-in/out Cleaning' }
+      ]},
+      { id: 'security', name: 'Security Services', subCategories: [
+        { id: 'cctv', name: 'CCTV Installation' },
+        { id: 'alarm', name: 'Alarm Systems' },
+        { id: 'guard', name: 'Security Guards' }
+      ]}
     ];
     setCategories(serviceCategories);
   }, []);
-  
+
+  // Handle input changes
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Handle array inputs (tags, locations, requirements, deliverables)
+  const addArrayItem = (field, value) => {
+    if (!value.trim()) return;
+    setFormData(prev => ({
+      ...prev,
+      [field]: [...prev[field], value.trim()]
+    }));
+  };
+
+  const removeArrayItem = (field, index) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: prev[field].filter((_, i) => i !== index)
+    }));
+  };
+
+  // Submit form to Supabase
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    setError(null);
+    setIsSubmitting(true);
+
+    // Validate required fields
+    if (!formData.title || !formData.description || !formData.category) {
+      setError('Please fill in all required fields (title, category, description).');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Check authentication
+    if (!user || !profile) {
+      setError('You must be logged in to post a service.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Ensure user has role service-provider (optional check)
+    if (profile.role !== 'service-provider' && profile.role !== 'provider') {
+      setError('Only service providers can post services.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const services = JSON.parse(localStorage.getItem('providerServices') || '[]');
-      const newService = {
-        id: `SVC-${Date.now()}`,
-        ...formData,
-        providerId: user?.id,
-        providerEmail: user?.email,
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        views: 0,
-        inquiries: 0,
-        rating: 0
+      // Prepare data for insertion – map form fields to DB columns
+      const serviceData = {
+        provider_id: user.id,
+        title: formData.title,
+        category: formData.category,
+        sub_category: formData.subCategory || null,
+        description: formData.description,
+        detailed_description: formData.detailedDescription || null,
+        pricing_model: formData.pricing_model,
+        price: formData.pricing_model !== 'custom' ? (parseFloat(formData.price) || null) : null,
+        price_min: formData.pricing_model === 'custom' ? (parseFloat(formData.price_min) || null) : null,
+        price_max: formData.pricing_model === 'custom' ? (parseFloat(formData.price_max) || null) : null,
+        discount: formData.discount ? parseInt(formData.discount) : null,
+        estimated_time: formData.estimated_time || null,
+        team_size: parseInt(formData.team_size) || 1,
+        availability_start: formData.availability_start || null,
+        availability_end: formData.availability_end || null,
+        service_area_type: formData.service_area_type,
+        service_locations: formData.service_locations,
+        requirements: formData.requirements,
+        deliverables: formData.deliverables,
+        tags: formData.tags,
+        portfolio_images: formData.portfolio_images, // you may handle file uploads separately
+        faqs: formData.faqs.length ? JSON.stringify(formData.faqs) : null,
+        status: 'active'
       };
-      
-      services.push(newService);
-      localStorage.setItem('providerServices', JSON.stringify(services));
-      
-      // Update provider's services list
-      const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-      const providerIndex = providers.findIndex(p => p.userId === user?.id || p.email === user?.email);
-      
-      if (providerIndex !== -1) {
-        providers[providerIndex].services = [
-          ...(providers[providerIndex].services || []),
-          formData.title
-        ];
-        localStorage.setItem('serviceProviders', JSON.stringify(providers));
-      }
-      
-      alert('Service posted successfully!');
-      navigate('/providers/dashboard');
-      
-    } catch (error) {
-      console.error('Error posting service:', error);
-      alert('Failed to post service. Please try again.');
+
+      const { data, error: insertError } = await supabase
+        .from('provider_services')
+        .insert([serviceData])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Success
+      setSuccess(true);
+      setTimeout(() => {
+        navigate('/dashboard/provider'); // or to a list of services
+      }, 2000);
+
+    } catch (err) {
+      console.error('Error posting service:', err);
+      setError(err.message || 'Failed to post service. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
-  
+
+  // Helper to render array input with tags
+  const renderArrayInput = (field, placeholder, hint) => (
+    <div className="array-input-group">
+      <div className="tags-input">
+        <input
+          type="text"
+          placeholder={placeholder}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addArrayItem(field, e.target.value);
+              e.target.value = '';
+            }
+          }}
+        />
+        {hint && <small>{hint}</small>}
+      </div>
+      {formData[field].length > 0 && (
+        <div className="tags-list">
+          {formData[field].map((item, index) => (
+            <span key={index} className="tag">
+              {field === 'tags' ? `#${item}` : item}
+              <button type="button" onClick={() => removeArrayItem(field, index)}>
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="service-posting-form">
       <div className="form-container">
@@ -116,39 +215,53 @@ const ServicePostingForm = () => {
             Fill in the details below to create your service listing
           </p>
         </div>
-        
+
+        {/* Error / Success messages */}
+        {error && (
+          <div className="message error">
+            <AlertCircle size={20} />
+            <span>{error}</span>
+          </div>
+        )}
+        {success && (
+          <div className="message success">
+            <CheckCircle size={20} />
+            <span>Service posted successfully! Redirecting...</span>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="posting-form">
+          {/* Service Details */}
           <div className="form-section">
-            <h3>
-              <Tag size={18} />
-              Service Details
-            </h3>
-            
+            <h3><Tag size={18} /> Service Details</h3>
+
             <div className="form-group">
               <label>Service Title *</label>
               <input
                 type="text"
                 value={formData.title}
-                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                onChange={(e) => handleInputChange('title', e.target.value)}
                 placeholder="e.g., Professional Electrical Installation"
                 required
+                disabled={isSubmitting}
               />
               <small>Make it descriptive and clear</small>
             </div>
-            
+
             <div className="form-row">
               <div className="form-group">
                 <label>Category *</label>
                 <select
                   value={formData.category}
                   onChange={(e) => {
-                    const category = e.target.value;
-                    setFormData({...formData, category});
-                    const selected = categories.find(c => c.id === category);
+                    const cat = e.target.value;
+                    handleInputChange('category', cat);
+                    const selected = categories.find(c => c.id === cat);
                     setSubCategories(selected?.subCategories || []);
                   }}
                   required
+                  disabled={isSubmitting}
                 >
                   <option value="">Select a category</option>
                   {categories.map(cat => (
@@ -156,13 +269,14 @@ const ServicePostingForm = () => {
                   ))}
                 </select>
               </div>
-              
+
               {formData.category && subCategories.length > 0 && (
                 <div className="form-group">
                   <label>Sub-category</label>
                   <select
                     value={formData.subCategory}
-                    onChange={(e) => setFormData({...formData, subCategory: e.target.value})}
+                    onChange={(e) => handleInputChange('subCategory', e.target.value)}
+                    disabled={isSubmitting}
                   >
                     <option value="">Select sub-category</option>
                     {subCategories.map(sub => (
@@ -172,37 +286,37 @@ const ServicePostingForm = () => {
                 </div>
               )}
             </div>
-            
+
             <div className="form-group">
               <label>Short Description *</label>
               <input
                 type="text"
                 value={formData.description}
-                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                onChange={(e) => handleInputChange('description', e.target.value)}
                 placeholder="Brief summary of your service (max 150 characters)"
                 maxLength={150}
                 required
+                disabled={isSubmitting}
               />
             </div>
-            
+
             <div className="form-group">
               <label>Detailed Description *</label>
               <textarea
                 value={formData.detailedDescription}
-                onChange={(e) => setFormData({...formData, detailedDescription: e.target.value})}
+                onChange={(e) => handleInputChange('detailedDescription', e.target.value)}
                 placeholder="Describe your service in detail. Include scope, process, benefits..."
                 rows={5}
                 required
+                disabled={isSubmitting}
               />
             </div>
           </div>
-          
+
+          {/* Pricing */}
           <div className="form-section">
-            <h3>
-              <DollarSign size={18} />
-              Pricing
-            </h3>
-            
+            <h3><DollarSign size={18} /> Pricing</h3>
+
             <div className="form-group">
               <label>Pricing Model *</label>
               <div className="radio-group">
@@ -215,10 +329,11 @@ const ServicePostingForm = () => {
                   <label key={option.id} className="radio-label">
                     <input
                       type="radio"
-                      name="priceType"
+                      name="pricing_model"
                       value={option.id}
-                      checked={formData.priceType === option.id}
-                      onChange={(e) => setFormData({...formData, priceType: e.target.value})}
+                      checked={formData.pricing_model === option.id}
+                      onChange={(e) => handleInputChange('pricing_model', e.target.value)}
+                      disabled={isSubmitting}
                     />
                     <span className="radio-content">
                       <span className="radio-icon">{option.icon}</span>
@@ -228,76 +343,47 @@ const ServicePostingForm = () => {
                 ))}
               </div>
             </div>
-            
-            {formData.priceType === 'hourly' && (
+
+            {formData.pricing_model !== 'custom' && (
               <div className="form-group">
-                <label>Hourly Rate (₦) *</label>
+                <label>Price (₦) *</label>
                 <input
                   type="number"
                   value={formData.price}
-                  onChange={(e) => setFormData({...formData, price: e.target.value})}
+                  onChange={(e) => handleInputChange('price', e.target.value)}
                   placeholder="e.g., 5000"
                   min="0"
                   required
+                  disabled={isSubmitting}
                 />
               </div>
             )}
-            
-            {formData.priceType === 'project' && (
-              <div className="form-group">
-                <label>Project Price (₦) *</label>
-                <input
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData({...formData, price: e.target.value})}
-                  placeholder="e.g., 50000"
-                  min="0"
-                  required
-                />
-              </div>
-            )}
-            
-            {formData.priceType === 'monthly' && (
-              <div className="form-group">
-                <label>Monthly Retainer (₦) *</label>
-                <input
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData({...formData, price: e.target.value})}
-                  placeholder="e.g., 100000"
-                  min="0"
-                  required
-                />
-              </div>
-            )}
-            
-            {formData.priceType === 'custom' && (
+
+            {formData.pricing_model === 'custom' && (
               <div className="form-group">
                 <label>Price Range (₦)</label>
                 <div className="form-row">
                   <input
                     type="number"
-                    placeholder="Minimum"
-                    value={formData.priceRange.min}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      priceRange: {...formData.priceRange, min: e.target.value}
-                    })}
+                    placeholder="Min"
+                    value={formData.price_min}
+                    onChange={(e) => handleInputChange('price_min', e.target.value)}
+                    min="0"
+                    disabled={isSubmitting}
                   />
                   <span className="range-separator">to</span>
                   <input
                     type="number"
-                    placeholder="Maximum"
-                    value={formData.priceRange.max}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      priceRange: {...formData.priceRange, max: e.target.value}
-                    })}
+                    placeholder="Max"
+                    value={formData.price_max}
+                    onChange={(e) => handleInputChange('price_max', e.target.value)}
+                    min="0"
+                    disabled={isSubmitting}
                   />
                 </div>
               </div>
             )}
-            
+
             <div className="form-group">
               <label>Discount Offer (Optional)</label>
               <div className="discount-input">
@@ -305,41 +391,39 @@ const ServicePostingForm = () => {
                   type="number"
                   placeholder="e.g., 10"
                   value={formData.discount}
-                  onChange={(e) => setFormData({...formData, discount: e.target.value})}
+                  onChange={(e) => handleInputChange('discount', e.target.value)}
                   min="0"
                   max="100"
+                  disabled={isSubmitting}
                 />
                 <span className="discount-suffix">% off</span>
               </div>
               <small>Offer a discount to attract first-time clients</small>
             </div>
           </div>
-          
+
+          {/* Availability & Timeline */}
           <div className="form-section">
-            <h3>
-              <Clock size={18} />
-              Availability & Timeline
-            </h3>
-            
+            <h3><Clock size={18} /> Availability & Timeline</h3>
+
             <div className="form-row">
               <div className="form-group">
                 <label>Estimated Time</label>
                 <input
                   type="text"
-                  value={formData.estimatedTime}
-                  onChange={(e) => setFormData({...formData, estimatedTime: e.target.value})}
+                  value={formData.estimated_time}
+                  onChange={(e) => handleInputChange('estimated_time', e.target.value)}
                   placeholder="e.g., 2-3 days, 1 week, etc."
+                  disabled={isSubmitting}
                 />
               </div>
-              
+
               <div className="form-group">
-                <label>
-                  <Users size={16} />
-                  Team Size
-                </label>
+                <label><Users size={16} /> Team Size</label>
                 <select
-                  value={formData.teamSize}
-                  onChange={(e) => setFormData({...formData, teamSize: parseInt(e.target.value)})}
+                  value={formData.team_size}
+                  onChange={(e) => handleInputChange('team_size', parseInt(e.target.value))}
+                  disabled={isSubmitting}
                 >
                   {[1,2,3,4,5,6,7,8,9,10].map(num => (
                     <option key={num} value={num}>
@@ -349,39 +433,31 @@ const ServicePostingForm = () => {
                 </select>
               </div>
             </div>
-            
+
             <div className="form-group">
               <label>Availability Date Range</label>
               <div className="form-row">
                 <input
                   type="date"
-                  placeholder="Start Date"
-                  value={formData.availability.startDate}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    availability: {...formData.availability, startDate: e.target.value}
-                  })}
+                  value={formData.availability_start}
+                  onChange={(e) => handleInputChange('availability_start', e.target.value)}
+                  disabled={isSubmitting}
                 />
                 <span className="range-separator">to</span>
                 <input
                   type="date"
-                  placeholder="End Date"
-                  value={formData.availability.endDate}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    availability: {...formData.availability, endDate: e.target.value}
-                  })}
+                  value={formData.availability_end}
+                  onChange={(e) => handleInputChange('availability_end', e.target.value)}
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
           </div>
-          
+
+          {/* Service Area */}
           <div className="form-section">
-            <h3>
-              <MapPin size={18} />
-              Service Area
-            </h3>
-            
+            <h3><MapPin size={18} /> Service Area</h3>
+
             <div className="form-group">
               <label>Coverage Type</label>
               <div className="radio-group">
@@ -394,246 +470,89 @@ const ServicePostingForm = () => {
                   <label key={option.id} className="radio-label">
                     <input
                       type="radio"
-                      name="coverageType"
+                      name="service_area_type"
                       value={option.id}
-                      checked={formData.serviceArea.type === option.id}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        serviceArea: {...formData.serviceArea, type: e.target.value}
-                      })}
+                      checked={formData.service_area_type === option.id}
+                      onChange={(e) => handleInputChange('service_area_type', e.target.value)}
+                      disabled={isSubmitting}
                     />
                     <span className="radio-text">{option.label}</span>
                   </label>
                 ))}
               </div>
             </div>
-            
-            {formData.serviceArea.type === 'specific' && (
+
+            {formData.service_area_type === 'specific' && (
               <div className="form-group">
-                <label>Specific Locations</label>
-                <div className="tags-input">
-                  <input
-                    type="text"
-                    placeholder="Add a location (e.g., Lekki Phase 1)"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && e.target.value.trim()) {
-                        e.preventDefault();
-                        setFormData({
-                          ...formData,
-                          serviceArea: {
-                            ...formData.serviceArea,
-                            locations: [...formData.serviceArea.locations, e.target.value.trim()]
-                          }
-                        });
-                        e.target.value = '';
-                      }
-                    }}
-                  />
-                  <small>Press Enter to add multiple locations</small>
-                </div>
-                
-                {formData.serviceArea.locations.length > 0 && (
-                  <div className="tags-list">
-                    {formData.serviceArea.locations.map((location, index) => (
-                      <span key={index} className="tag">
-                        {location}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newLocations = [...formData.serviceArea.locations];
-                            newLocations.splice(index, 1);
-                            setFormData({
-                              ...formData,
-                              serviceArea: {...formData.serviceArea, locations: newLocations}
-                            });
-                          }}
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {renderArrayInput('service_locations', 'Add a location (e.g., Lekki Phase 1)', 'Press Enter to add multiple locations')}
               </div>
             )}
           </div>
-          
+
+          {/* Requirements & Features */}
           <div className="form-section">
-            <h3>
-              <Shield size={18} />
-              Requirements & Features
-            </h3>
-            
+            <h3><Shield size={18} /> Requirements & Features</h3>
+
             <div className="form-group">
               <label>Client Requirements</label>
-              <div className="requirements-input">
-                <input
-                  type="text"
-                  placeholder="Add a requirement (e.g., Provide access to property)"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && e.target.value.trim()) {
-                      e.preventDefault();
-                      setFormData({
-                        ...formData,
-                        requirements: [...formData.requirements, e.target.value.trim()]
-                      });
-                      e.target.value = '';
-                    }
-                  }}
-                />
-                <small>What does the client need to provide?</small>
-              </div>
-              
-              {formData.requirements.length > 0 && (
-                <div className="requirements-list">
-                  {formData.requirements.map((req, index) => (
-                    <div key={index} className="requirement-item">
-                      <span>{req}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newReqs = [...formData.requirements];
-                          newReqs.splice(index, 1);
-                          setFormData({...formData, requirements: newReqs});
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {renderArrayInput('requirements', 'Add a requirement (e.g., Provide access to property)', 'What does the client need to provide?')}
             </div>
-            
+
             <div className="form-group">
               <label>Your Deliverables</label>
-              <div className="deliverables-input">
-                <input
-                  type="text"
-                  placeholder="Add a deliverable (e.g., Installation certificate)"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && e.target.value.trim()) {
-                      e.preventDefault();
-                      setFormData({
-                        ...formData,
-                        deliverables: [...formData.deliverables, e.target.value.trim()]
-                      });
-                      e.target.value = '';
-                    }
-                  }}
-                />
-                <small>What will you deliver to the client?</small>
-              </div>
-              
-              {formData.deliverables.length > 0 && (
-                <div className="deliverables-list">
-                  {formData.deliverables.map((del, index) => (
-                    <div key={index} className="deliverable-item">
-                      <span>{del}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newDels = [...formData.deliverables];
-                          newDels.splice(index, 1);
-                          setFormData({...formData, deliverables: newDels});
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {renderArrayInput('deliverables', 'Add a deliverable (e.g., Installation certificate)', 'What will you deliver to the client?')}
             </div>
-            
+
             <div className="form-group">
               <label>Service Tags</label>
-              <div className="tags-input">
-                <input
-                  type="text"
-                  placeholder="Add tags (e.g., professional, reliable, certified)"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && e.target.value.trim()) {
-                      e.preventDefault();
-                      setFormData({
-                        ...formData,
-                        tags: [...formData.tags, e.target.value.trim()]
-                      });
-                      e.target.value = '';
-                    }
-                  }}
-                />
-                <small>Add relevant tags to help clients find your service</small>
-              </div>
-              
-              {formData.tags.length > 0 && (
-                <div className="tags-list">
-                  {formData.tags.map((tag, index) => (
-                    <span key={index} className="tag">
-                      #{tag}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newTags = [...formData.tags];
-                          newTags.splice(index, 1);
-                          setFormData({...formData, tags: newTags});
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
+              {renderArrayInput('tags', 'Add tags (e.g., professional, reliable, certified)', 'Add relevant tags to help clients find your service')}
             </div>
           </div>
-          
+
+          {/* Form Actions */}
           <div className="form-actions">
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => navigate('/providers/dashboard')}
+              onClick={() => navigate('/dashboard/provider')}
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
               className="btn btn-primary"
+              disabled={isSubmitting || success}
             >
-              <Star size={18} />
-              Post Service
+              {isSubmitting ? (
+                <>
+                  <span className="spinner"></span>
+                  Posting...
+                </>
+              ) : (
+                <>
+                  <Star size={18} />
+                  Post Service
+                </>
+              )}
             </button>
           </div>
         </form>
-        
-        {/* Tips Sidebar */}
+
+        {/* Tips Sidebar (unchanged) */}
         <div className="tips-sidebar">
           <div className="tip-card">
             <h4>Tips for a Great Listing</h4>
             <ul>
-              <li>
-                <strong>Clear Title:</strong> Be specific about what you offer
-              </li>
-              <li>
-                <strong>Detailed Description:</strong> Include scope, process, and benefits
-              </li>
-              <li>
-                <strong>Reasonable Pricing:</strong> Research market rates
-              </li>
-              <li>
-                <strong>High-quality Images:</strong> Showcase your work
-              </li>
-              <li>
-                <strong>Quick Response:</strong> Set realistic response times
-              </li>
+              <li><strong>Clear Title:</strong> Be specific about what you offer</li>
+              <li><strong>Detailed Description:</strong> Include scope, process, and benefits</li>
+              <li><strong>Reasonable Pricing:</strong> Research market rates</li>
+              <li><strong>High-quality Images:</strong> Showcase your work</li>
+              <li><strong>Quick Response:</strong> Set realistic response times</li>
             </ul>
           </div>
-          
           <div className="visibility-card">
-            <h4>
-              <Star size={16} />
-              Boost Visibility
-            </h4>
+            <h4><Star size={16} /> Boost Visibility</h4>
             <p>Get your service featured at the top of search results:</p>
             <ul>
               <li>Complete all profile details</li>
@@ -642,7 +561,7 @@ const ServicePostingForm = () => {
               <li>Maintain high response rate</li>
               <li>Collect client reviews</li>
             </ul>
-            <button className="btn btn-primary btn-small">
+            <button className="btn btn-primary btn-small" onClick={() => navigate('/dashboard/provider/subscription')}>
               Learn About Premium
             </button>
           </div>

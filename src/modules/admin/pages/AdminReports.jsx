@@ -6,10 +6,13 @@ import {
   BarChart2, TrendingUp, TrendingDown, AlertCircle,
   Eye, Edit, Trash2, Printer, Share2, FileBarChart
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './AdminReports.css';
 
 const AdminReports = () => {
   const navigate = useNavigate();
+  const { user: currentAdmin } = useAuth();
   const [reports, setReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,58 +26,45 @@ const AdminReports = () => {
     urgent: 0
   });
 
+  // ---------- Fetch reports from Supabase ----------
   useEffect(() => {
-    loadReports();
+    fetchReports();
   }, []);
 
-  useEffect(() => {
-    filterReports();
-  }, [searchTerm, dateFilter, typeFilter, reports]);
-
-  const loadReports = () => {
+  const fetchReports = async () => {
+    setLoading(true);
     try {
-      // Load reports from localStorage
-      const reportsData = JSON.parse(localStorage.getItem('adminReports') || '[]');
-      
-      // If no reports exist, create sample data
-      if (reportsData.length === 0) {
-        const sampleReports = generateSampleReports();
-        localStorage.setItem('adminReports', JSON.stringify(sampleReports));
-        setReports(sampleReports);
-      } else {
-        setReports(reportsData);
-      }
-      
-      calculateStats(reportsData.length > 0 ? reportsData : generateSampleReports());
-      setLoading(false);
+      const { data, error } = await supabase
+        .from('reports')
+        .select(`
+          *,
+          generated_by_user:generated_by (id, full_name, email)
+        `)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform to match component's expected format
+      const formattedReports = data.map(report => ({
+        ...report,
+        generatedBy: report.generated_by_user?.full_name || 'System',
+        date: report.date,
+        lastUpdated: report.last_updated,
+        fileSize: report.file_size,
+        // Provide defaults for UI fields
+        status: report.status || 'pending',
+        priority: report.priority || 'medium',
+        views: report.views || 0,
+        downloads: report.downloads || 0,
+      }));
+
+      setReports(formattedReports);
+      calculateStats(formattedReports);
     } catch (error) {
-      console.error('Error loading reports:', error);
+      console.error('Error fetching reports:', error);
+    } finally {
       setLoading(false);
     }
-  };
-
-  const generateSampleReports = () => {
-    const reportTypes = ['Financial', 'User Activity', 'System', 'Security', 'Performance'];
-    const statuses = ['pending', 'in-progress', 'completed', 'urgent'];
-    const priorities = ['low', 'medium', 'high', 'critical'];
-    
-    const sampleReports = Array.from({ length: 15 }, (_, index) => ({
-      id: `report-${Date.now()}-${index}`,
-      title: `${reportTypes[index % reportTypes.length]} Report - Q${(index % 4) + 1}`,
-      type: reportTypes[index % reportTypes.length],
-      description: `Detailed analysis of ${reportTypes[index % reportTypes.length].toLowerCase()} metrics`,
-      generatedBy: ['System', 'Admin User'][index % 2],
-      status: statuses[index % statuses.length],
-      priority: priorities[index % priorities.length],
-      date: new Date(Date.now() - index * 86400000).toISOString(),
-      views: Math.floor(Math.random() * 100),
-      downloads: Math.floor(Math.random() * 50),
-      lastUpdated: new Date(Date.now() - Math.random() * 7 * 86400000).toISOString(),
-      fileSize: `${(Math.random() * 5 + 1).toFixed(1)} MB`,
-      format: ['PDF', 'CSV', 'Excel', 'JSON'][index % 4]
-    }));
-    
-    return sampleReports;
   };
 
   const calculateStats = (reportsData) => {
@@ -86,19 +76,22 @@ const AdminReports = () => {
     setStats({ totalReports: total, resolved, pending, urgent });
   };
 
+  // ---------- Client-side filtering ----------
+  useEffect(() => {
+    filterReports();
+  }, [searchTerm, dateFilter, typeFilter, reports]);
+
   const filterReports = () => {
     let filtered = [...reports];
     
-    // Search filter
     if (searchTerm) {
       filtered = filtered.filter(report =>
-        report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        report.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        report.type.toLowerCase().includes(searchTerm.toLowerCase())
+        report.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        report.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        report.type?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    // Date filter
     if (dateFilter !== 'all') {
       const now = new Date();
       const filterDate = new Date();
@@ -123,7 +116,6 @@ const AdminReports = () => {
       }
     }
     
-    // Type filter
     if (typeFilter !== 'all') {
       filtered = filtered.filter(report => report.type === typeFilter);
     }
@@ -131,80 +123,133 @@ const AdminReports = () => {
     setFilteredReports(filtered);
   };
 
-  const generateNewReport = () => {
+  // ---------- Generate new report (insert into Supabase) ----------
+  const generateNewReport = async () => {
     const reportTypes = ['Financial', 'User Activity', 'System', 'Security', 'Performance'];
     const type = reportTypes[Math.floor(Math.random() * reportTypes.length)];
     
     const newReport = {
-      id: `report-${Date.now()}`,
       title: `${type} Report - ${new Date().toLocaleDateString()}`,
       type,
       description: `Automatically generated ${type.toLowerCase()} report`,
-      generatedBy: 'System',
+      generated_by: currentAdmin?.id,
       status: 'pending',
       priority: 'medium',
       date: new Date().toISOString(),
       views: 0,
       downloads: 0,
-      lastUpdated: new Date().toISOString(),
-      fileSize: '1.5 MB',
-      format: 'PDF'
+      last_updated: new Date().toISOString(),
+      file_size: '1.5 MB',
+      format: 'PDF',
+      data: {} // You can add real report data here later
     };
-    
-    const updatedReports = [newReport, ...reports];
-    setReports(updatedReports);
-    localStorage.setItem('adminReports', JSON.stringify(updatedReports));
-    calculateStats(updatedReports);
+
+    try {
+      const { data, error } = await supabase
+        .from('reports')
+        .insert([newReport])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Refresh the list
+      fetchReports();
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('Failed to generate report: ' + error.message);
+    }
   };
 
-  const deleteReport = (reportId) => {
+  // ---------- Delete report ----------
+  const deleteReport = async (reportId) => {
     if (!window.confirm('Are you sure you want to delete this report?')) return;
     
-    const updatedReports = reports.filter(report => report.id !== reportId);
-    setReports(updatedReports);
-    localStorage.setItem('adminReports', JSON.stringify(updatedReports));
-    calculateStats(updatedReports);
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .delete()
+        .eq('id', reportId);
+
+      if (error) throw error;
+
+      // Refresh the list
+      fetchReports();
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      alert('Failed to delete report: ' + error.message);
+    }
   };
 
-  const exportReport = (reportId) => {
+  // ---------- Export (download) report – increment download count ----------
+  const exportReport = async (reportId) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
     
-    // Increment download count
-    const updatedReports = reports.map(r => 
-      r.id === reportId ? { ...r, downloads: r.downloads + 1 } : r
-    );
-    setReports(updatedReports);
-    localStorage.setItem('adminReports', JSON.stringify(updatedReports));
-    
-    // Create and download a dummy file
-    const content = `Report: ${report.title}\nType: ${report.type}\nGenerated: ${new Date(report.date).toLocaleString()}\nStatus: ${report.status}`;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${report.title.replace(/\s+/g, '_')}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      // Increment download count
+      const { error } = await supabase
+        .from('reports')
+        .update({ 
+          downloads: (report.downloads || 0) + 1,
+          last_updated: new Date().toISOString()
+        })
+        .eq('id', reportId);
+
+      if (error) throw error;
+
+      // Update local state optimistically
+      setReports(prev => prev.map(r => 
+        r.id === reportId ? { ...r, downloads: (r.downloads || 0) + 1 } : r
+      ));
+
+      // Simulate file download
+      const content = `Report: ${report.title}\nType: ${report.type}\nGenerated: ${new Date(report.date).toLocaleString()}\nStatus: ${report.status}`;
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.title.replace(/\s+/g, '_')}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting report:', error);
+      alert('Failed to export report: ' + error.message);
+    }
   };
 
-  const viewReport = (reportId) => {
+  // ---------- View report – increment view count ----------
+  const viewReport = async (reportId) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
     
-    // Increment view count
-    const updatedReports = reports.map(r => 
-      r.id === reportId ? { ...r, views: r.views + 1 } : r
-    );
-    setReports(updatedReports);
-    localStorage.setItem('adminReports', JSON.stringify(updatedReports));
-    
-    // Navigate to report detail or show modal
-    alert(`Viewing report: ${report.title}\n\n${report.description}`);
+    try {
+      // Increment view count
+      const { error } = await supabase
+        .from('reports')
+        .update({ 
+          views: (report.views || 0) + 1,
+          last_updated: new Date().toISOString()
+        })
+        .eq('id', reportId);
+
+      if (error) throw error;
+
+      // Update local state
+      setReports(prev => prev.map(r => 
+        r.id === reportId ? { ...r, views: (r.views || 0) + 1 } : r
+      ));
+
+      // Navigate to report detail or show modal
+      alert(`Viewing report: ${report.title}\n\n${report.description || 'No description available.'}`);
+    } catch (error) {
+      console.error('Error viewing report:', error);
+    }
   };
 
+  // ---------- Utility functions for styling ----------
   const getStatusColor = (status) => {
     switch(status) {
       case 'completed': return 'success';
@@ -245,7 +290,10 @@ const AdminReports = () => {
           <button className="btn-generate" onClick={generateNewReport}>
             <FileText size={18} /> Generate New Report
           </button>
-          <button className="btn-export-all" onClick={() => alert('Exporting all reports...')}>
+          <button 
+            className="btn-export-all" 
+            onClick={() => alert('Export all reports – coming soon')}
+          >
             <Download size={18} /> Export All
           </button>
         </div>
@@ -369,7 +417,7 @@ const AdminReports = () => {
                     </div>
                   </td>
                   <td>
-                    <span className={`report-type ${report.type.toLowerCase()}`}>
+                    <span className={`report-type ${report.type?.toLowerCase()}`}>
                       {report.type}
                     </span>
                   </td>
@@ -390,12 +438,12 @@ const AdminReports = () => {
                   </td>
                   <td>
                     <div className="metric">
-                      <Eye size={14} /> {report.views}
+                      <Eye size={14} /> {report.views || 0}
                     </div>
                   </td>
                   <td>
                     <div className="metric">
-                      <Download size={14} /> {report.downloads}
+                      <Download size={14} /> {report.downloads || 0}
                     </div>
                   </td>
                   <td>
@@ -458,15 +506,26 @@ const AdminReports = () => {
             </div>
             <div className="summary-stat">
               <span className="label">Most Viewed</span>
-              <span className="value">Financial Reports</span>
+              <span className="value">
+                {reports.length > 0 
+                  ? reports.sort((a, b) => (b.views || 0) - (a.views || 0))[0]?.type 
+                  : 'N/A'}
+              </span>
             </div>
             <div className="summary-stat">
               <span className="label">Storage Used</span>
-              <span className="value">45.2 MB</span>
+              <span className="value">
+                {reports.reduce((acc, r) => {
+                  const size = parseFloat(r.file_size) || 1.5;
+                  return acc + size;
+                }, 0).toFixed(1)} MB
+              </span>
             </div>
             <div className="summary-stat">
               <span className="label">Auto-generated</span>
-              <span className="value">{Math.floor(stats.totalReports * 0.6)} reports</span>
+              <span className="value">
+                {reports.filter(r => r.generated_by === null).length} reports
+              </span>
             </div>
           </div>
         </div>
@@ -486,8 +545,8 @@ const AdminReports = () => {
                 <div className="activity-content">
                   <p>{report.title}</p>
                   <small>
-                    {new Date(report.lastUpdated).toLocaleDateString()} • 
-                    {report.generatedBy}
+                    {new Date(report.last_updated || report.date).toLocaleDateString()} • 
+                    {report.generatedBy || 'System'}
                   </small>
                 </div>
                 <span className={`status-dot ${getStatusColor(report.status)}`}></span>

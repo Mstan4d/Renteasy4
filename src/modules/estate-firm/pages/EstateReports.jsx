@@ -1,96 +1,229 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BarChart3, PieChart, TrendingUp, Download,
   Filter, Calendar, FileText, Users, DollarSign,
   Building, Target, AlertCircle, CheckCircle
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './EstateReports.css';
 
 const EstateReports = () => {
+  const { user } = useAuth();
   const [dateRange, setDateRange] = useState('monthly');
-  const [reportType, setReportType] = useState('financial');
+  const [reportType, setReportType] = useState('all');
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
 
-  const reports = [
-    {
-      id: 'report_001',
-      title: 'Monthly Financial Report',
-      type: 'financial',
-      period: 'November 2024',
-      generated: '2024-12-01',
-      size: '2.4 MB',
-      status: 'ready',
-      downloads: 12
-    },
-    {
-      id: 'report_002',
-      title: 'Property Portfolio Analysis',
-      type: 'portfolio',
-      period: 'Q4 2024',
-      generated: '2024-11-28',
-      size: '1.8 MB',
-      status: 'ready',
-      downloads: 8
-    },
-    {
-      id: 'report_003',
-      title: 'Client Performance Report',
-      type: 'clients',
-      period: 'November 2024',
-      generated: '2024-11-25',
-      size: '1.2 MB',
-      status: 'ready',
-      downloads: 15
-    },
-    {
-      id: 'report_004',
-      title: 'Rent Collection Report',
-      type: 'financial',
-      period: 'October 2024',
-      generated: '2024-11-01',
-      size: '1.5 MB',
-      downloads: 6
-    },
-    {
-      id: 'report_005',
-      title: 'Market Analysis Report',
-      type: 'market',
-      period: 'Q3 2024',
-      generated: '2024-10-15',
-      size: '3.2 MB',
-      downloads: 9
-    },
-    {
-      id: 'report_006',
-      title: 'Staff Performance Report',
-      type: 'staff',
-      period: 'November 2024',
-      generated: '2024-11-30',
-      size: '1.0 MB',
-      status: 'generating',
-      downloads: 0
+  const [metrics, setMetrics] = useState([
+    { label: 'Total Revenue', value: '₦0', change: '+0%', icon: DollarSign },
+    { label: 'Properties Managed', value: '0', change: '+0%', icon: Building },
+    { label: 'Active Clients', value: '0', change: '+0%', icon: Users },
+    { label: 'Occupancy Rate', value: '0%', change: '+0%', icon: CheckCircle }
+  ]);
+
+  useEffect(() => {
+    if (user) {
+      loadReports();
+      loadMetrics();
     }
-  ];
+  }, [user, dateRange]);
 
-  const metrics = [
-    { label: 'Total Revenue', value: '₦45.2M', change: '+12%', icon: DollarSign },
-    { label: 'Properties Managed', value: '156', change: '+8%', icon: Building },
-    { label: 'Active Clients', value: '89', change: '+5%', icon: Users },
-    { label: 'Occupancy Rate', value: '92%', change: '+3%', icon: CheckCircle }
-  ];
+  const loadReports = async () => {
+    try {
+      setLoading(true);
+
+      let query = supabase
+        .from('estate_reports')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('generated_at', { ascending: false });
+
+      // Filter by date range if needed
+      if (dateRange !== 'all') {
+        const startDate = getDateRangeStart(dateRange);
+        query = query.gte('generated_at', startDate.toISOString());
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setReports(data || []);
+
+    } catch (error) {
+      console.error('Error loading reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMetrics = async () => {
+    try {
+      // Load firm profile for stats
+      const { data: profile } = await supabase
+        .from('estate_firm_profiles')
+        .select('stats')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profile?.stats) {
+        setMetrics([
+          { 
+            label: 'Total Revenue', 
+            value: `₦${(profile.stats.monthly_revenue || 0).toLocaleString()}`, 
+            change: '+12%', 
+            icon: DollarSign 
+          },
+          { 
+            label: 'Properties Managed', 
+            value: (profile.stats.total_properties || 0).toString(), 
+            change: '+8%', 
+            icon: Building 
+          },
+          { 
+            label: 'Active Clients', 
+            value: (profile.stats.active_clients || 0).toString(), 
+            change: '+5%', 
+            icon: Users 
+          },
+          { 
+            label: 'Occupancy Rate', 
+            value: '92%', 
+            change: '+3%', 
+            icon: CheckCircle 
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error loading metrics:', error);
+    }
+  };
+
+  const getDateRangeStart = (range) => {
+    const now = new Date();
+    switch(range) {
+      case 'daily': return new Date(now.setDate(now.getDate() - 1));
+      case 'weekly': return new Date(now.setDate(now.getDate() - 7));
+      case 'monthly': return new Date(now.setMonth(now.getMonth() - 1));
+      case 'quarterly': return new Date(now.setMonth(now.getMonth() - 3));
+      case 'yearly': return new Date(now.setFullYear(now.getFullYear() - 1));
+      default: return new Date(0);
+    }
+  };
 
   const generateReport = async (type) => {
-    console.log(`Generating ${type} report...`);
-    // API call to generate report
+    if (!user) return;
+
+    try {
+      setGenerating(true);
+
+      // Create report entry
+      const reportData = {
+        user_id: user.id,
+        title: `${type.charAt(0).toUpperCase() + type.slice(1)} Report - ${new Date().toLocaleDateString()}`,
+        report_type: type,
+        period: getPeriodText(dateRange),
+        file_url: '', // Will be updated after generation
+        status: 'generating',
+        parameters: {
+          date_range: dateRange,
+          generated_at: new Date().toISOString()
+        }
+      };
+
+      const { data: report, error } = await supabase
+        .from('estate_reports')
+        .insert(reportData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Generate report content (simulated)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Update report with file URL
+      const { error: updateError } = await supabase
+        .from('estate_reports')
+        .update({
+          status: 'ready',
+          file_url: `/reports/${report.id}.pdf`,
+          generated_at: new Date().toISOString()
+        })
+        .eq('id', report.id);
+
+      if (updateError) throw updateError;
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'report',
+        action: 'generate',
+        description: `Generated ${type} report`,
+        created_at: new Date().toISOString()
+      });
+
+      alert('Report generated successfully!');
+      loadReports();
+
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('Failed to generate report. Please try again.');
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const downloadReport = (reportId) => {
-    console.log(`Downloading report ${reportId}`);
-    // API call to download report
+  const downloadReport = async (reportId) => {
+    try {
+      const report = reports.find(r => r.id === reportId);
+      if (!report) return;
+
+      // Update download count
+      await supabase
+        .from('estate_reports')
+        .update({ 
+          downloads: (report.downloads || 0) + 1 
+        })
+        .eq('id', reportId);
+
+      // Simulate download
+      const link = document.createElement('a');
+      link.href = report.file_url || '#';
+      link.download = `${report.title.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      link.click();
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'report',
+        action: 'download',
+        description: `Downloaded report: ${report.title}`,
+        created_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      alert('Failed to download report. Please try again.');
+    }
   };
 
-  const filteredReports = reports.filter(report => 
-    reportType === 'all' ? true : report.type === reportType
-  );
+  const getPeriodText = (range) => {
+    const now = new Date();
+    switch(range) {
+      case 'daily': return 'Today';
+      case 'weekly': return 'This Week';
+      case 'monthly': return `${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}`;
+      case 'quarterly': return `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+      case 'yearly': return now.getFullYear().toString();
+      default: return 'All Time';
+    }
+  };
+
+  const filteredReports = reportType === 'all' 
+    ? reports 
+    : reports.filter(report => report.report_type === reportType);
 
   return (
     <div className="estate-reports">

@@ -1,6 +1,7 @@
-// src/modules/properties/pages/PostPropertyPage.jsx - FIXED COMMISSION LOGIC
+// src/modules/properties/pages/PostPropertyPage.jsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
 import ProgressIndicator from '../components/ProgressIndicator';
 import BasicInfoStep from '../components/steps/BasicInfoStep';
@@ -8,78 +9,72 @@ import LocationStep from '../components/steps/LocationStep';
 import ImagesStep from '../components/steps/ImagesStep';
 import ConfirmationStep from '../components/steps/ConfirmationStep';
 import CommissionNotice from '../components/CommissionNotice';
-import { createNewListing } from '../../../shared/utils/listingUtils';
 import './PostProperty.css';
 
 const PostPropertyPage = () => {
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Initialize form data with user info
-  const initialFormData = {
+  // Check if this is an estate firm post
+  const isEstateFirm = searchParams.get('type') === 'estate-firm';
+  const estateFirmId = searchParams.get('estateFirmId');
+  
+  // Initial form data
+  const [formData, setFormData] = useState({
     // Basic Info
     title: '',
     description: '',
-    price: '',
-    propertyType: '',
-    contactPhone: '',
-    contactEmail: '',
+    rent_amount: '', // ANNUAL RENT (Nigeria standard)
+    property_type: '',
+    contact_phone: '',
+    contact_email: profile?.email || '',
     
     // Location
     address: '',
     state: '',
     lga: '',
+    city: '',
+    landmark: '',
     coordinates: { lat: null, lng: null },
     
+    // Property Details
+    bedrooms: 1,
+    bathrooms: 1,
+    area: '',
+    amenities: [],
+    
     // Images
-    images: {
-      kitchen: [],
-      dining: [],
-      outside: [],
-      inside: [],
-      other: []
-    },
+    images: [],
     
-    // Meta
-    status: 'draft',
-    hasLandlordConsent: false,
-    referralCode: '', // This is for the ₦5000 user referral bonus, NOT for commission
+    // User info
+    user_id: user?.id,
+    user_role: profile?.role,
     
-    // User info (will be populated from auth)
-    userId: '',
-    userRole: '',
-    userName: '',
-    userEmail: ''
-  };
+    // Commission settings
+    commission_rate: 0, // Default, will be set based on user role
+    posted_by: profile?.role,
+  });
 
-  const [formData, setFormData] = useState(initialFormData);
-
-  // Initialize with user data
+  // Load user data
   useEffect(() => {
-    if (user) {
+    if (profile) {
       setFormData(prev => ({
         ...prev,
-        userId: user.id || '',
-        userRole: user.role || '',
-        userName: user.name || '',
-        userEmail: user.email || '',
-        contactPhone: user.phone || '',
-        contactEmail: user.email || '',
-        verified: user.verified || false
+        user_id: user.id,
+        user_role: profile.role,
+        contact_email: profile.email,
+        contact_phone: profile.phone || '',
+        posted_by: profile.role,
+        // Estate firms pay 0% commission
+        commission_rate: profile.role === 'estate-firm' ? 0 : 7.5
       }));
     }
-  }, [user]);
+  }, [user, profile]);
 
-  // Check if user is authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login', { state: { from: '/dashboard/post' } });
-    }
-  }, [isAuthenticated, navigate]);
-
-  // Handle step navigation
+  // Step navigation
   const nextStep = () => {
     if (validateCurrentStep()) {
       setCurrentStep(prev => Math.min(prev + 1, 4));
@@ -90,24 +85,46 @@ const PostPropertyPage = () => {
     setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
+  // Validation for each step
   const validateCurrentStep = () => {
     switch (currentStep) {
-      case 1:
-        if (!formData.title.trim() || !formData.price || !formData.propertyType) {
-          alert('Please fill in all required fields');
+      case 1: // Basic Info
+        if (!formData.title.trim()) {
+          alert('Please enter a property title');
+          return false;
+        }
+        if (!formData.rent_amount || parseFloat(formData.rent_amount) <= 0) {
+          alert('Please enter a valid annual rent amount');
+          return false;
+        }
+        if (!formData.property_type  || formData.property_type.trim() ==="") {
+          alert('Please select a property type');
           return false;
         }
         return true;
       
-      case 2:
-        if (!formData.address.trim() || !formData.state || !formData.lga) {
-          alert('Please provide complete location details');
+      case 2: // Location
+        if (!formData.address.trim()) {
+          alert('Please enter the property address');
+          return false;
+        }
+        if (!formData.state) {
+          alert('Please select a state');
+          return false;
+        }
+        if (!formData.city) {
+          alert('Please enter the city/town');
           return false;
         }
         return true;
       
-      case 3:
-        // Images are optional
+      case 3: // Images (optional but show warning)
+        if (formData.images.length === 0) {
+          const proceed = window.confirm(
+            'No images added. Properties with images get rented faster!\n\nContinue without images?'
+          );
+          return proceed;
+        }
         return true;
       
       default:
@@ -115,259 +132,398 @@ const PostPropertyPage = () => {
     }
   };
 
-  // Handle form data updates
+  // Update form data
   const updateFormData = (updates) => {
     setFormData(prev => ({ ...prev, ...updates }));
   };
 
-  // FIXED: Calculate commission based on business rules
+  // Calculate commission based on BUSINESS RULES
   const calculateCommission = () => {
-    const listingPrice = parseFloat(formData.price) || 0;
+    const annualRent = parseFloat(formData.rent_amount) || 0;
+    const userRole = formData.user_role;
     
-    // Ensure we have a valid price
-    if (listingPrice <= 0) {
-      alert('Please enter a valid price');
-      return null;
-    }
-    
-    const posterRole = formData.userRole || '';
-    
-    // BUSINESS RULE 1: Estate firms get ZERO RentEasy commission (subscription model)
-    if (posterRole === 'estate_firm') {
+    if (annualRent <= 0) {
       return {
-        listingPrice,
-        totalPrice: listingPrice, // No commission added
-        breakdown: {
-          total: 0,
-          rentEasy: 0,    // Estate firms pay subscription, not commission
-          manager: 0,     // Managers don't get commission from estate firm posts
-          referrer: 0,    // No referrer commission
-          poster: 0       // Estate firm doesn't get commission as poster
-        },
-        isEstateFirm: true,
-        note: 'Estate firm listing: No RentEasy commission (monthly subscription model)'
+        annualRent: 0,
+        monthlyEquivalent: 0,
+        totalCommission: 0,
+        managerCommission: 0,
+        posterCommission: 0,
+        rentEasyCommission: 0,
+        note: 'Enter valid rent amount'
       };
     }
     
-    // BUSINESS RULE 2: Tenant and Landlord posts ALWAYS have 7.5% commission
-    const totalCommission = listingPrice * 0.075; // ALWAYS 7.5% for tenants/landlords
-    
-    const commissionBreakdown = {
-      total: totalCommission,
-      rentEasy: listingPrice * 0.04,      // ALWAYS 4% for RentEasy platform
-      manager: listingPrice * 0.025,      // ALWAYS 2.5% for manager
-      referrer: listingPrice * 0.01,      // ALWAYS 1% for referrer (poster themselves!)
-      poster: listingPrice * 0.01         // ALWAYS 1% for poster
-    };
-    
-    // Determine who the referrer/poster is
-    let referrerType = '';
-    if (posterRole === 'tenant') {
-      referrerType = 'Outgoing Tenant';
-    } else if (posterRole === 'landlord') {
-      referrerType = 'Landlord';
+    // BUSINESS RULE: Estate firms have ZERO commission
+    if (userRole === 'estate-firm') {
+      return {
+        annualRent,
+        monthlyEquivalent: annualRent / 12,
+        totalCommission: 0,
+        managerCommission: 0,
+        posterCommission: 0,
+        rentEasyCommission: 0,
+        isEstateFirm: true,
+        note: 'Estate Firm: 0% commission (subscription model)'
+      };
     }
+    
+    // BUSINESS RULE: Regular listings have 7.5% TOTAL commission
+    const totalCommission = annualRent * 0.075; // 7.5%
+    const managerCommission = annualRent * 0.025; // 2.5%
+    const posterCommission = annualRent * 0.015;  // 1.5% - Poster earns this!
+    const rentEasyCommission = annualRent * 0.035; // 3.5%
     
     return {
-      listingPrice,
-      totalPrice: listingPrice + totalCommission,
-      breakdown: commissionBreakdown,
-      referrerType,
+      annualRent,
+      monthlyEquivalent: annualRent / 12,
+      totalCommission,
+      managerCommission,
+      posterCommission,
+      rentEasyCommission,
       isEstateFirm: false,
-      note: `Total commission: 7.5% (${referrerType}: 1%, Manager: 2.5%, RentEasy: 4%)`
+      note: `Total Commission: 7.5% (You earn 1.5% as poster)`
     };
   };
 
-  // Submit the listing
-  const submitListing = async () => {
-    // Validate form data first
-    if (!validateCurrentStep()) {
-      alert('Please complete all required fields');
-      return;
-    }
+  // Upload images to Supabase Storage
+ // In PostPropertyPage.jsx, update the uploadImages function
+const uploadImages = async (listingId) => {
+  const uploadedUrls = [];
   
-    const commission = calculateCommission();
-    if (!commission) return; // If calculation failed
-  
-    setIsSubmitting(true);
-    
+  for (const image of formData.images) {
     try {
-      const listingPrice = commission.listingPrice;
-      
-      // Prepare listing data
-      const listingData = {
-        // Basic info
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        price: listingPrice,
-        propertyType: formData.propertyType,
-        contactPhone: formData.contactPhone,
-        contactEmail: formData.contactEmail,
-        
-        // Location
-        address: formData.address.trim(),
-        state: formData.state,
-        lga: formData.lga,
-        coordinates: formData.coordinates,
-        
-        // Images
-        images: [
-          ...(formData.images.kitchen || []),
-          ...(formData.images.dining || []),
-          ...(formData.images.outside || []),
-          ...(formData.images.inside || []),
-          ...(formData.images.other || [])
-        ].slice(0, 5),
-        
-        // User verification requirements
-        requiresLandlordVerification: formData.userRole === 'tenant',
-        landlordConsent: formData.userRole === 'tenant' ? formData.hasLandlordConsent : true,
-        
-        // Referral code for ₦5000 user referral bonus (separate from commission)
-        referralCode: formData.referralCode,
-        
-        // Additional details
-        bedrooms: formData.propertyType.includes('Bedroom') 
-          ? parseInt(formData.propertyType.match(/\d+/)?.[0] || '1') 
-          : 1,
-        bathrooms: 1,
-        
-        // Flags
-        isFeatured: false,
-        isUrgent: false,
-      };
-  
-      // Get user data
-      const currentUser = user || {
-        id: `temp_${Date.now()}`,
-        name: formData.userName || 'Anonymous',
-        role: formData.userRole || 'user',
-        verified: formData.verified || false,
-        email: formData.userEmail
-      };
-  
-      // Use the createNewListing function
-      const newListing = createNewListing(listingData, currentUser);
-      
-      // Save commission info to the listing
-      newListing.commissionInfo = {
-        totalRate: commission.isEstateFirm ? 0 : 0.075,
-        breakdown: commission.breakdown,
-        referrer: {
-          id: currentUser.id,
-          name: currentUser.name,
-          role: formData.userRole,
-          commissionRate: commission.isEstateFirm ? 0 : 0.01,
-          commissionAmount: commission.breakdown.poster
-        }
-      };
-
-      // Show success message based on user role
-      let successMessage = `✅ Listing submitted successfully!\n\n`;
-      successMessage += `📋 Listing Price: ₦${listingPrice.toLocaleString()}\n`;
-      
-      if (commission.isEstateFirm) {
-        successMessage += `🏢 Estate Firm: No RentEasy commission (monthly subscription)\n`;
-        successMessage += `💼 Total Payable: ₦${listingPrice.toLocaleString()}\n`;
-      } else {
-        successMessage += `📊 Total Commission (7.5%): ₦${commission.breakdown.total.toLocaleString()}\n`;
-        successMessage += `   • ${commission.referrerType} (1%): ₦${commission.breakdown.poster.toLocaleString()}\n`;
-        successMessage += `   • Manager (2.5%): ₦${commission.breakdown.manager.toLocaleString()}\n`;
-        successMessage += `   • RentEasy (4%): ₦${commission.breakdown.rentEasy.toLocaleString()}\n`;
-        successMessage += `💵 Total Payable by Tenant: ₦${commission.totalPrice.toLocaleString()}\n`;
+      // If it's already a real URL (not a blob), keep it
+      if (image.url && !image.url.startsWith('blob:')) {
+        uploadedUrls.push(image.url);
+        continue;
       }
       
-      successMessage += `\n🔄 Status: Pending admin verification`;
-      
-      alert(successMessage);
-  
-      // Navigate to listings page
-      navigate('/listings');
-  
+      // If it's a file that needs upload
+      if (image.file) {
+        const fileExt = image.file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `listings/${listingId}/${fileName}`;
+        
+        console.log('Uploading to path:', filePath);
+        
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+          .from('property-images')
+          .upload(filePath, image.file);
+        
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          continue;
+        }
+        
+        // Get public URL (CORRECT WAY)
+        const { data: urlData } = supabase.storage
+          .from('property-images')
+          .getPublicUrl(filePath);
+        
+        if (urlData.publicUrl) {
+          uploadedUrls.push(urlData.publicUrl);
+          console.log('✅ Uploaded:', urlData.publicUrl);
+        }
+      }
     } catch (error) {
-      console.error('Error submitting listing:', error);
-      alert(`❌ Failed to submit listing: ${error.message}\n\nPlease check your data and try again.`);
-    } finally {
-      setIsSubmitting(false);
+      console.error('❌ Error uploading image:', error);
     }
-  };
+  }
+  
+  return uploadedUrls;
+};
+// Add this debug function to PostPropertyPage.jsx
+const debugFormData = () => {
+  console.log('=== FORM DATA DEBUG ===');
+  console.log('1. Title:', formData.title);
+  console.log('2. Price (rent_amount):', formData.rent_amount);
+  console.log('3. Property Type:', formData.property_type);
+  console.log('4. Images count:', formData.images.length);
+  console.log('5. User Role:', formData.user_role);
+  console.log('6. Commission Rate:', formData.user_role === 'estate-firm' ? 0 : 7.5);
+  console.log('7. Status will be:', 'pending');
+  console.log('8. Will be visible immediately:', true);
+  console.log('=== END DEBUG ===');
+};
 
-  // Request verification (for landlords/managers) - You can keep this if needed
-  const requestVerification = () => {
-    const adminQueue = JSON.parse(localStorage.getItem('adminListings') || '[]');
-    adminQueue.push({
-      ...formData,
-      id: `ADMIN-${Date.now()}`,
+
+  const submitListing = async () => {
+  if (!validateCurrentStep()) return;
+  
+  const commission = calculateCommission();
+  
+  // Show commission confirmation for non-estate firms
+  if (!commission.isEstateFirm) {
+    const confirmMessage = `COMMISSION BREAKDOWN (Annual Rent: ₦${commission.annualRent.toLocaleString()})\n\n` +
+      `Total Commission: 7.5% = ₦${commission.totalCommission.toLocaleString()}\n\n` +
+      `• You (Poster): 1.5% = ₦${commission.posterCommission.toLocaleString()}\n` +
+      `• Manager: 2.5% = ₦${commission.managerCommission.toLocaleString()}\n` +
+      `• RentEasy: 3.5% = ₦${commission.rentEasyCommission.toLocaleString()}\n\n` +
+      `✅ You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n` +
+      `Agree to continue?`;
+    
+    const confirmed = window.confirm(confirmMessage);
+    if (!confirmed) return;
+  }
+  // Call this before submitting
+debugFormData();
+  setIsSubmitting(true);
+  
+  try {
+    // ========== CORRECT LISTING DATA FOR SUPABASE ==========
+    const listingData = {
+      // Basic Info (REQUIRED)
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      
+      // 💰 PRICE: Use 'price' column (numeric) - This is what shows in listings
+      price: parseFloat(formData.rent_amount) || 0,
+      // Also store rent_amount for reference
+      rent_amount: formData.rent_amount,
+      
+      // Property Type
+      property_type: formData.property_type,
+      
+      // Location (REQUIRED)
+      address: formData.address.trim(),
+      state: formData.state,
+      city: formData.city,
+      lga: formData.lga || '',
+      landmark: formData.landmark || '',
+      
+      // Coordinates for manager notifications
+      //coordinates: formData.coordinates,
+      
+      // Property Details
+      bedrooms: parseInt(formData.bedrooms) || 1,
+      bathrooms: parseInt(formData.bathrooms) || 1,
+      area: formData.area || null,
+      amenities: formData.amenities || [],
+      
+      // Contact Info
+      contact_phone: formData.contact_phone || profile?.phone || '',
+      contact_email: formData.contact_email || profile?.email || '',
+      
+      // 💡 BUSINESS RULE: Who posted this? (Tenant, Landlord, Estate Firm)
+      poster_role: profile?.role || formData.user_role,
+      poster_name: profile?.full_name || user?.email,
+      poster_phone: formData.contact_phone || profile?.phone || '',
+      
+      // User Info
+      user_id: user.id,
+      
+      // Commission (CRITICAL BUSINESS RULE)
+      commission_rate: profile?.role === 'estate-firm' ? 0 : 7.5,
+      
+      // Rent frequency (Nigeria standard = yearly)
+      rent_frequency: 'yearly',
+      
+      // Status (IMMEDIATELY VISIBLE AS PENDING)
       status: 'pending',
-      queuedAt: new Date().toISOString(),
-      type: 'verification_request',
-      userRole: formData.userRole
-    });
-    localStorage.setItem('adminListings', JSON.stringify(adminQueue));
-    alert('Verification request sent to admin.');
+      is_verified: false,
+      is_active: true,
+      verification_level: 'pending',
+      rejected: false,
+      
+      // Timestamps
+      posted_date: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      
+      // Images will be added after upload
+      images: []
+    };
+    
+    // Add estate firm ID if applicable
+    if (profile?.role === 'estate-firm' && estateFirmId) {
+      listingData.estate_firm_id = estateFirmId;
+    }
+    
+    console.log('📤 Submitting to Supabase:', listingData);
+    
+    // ========== STEP 1: CREATE LISTING IN DATABASE ==========
+    const { data: listing, error: listingError } = await supabase
+      .from('listings')
+      .insert([listingData])
+      .select()
+      .single();
+    
+    if (listingError) {
+      console.error('❌ Database error:', listingError);
+      throw new Error(`Failed to save listing: ${listingError.message}`);
+    }
+    
+    console.log('✅ Listing created in database:', listing.id);
+    
+    // ========== STEP 2: UPLOAD IMAGES IF ANY ==========
+    let imageUrls = [];
+    if (formData.images.length > 0) {
+      console.log('📸 Uploading images...');
+      imageUrls = await uploadImages(listing.id);
+      
+      // Update listing with image URLs
+      if (imageUrls.length > 0) {
+        const { error: imageError } = await supabase
+          .from('listings')
+          .update({ images: imageUrls })
+          .eq('id', listing.id);
+        
+        if (imageError) {
+          console.error('⚠️ Could not save image URLs:', imageError);
+        } else {
+          console.log(`✅ ${imageUrls.length} images uploaded`);
+        }
+      }
+    }
+    
+    // ========== STEP 3: SUCCESS MESSAGE ==========
+    const successMessage = profile?.role === 'estate-firm' 
+      ? `🏢 Estate Firm Listing Posted!\n\n` +
+        `✅ 0% Commission (Subscription Model)\n` +
+        `📝 ${formData.title}\n` +
+        `📍 ${formData.address}, ${formData.city}\n` +
+        `💰 ₦${commission.annualRent.toLocaleString()}/year\n\n` +
+        `✅ Your listing is NOW LIVE with "Pending" status`
+      : `✅ Property Listed Successfully!\n\n` +
+        `📝 ${formData.title}\n` +
+        `📍 ${formData.address}, ${formData.city}\n` +
+        `💰 ₦${commission.annualRent.toLocaleString()}/year (₦${commission.monthlyEquivalent.toLocaleString()}/month)\n\n` +
+        `💰 You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n` +
+        `✅ Your listing is NOW LIVE with "Pending" status`;
+    
+    alert(successMessage);
+    
+    // ========== STEP 4: NOTIFY NEARBY MANAGERS ==========
+    if (formData.coordinates?.lat && formData.coordinates?.lng) {
+      console.log('📢 Notifying nearby managers...');
+      await notifyNearbyManagers(listing.id, formData.coordinates);
+    }
+    
+    // ========== STEP 5: NAVIGATE TO DASHBOARD ==========
+    setTimeout(() => {
+      const roleDashboard = {
+        'tenant': '/dashboard/tenant',
+        'landlord': '/dashboard/landlord',
+        'manager': '/dashboard/manager',
+        'estate-firm': '/dashboard/estate-firm',
+        'service-provider': '/dashboard/provider'
+      };
+      
+      navigate(roleDashboard[profile?.role] || '/dashboard');
+    }, 1500);
+    
+  } catch (error) {
+    console.error('❌ Error posting property:', error);
+    
+    let errorMessage = 'Failed to post property\n';
+    if (error.message.includes('permission')) {
+      errorMessage += 'You need permission to post properties.';
+    } else if (error.message.includes('network')) {
+      errorMessage += 'Network error. Check connection.';
+    } else if (error.message.includes('foreign')) {
+      errorMessage += 'User profile not found. Please complete your profile first.';
+    } else {
+      errorMessage += error.message;
+    }
+    
+    alert(`❌ ${errorMessage}`);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+  // Notify nearby managers (Business Rule)
+  const notifyNearbyManagers = async (listingId, coordinates) => {
+    try {
+      // Get managers within 1km radius (you'll need to create this function in Supabase)
+      // For now, we'll just create a notification
+      const notification = {
+        type: 'new_listing',
+        title: 'New Property Available',
+        message: `A new property has been posted in your area. Click to view details.`,
+        data: { listing_id: listingId, coordinates },
+        created_at: new Date().toISOString()
+      };
+      
+      // You would typically send this to managers via WebSocket or push notification
+      console.log('Notify managers about new listing:', listingId);
+      
+    } catch (error) {
+      console.error('Error notifying managers:', error);
+    }
   };
 
   // Render current step
   const renderStep = () => {
+    const commonProps = {
+      formData,
+      updateFormData,
+      userRole: formData.user_role
+    };
+    
     switch (currentStep) {
       case 1:
-        return (
-          <BasicInfoStep 
-            formData={formData}
-            updateFormData={updateFormData}
-            userRole={formData.userRole}
-          />
-        );
-      
+        return <BasicInfoStep {...commonProps} />;
       case 2:
-        return (
-          <LocationStep 
-            formData={formData}
-            updateFormData={updateFormData}
-          />
-        );
-      
+        return <LocationStep {...commonProps} />;
       case 3:
-        return (
-          <ImagesStep 
-            formData={formData}
-            updateFormData={updateFormData}
-          />
-        );
-      
+        return <ImagesStep {...commonProps} />;
       case 4:
         return (
-          <ConfirmationStep 
-            formData={formData}
+          <ConfirmationStep
+            {...commonProps}
             commission={calculateCommission()}
-            userRole={formData.userRole}
             onSubmit={submitListing}
-            onRequestVerification={requestVerification}
             isSubmitting={isSubmitting}
           />
         );
-      
       default:
         return null;
     }
   };
 
+  if (!user) {
+    return (
+      <div className="auth-required">
+        <h2>Please log in to post a property</h2>
+        <button onClick={() => navigate('/login')} className="btn btn-primary">
+          Go to Login
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="post-property-container">
       <main className="post-property-main">
         <div className="container">
-          <h1 className="page-title">Post a Property</h1>
+          <div className="page-header">
+            <h1>
+              {formData.user_role === 'estate-firm' 
+                ? '🏢 Estate Firm Listing'
+                : formData.user_role === 'tenant'
+                ? '👤 Post Vacating Property'
+                : '🏠 List Your Property'}
+            </h1>
+            <p>
+              {formData.user_role === 'estate-firm'
+                ? '0% commission for subscribed estate firms'
+                : 'Earn 1.5% commission when property gets rented'}
+            </p>
+          </div>
           
-          {/* Progress Indicator */}
+          {/* Progress */}
           <ProgressIndicator 
             currentStep={currentStep}
             steps={['Basic Info', 'Location', 'Images', 'Confirm']}
           />
           
-          {/* Commission Notice for All Users */}
+          {/* Commission Notice */}
           <CommissionNotice 
-            price={formData.price}
-            userRole={formData.userRole}
+            price={formData.rent_amount}
+            userRole={formData.user_role}
+            commission={calculateCommission()}
           />
           
           {/* Current Step */}
@@ -375,40 +531,40 @@ const PostPropertyPage = () => {
             {renderStep()}
           </div>
           
-          {/* Navigation Buttons */}
+          {/* Navigation */}
           <div className="step-navigation">
-            {currentStep > 1 && (
-              <button 
-                className="btn btn-secondary"
-                onClick={prevStep}
-                disabled={isSubmitting}
-              >
-                ← Previous
-              </button>
-            )}
+            <div className="nav-left">
+              {currentStep > 1 && (
+                <button className="btn btn-secondary" onClick={prevStep} disabled={isSubmitting}>
+                  ← Back
+                </button>
+              )}
+            </div>
             
-            {currentStep < 4 ? (
-              <button 
-                className="btn btn-primary"
-                onClick={nextStep}
-                disabled={isSubmitting}
-              >
-                Next Step →
-              </button>
-            ) : (
-              <button 
-                className="btn btn-success"
-                onClick={submitListing}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="spinner"></span>
-                    Submitting...
-                  </>
-                ) : 'Submit Listing'}
-              </button>
-            )}
+            <div className="nav-right">
+              {currentStep < 4 ? (
+                <button className="btn btn-primary" onClick={nextStep} disabled={isSubmitting}>
+                  Continue →
+                </button>
+              ) : (
+                <button 
+                  className="btn btn-success" 
+                  onClick={submitListing}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Posting...' : 'Post Property'}
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* Help */}
+          <div className="help-text">
+            <p>Need help? Contact: support@renteasy.com | 0700-RENTEASY</p>
+            <small>
+              By posting, you agree to our Terms. 
+              {formData.user_role !== 'estate-firm' && ' Commission: 7.5% total (You: 1.5%).'}
+            </small>
           </div>
         </div>
       </main>

@@ -1,11 +1,20 @@
+// src/modules/provider/pages/ProviderDashboard.jsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
 import { 
   FaMoneyBill, FaCalendarAlt, FaStar, FaChartLine,
   FaBell, FaTools, FaUserCheck, FaExclamationTriangle
 } from 'react-icons/fa';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
+import './ProviderDashboard.css'; // Move styles to external CSS
 
 const ProviderDashboard = () => {
+  const navigate = useNavigate();
+  const { user, profile } = useAuth(); // Get the logged-in user and their profile
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     totalEarnings: 0,
     pendingBookings: 0,
@@ -16,40 +25,197 @@ const ProviderDashboard = () => {
     leadsThisMonth: 0,
     conversionRate: '0%'
   });
+  const [recentBookings, setRecentBookings] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [providerProfile, setProviderProfile] = useState(null);
+  const [subscription, setSubscription] = useState(null);
+  const [activeBoost, setActiveBoost] = useState(null);
 
-  const [recentBookings, setRecentBookings] = useState([
-    { id: 1, client: 'John Doe', service: 'House Cleaning', date: '2024-01-15', status: 'Upcoming', amount: '₦15,000' },
-    { id: 2, client: 'Jane Smith', service: 'Painting', date: '2024-01-14', status: 'Completed', amount: '₦45,000' },
-    { id: 3, client: 'Mike Johnson', service: 'Plumbing', date: '2024-01-12', status: 'In Progress', amount: '₦25,000' },
-  ]);
-
-  const [notifications, setNotifications] = useState([
-    { id: 1, message: 'New booking request from Sarah', time: '2 hours ago', type: 'booking' },
-    { id: 2, message: 'Your service has been reviewed', time: '1 day ago', type: 'review' },
-    { id: 3, message: 'Payment received ₦15,000', time: '2 days ago', type: 'payment' },
-  ]);
 
   useEffect(() => {
-    // Mock data - replace with actual API call
-    setStats({
-      totalEarnings: 125000,
-      pendingBookings: 3,
-      completedJobs: 24,
-      averageRating: 4.7,
-      responseRate: '95%',
-      upcomingJobs: 5,
-      leadsThisMonth: 12,
-      conversionRate: '42%'
-    });
-  }, []);
+    if (user) {
+      fetchProviderDashboardData();
+    }
+  }, [user]);
 
+  const fetchProviderDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Fetch provider profile (from profiles table)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+      setProviderProfile(profileData);
+
+// 2. Fetch subscription
+const { data: subData } = await supabase
+  .from('subscriptions')
+  .select('*')
+  .eq('user_id', user.id)
+  .eq('status', 'active')
+  .gte('expires_at', new Date().toISOString())
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+setSubscription(subData);
+
+//3. Fetch active boost
+const { data: boostData } = await supabase
+  .from('active_boosts')
+  .select('*, package:boost_packages(*)')
+  .eq('user_id', user.id)
+  .eq('status', 'active')
+  .gte('expires_at', new Date().toISOString())
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+setActiveBoost(boostData);
+
+      // 4. Fetch total earnings (sum of completed, paid bookings)
+      const { data: earningsData, error: earningsError } = await supabase
+        .from('provider_earnings')
+        .select('amount')
+        .eq('provider_id', user.id)
+        .eq('status', 'paid');
+
+      if (earningsError) throw earningsError;
+      const totalEarnings = earningsData.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      // 5. Fetch bookings (service requests)
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from('service_requests')
+        .select(`
+          *,
+          client:client_id (id, full_name, email, phone)
+        `)
+        .eq('provider_id', user.id)
+        .order('scheduled_date', { ascending: false })
+        .limit(10);
+
+      if (bookingsError) throw bookingsError;
+
+      // 6. Calculate stats from bookings
+      const pendingBookings = bookingsData.filter(b => b.status === 'pending' || b.status === 'confirmed').length;
+      const bookingCount = providerProfile?.free_booking_used || 0;
+      const isSubscribed = !!subscription;
+      const requiresSubscription = bookingCount >= 10 && !isSubscribed;
+      const subscriptionExpiry = subscription?.expires_at;
+      const isBoosted = !!activeBoost;
+      const boostExpiry = activeBoost?.expires_at;
+      const completedJobs = bookingsData.filter(b => b.status === 'completed').length;
+      const upcomingJobs = bookingsData.filter(b => 
+        b.status === 'confirmed' && 
+        new Date(b.scheduled_date) >= new Date()
+      ).length;
+
+      // 7. Fetch average rating from reviews
+      const { data: reviewsData, error: reviewsError } = await supabase
+        .from('provider_reviews')
+        .select('rating')
+        .eq('provider_id', user.id);
+
+      if (reviewsError) throw reviewsError;
+      const avgRating = reviewsData.length > 0
+        ? (reviewsData.reduce((sum, r) => sum + r.rating, 0) / reviewsData.length).toFixed(1)
+        : 0;
+
+      // 8. Fetch leads (new requests in last 30 days) & conversion rate
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const { data: leadsData, error: leadsError } = await supabase
+        .from('service_requests')
+        .select('id, status')
+        .eq('provider_id', user.id)
+        .gte('created_at', thirtyDaysAgo.toISOString());
+
+      if (leadsError) throw leadsError;
+
+      const leadsThisMonth = leadsData.length;
+      const convertedLeads = leadsData.filter(l => l.status === 'completed').length;
+      const conversionRate = leadsThisMonth > 0 
+        ? ((convertedLeads / leadsThisMonth) * 100).toFixed(0) + '%'
+        : '0%';
+
+      // 9. Fetch recent notifications (you may have a notifications table)
+      const { data: notificationsData, error: notificationsError } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (notificationsError) throw notificationsError;
+
+      // Format notifications for UI
+      const formattedNotifications = notificationsData.map(n => ({
+        id: n.id,
+        message: n.message || n.title,
+        time: formatTimeAgo(new Date(n.created_at)),
+        type: n.type || 'info'
+      }));
+
+      // 10. Update state
+      setStats({
+        totalEarnings,
+        pendingBookings,
+        completedJobs,
+        averageRating: parseFloat(avgRating),
+        responseRate: '95%', // You can calculate this from response_time if tracked
+        upcomingJobs,
+        leadsThisMonth,
+        conversionRate
+      });
+
+      // Format recent bookings for display
+      const formattedBookings = bookingsData.slice(0, 5).map(b => ({
+        id: b.id,
+        client: b.client?.full_name || 'Client',
+        service: b.service_type || 'Service',
+        date: new Date(b.scheduled_date).toLocaleDateString('en-GB'),
+        status: b.status.charAt(0).toUpperCase() + b.status.slice(1),
+        amount: `₦${(b.amount || 0).toLocaleString()}`
+      }));
+      setRecentBookings(formattedBookings);
+      setNotifications(formattedNotifications);
+
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper: format time ago
+  const formatTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + ' years ago';
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + ' months ago';
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + ' days ago';
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + ' hours ago';
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + ' minutes ago';
+    return Math.floor(seconds) + ' seconds ago';
+  };
+
+  // Stats cards configuration
   const statsCards = [
     { 
       title: 'Total Earnings', 
       value: `₦${stats.totalEarnings.toLocaleString()}`, 
       icon: <FaMoneyBill />, 
       color: 'linear-gradient(135deg, #00c853 0%, #64dd17 100%)',
-      change: '+12%'
+      change: '+12%' // You can calculate this from previous period
     },
     { 
       title: 'Pending Bookings', 
@@ -81,10 +247,36 @@ const ProviderDashboard = () => {
     { label: 'Get Verified', path: '/dashboard/provider/verify', icon: <FaUserCheck /> },
   ];
 
+  if (loading) {
+    return (
+      <ProviderPageTemplate title="Provider Dashboard" subtitle="Loading your dashboard...">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Fetching your data...</p>
+        </div>
+      </ProviderPageTemplate>
+    );
+  }
+
+  if (error) {
+    return (
+      <ProviderPageTemplate title="Provider Dashboard" subtitle="Something went wrong">
+        <div className="error-container">
+          <FaExclamationTriangle size={48} color="#dc3545" />
+          <h3>Error loading dashboard</h3>
+          <p>{error}</p>
+          <button className="btn-primary" onClick={fetchProviderDashboardData}>
+            Retry
+          </button>
+        </div>
+      </ProviderPageTemplate>
+    );
+  }
+
   return (
     <ProviderPageTemplate
       title="Provider Dashboard"
-      subtitle="Welcome back! Here's your business overview"
+      subtitle={`Welcome back, ${profile?.full_name || 'Provider'}! Here's your business overview`}
     >
       {/* Stats Grid */}
       <div className="provider-grid provider-grid-4" style={{ marginBottom: '2rem' }}>
@@ -115,42 +307,46 @@ const ProviderDashboard = () => {
             <h3 className="card-title">Recent Bookings</h3>
             <button 
               className="btn-secondary"
-              onClick={() => window.location.href = '/dashboard/provider/bookings'}
+              onClick={() => navigate('/dashboard/provider/bookings')}
             >
               View All
             </button>
           </div>
           
-          <div className="provider-table">
-            <div className="table-header">
-              <div className="provider-grid provider-grid-5">
-                <div>Client</div>
-                <div>Service</div>
-                <div>Date</div>
-                <div>Status</div>
-                <div>Amount</div>
-              </div>
-            </div>
-            
-            {recentBookings.map((booking) => (
-              <div key={booking.id} className="table-row">
+          {recentBookings.length > 0 ? (
+            <div className="provider-table">
+              <div className="table-header">
                 <div className="provider-grid provider-grid-5">
-                  <div className="table-cell">{booking.client}</div>
-                  <div className="table-cell">{booking.service}</div>
-                  <div className="table-cell">{booking.date}</div>
-                  <div className="table-cell">
-                    <span className={`status-badge status-${booking.status.toLowerCase().replace(' ', '')}`}>
-                      {booking.status}
-                    </span>
-                  </div>
-                  <div className="table-cell" style={{ fontWeight: '600' }}>{booking.amount}</div>
+                  <div>Client</div>
+                  <div>Service</div>
+                  <div>Date</div>
+                  <div>Status</div>
+                  <div>Amount</div>
                 </div>
               </div>
-            ))}
-          </div>
+              
+              {recentBookings.map((booking) => (
+                <div key={booking.id} className="table-row">
+                  <div className="provider-grid provider-grid-5">
+                    <div className="table-cell">{booking.client}</div>
+                    <div className="table-cell">{booking.service}</div>
+                    <div className="table-cell">{booking.date}</div>
+                    <div className="table-cell">
+                      <span className={`status-badge status-${booking.status.toLowerCase().replace(' ', '')}`}>
+                        {booking.status}
+                      </span>
+                    </div>
+                    <div className="table-cell" style={{ fontWeight: '600' }}>{booking.amount}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="no-data">No recent bookings found.</p>
+          )}
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Actions & Notifications */}
         <div className="provider-card">
           <div className="card-header">
             <h3 className="card-title">Quick Actions</h3>
@@ -161,7 +357,7 @@ const ProviderDashboard = () => {
               <button
                 key={index}
                 className="quick-action-btn"
-                onClick={() => window.location.href = action.path}
+                onClick={() => navigate(action.path)}
               >
                 <span className="action-icon">{action.icon}</span>
                 <span className="action-label">{action.label}</span>
@@ -173,23 +369,36 @@ const ProviderDashboard = () => {
           <div style={{ marginTop: '2rem' }}>
             <div className="card-header">
               <h3 className="card-title">Recent Notifications</h3>
+              {notifications.length > 0 && (
+                <button 
+                  className="btn-link"
+                  onClick={() => navigate('/dashboard/provider/notifications')}
+                >
+                  View All
+                </button>
+              )}
             </div>
             
-            <div className="notifications-list">
-              {notifications.map((notification) => (
-                <div key={notification.id} className="notification-item">
-                  <div className="notification-icon">
-                    {notification.type === 'booking' && '📅'}
-                    {notification.type === 'review' && '⭐'}
-                    {notification.type === 'payment' && '💰'}
+            {notifications.length > 0 ? (
+              <div className="notifications-list">
+                {notifications.map((notification) => (
+                  <div key={notification.id} className="notification-item">
+                    <div className="notification-icon">
+                      {notification.type === 'booking' && '📅'}
+                      {notification.type === 'review' && '⭐'}
+                      {notification.type === 'payment' && '💰'}
+                      {notification.type === 'info' && 'ℹ️'}
+                    </div>
+                    <div className="notification-content">
+                      <p className="notification-message">{notification.message}</p>
+                      <span className="notification-time">{notification.time}</span>
+                    </div>
                   </div>
-                  <div className="notification-content">
-                    <p className="notification-message">{notification.message}</p>
-                    <span className="notification-time">{notification.time}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="no-data">No new notifications.</p>
+            )}
           </div>
         </div>
       </div>
@@ -222,15 +431,26 @@ const ProviderDashboard = () => {
           <h3 className="card-title">Verification Status</h3>
           <div className="verification-status">
             <div className="verification-item">
-              <FaUserCheck style={{ color: '#4caf50', fontSize: '2rem' }} />
+              <FaUserCheck style={{ color: providerProfile?.is_kyc_verified ? '#4caf50' : '#ff9800', fontSize: '2rem' }} />
               <div>
-                <h4 style={{ margin: '0 0 0.5rem 0' }}>Profile Verified</h4>
-                <p style={{ color: '#666', margin: 0 }}>Your profile is 80% complete</p>
+                <h4 style={{ margin: '0 0 0.5rem 0' }}>
+                  {providerProfile?.is_kyc_verified ? 'Profile Verified' : 'Verification Pending'}
+                </h4>
+                <p style={{ color: '#666', margin: 0 }}>
+                  {providerProfile?.is_kyc_verified 
+                    ? 'Your profile is verified' 
+                    : `Profile is ${providerProfile?.kyc_status || 'incomplete'}`}
+                </p>
               </div>
             </div>
-            <button className="btn-primary" style={{ marginTop: '1rem' }}>
-              Complete Verification
-            </button>
+            {!providerProfile?.is_kyc_verified && (
+              <button 
+                className="btn-primary" 
+                onClick={() => navigate('/dashboard/provider/verify')}
+              >
+                Complete Verification
+              </button>
+            )}
           </div>
         </div>
 
@@ -239,160 +459,28 @@ const ProviderDashboard = () => {
           <div className="subscription-status">
             <div className="subscription-info">
               <p style={{ margin: '0 0 1rem 0' }}>
-                <strong>Status:</strong> <span className="status-active">Active</span>
+                <strong>Status:</strong> <span className="status-active">
+                  {providerProfile?.subscription_status || 'Active'}
+                </span>
               </p>
               <p style={{ margin: '0 0 1rem 0' }}>
-                <strong>Plan:</strong> Free Tier (5 bookings left)
+                <strong>Plan:</strong> {providerProfile?.plan_name || 'Free Tier'} 
+                {providerProfile?.remaining_bookings && ` (${providerProfile.remaining_bookings} bookings left)`}
               </p>
               <p style={{ margin: 0 }}>
-                <strong>Next Billing:</strong> After 5 more bookings
+                <strong>Next Billing:</strong> {providerProfile?.next_billing_date || 'After quota'}
               </p>
             </div>
-            <button className="btn-secondary" style={{ marginTop: '1rem' }}>
+            <button 
+              className="btn-secondary" 
+              style={{ marginTop: '1rem' }}
+              onClick={() => navigate('/dashboard/provider/subscription')}
+            >
               Upgrade Plan
             </button>
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        .provider-grid-4 {
-          grid-template-columns: repeat(4, 1fr);
-        }
-        
-        .quick-actions-grid {
-          display: grid;
-          gap: 1rem;
-          grid-template-columns: repeat(2, 1fr);
-        }
-        
-        .quick-action-btn {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border: 2px solid #e0e0e0;
-          border-radius: 12px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .quick-action-btn:hover {
-          background: #e9ecef;
-          border-color: #1a237e;
-          transform: translateY(-2px);
-        }
-        
-        .action-icon {
-          font-size: 2rem;
-          margin-bottom: 0.5rem;
-          color: #1a237e;
-        }
-        
-        .action-label {
-          font-size: 0.9rem;
-          font-weight: 600;
-          text-align: center;
-        }
-        
-        .notifications-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .notification-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 1rem;
-          padding: 1rem;
-          background: #f8f9fa;
-          border-radius: 8px;
-          border-left: 4px solid #1a237e;
-        }
-        
-        .notification-icon {
-          font-size: 1.2rem;
-        }
-        
-        .notification-content {
-          flex: 1;
-        }
-        
-        .notification-message {
-          margin: 0 0 0.5rem 0;
-          font-weight: 500;
-        }
-        
-        .notification-time {
-          font-size: 0.8rem;
-          color: #666;
-        }
-        
-        .performance-stats {
-          display: grid;
-          gap: 1.5rem;
-          grid-template-columns: repeat(2, 1fr);
-        }
-        
-        .performance-item {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          padding: 1rem;
-          background: #f8f9fa;
-          border-radius: 8px;
-        }
-        
-        .performance-label {
-          font-size: 0.9rem;
-          color: #666;
-          margin-bottom: 0.5rem;
-        }
-        
-        .performance-value {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: #1a237e;
-        }
-        
-        .verification-item, .subscription-info {
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border-radius: 8px;
-          margin-bottom: 1rem;
-        }
-        
-        .verification-item {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        @media (max-width: 1200px) {
-          .provider-grid-4 {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-        
-        @media (max-width: 768px) {
-          .provider-grid-4,
-          .provider-grid-2 {
-            grid-template-columns: 1fr;
-          }
-          
-          .quick-actions-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .performance-stats {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
     </ProviderPageTemplate>
   );
 };

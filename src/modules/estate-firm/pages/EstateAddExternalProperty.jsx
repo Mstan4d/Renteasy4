@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building, MapPin, User, DollarSign, Percent, Settings, Save } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './EstateAddExternalProperty.css';
 
 const EstateAddExternalProperty = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     propertyName: '',
     address: '',
@@ -38,13 +42,65 @@ const EstateAddExternalProperty = () => {
     { value: 'letting-only', label: 'Letting Only', description: 'Only handle tenant finding' }
   ];
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Save to local storage or API
-    localStorage.setItem('externalProperties', JSON.stringify([...JSON.parse(localStorage.getItem('externalProperties') || '[]'), formData]));
     
-    alert('External property added successfully!');
-    navigate('/dashboard/estate-firm');
+    if (!user) {
+      alert('Please login to add property');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const propertyData = {
+        user_id: user.id,
+        property_name: formData.propertyName,
+        address: formData.address,
+        client_name: formData.clientName,
+        client_phone: formData.clientPhone,
+        client_email: formData.clientEmail,
+        property_type: formData.propertyType,
+        rent_amount: formData.rentAmount ? parseFloat(formData.rentAmount) : null,
+        rent_frequency: formData.rentFrequency,
+        commission_rate: parseFloat(formData.commissionRate),
+        management_level: formData.managementLevel,
+        next_rent_due: formData.nextRentDue || null,
+        contract_start: formData.contractStart || null,
+        contract_end: formData.contractEnd || null,
+        notes: formData.notes,
+        status: 'active'
+      };
+
+      const { data, error } = await supabase
+        .from('external_properties')
+        .insert(propertyData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update estate firm stats
+      await supabase.rpc('update_estate_firm_stats', { user_id: user.id });
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'external_property',
+        action: 'add',
+        description: `Added external property: ${formData.propertyName}`,
+        created_at: new Date().toISOString()
+      });
+
+      alert('External property added successfully to your portfolio!');
+      navigate('/dashboard/estate-firm/properties');
+
+    } catch (error) {
+      console.error('Error adding external property:', error);
+      alert('Failed to add property. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

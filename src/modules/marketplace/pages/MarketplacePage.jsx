@@ -3,19 +3,21 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Filter, Star, MapPin, Clock, CheckCircle, 
-  Users, TrendingUp, Building, Home, Briefcase, ToolCaseIcon,
+  Users, TrendingUp, Building, Home, Briefcase,
   Award, Shield, Eye, MessageSquare, Phone, Calendar,
   DollarSign, Sparkles, AlertCircle, Zap, Crown, Settings, ToolCase
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './Marketplace.css';
 
 const MarketplacePage = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('all'); // 'all', 'estate-firms', 'services'
+  const [activeTab, setActiveTab] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Correct filters according to business plan
+  const [error, setError] = useState(null);
+
+  // Filters – exactly as per business rules
   const [filters, setFilters] = useState({
     state: '',
     lga: '',
@@ -24,279 +26,299 @@ const MarketplacePage = () => {
     boostOnly: false,
     serviceType: '',
     category: '',
-    sortBy: 'relevance' // 'relevance', 'rating', 'boosted', 'newest'
+    sortBy: 'relevance' // relevance, rating, boosted, newest
   });
 
-  // Sample data structure following business rules
   const [marketplaceData, setMarketplaceData] = useState({
     estateFirms: [],
     serviceProviders: [],
     allItems: []
   });
 
-  // Load data according to business rules
+  // ---------- Fetch Data from Supabase ----------
   useEffect(() => {
-    const loadMarketplaceData = () => {
-      setIsLoading(true);
-      
-      // ========== ESTATE FIRMS (Following Business Rules) ==========
-      // Rule: All estate firms appear immediately after registration
-      // Rule: Appear even if unverified or unsubscribed
-      const estateFirms = [
-        {
-          id: 1,
-          type: 'estate-firm',
-          name: 'Prime Properties Ltd',
-          description: 'Professional real estate management company with 15+ years experience',
-          logo: '🏢',
-          location: 'Lagos, Nigeria',
-          rating: 4.8,
-          reviews: 124,
-          services: ['Property Management', 'Sales & Rentals', 'Valuation'],
-          
-          // INDEPENDENT STATES (Critical Rule)
-          verificationState: 'verified', // 'unverified' | 'verified' (KYC by admin)
-          boostState: 'boosted',         // 'not-boosted' | 'boosted' (paid promotion)
-          subscriptionState: 'subscribed', // Only affects posting properties, NOT marketplace visibility
-          
-          // Badges based on independent states
-          badges: ['verified', 'boosted'],
-          
-          // Performance metrics
-          yearsExperience: 15,
-          propertiesManaged: 245,
-          responseTime: '1-2 hours',
-          
-          // Contact (visible after verification)
-          contact: {
-            phone: '+2348012345678',
-            email: 'info@primeproperties.com'
-          }
-        },
-        {
-          id: 2,
-          type: 'estate-firm',
-          name: 'Urban Living Realty',
-          description: 'Specialized in commercial and residential properties',
-          logo: '🏘️',
-          location: 'Abuja, Nigeria',
-          rating: 4.5,
-          reviews: 89,
-          services: ['Commercial Leasing', 'Property Maintenance', 'Consultation'],
-          
-          // Different state combinations
-          verificationState: 'verified',
-          boostState: 'not-boosted',
-          subscriptionState: 'unsubscribed',
-          
-          badges: ['verified'],
-          yearsExperience: 8,
-          propertiesManaged: 120,
-          responseTime: '2-4 hours'
-        },
-        {
-          id: 3,
-          type: 'estate-firm',
-          name: 'New Horizon Properties',
-          description: 'New real estate startup focusing on modern apartments',
-          logo: '🌅',
-          location: 'Port Harcourt, Nigeria',
-          rating: 4.2,
-          reviews: 23,
-          services: ['Apartment Rentals', 'Property Sales'],
-          
-          // Unverified and not boosted
-          verificationState: 'unverified',
-          boostState: 'not-boosted',
-          subscriptionState: 'unsubscribed',
-          
-          badges: ['unverified'],
-          yearsExperience: 2,
-          propertiesManaged: 45,
-          responseTime: '4-6 hours'
-        }
-      ];
+    fetchMarketplaceData();
+  }, []);
 
-      // ========== SERVICE PROVIDERS (Following Business Rules) ==========
-      // Rule: Automatically listed upon registering
-      // Rule: Free until booked 10 times, then ₦3000/month subscription
-      const serviceProviders = [
-        {
-          id: 101,
+  // ---------- Fetch Data from Supabase (with explicit column names) ----------
+const fetchMarketplaceData = async () => {
+  setIsLoading(true);
+  setError(null);
+  try {
+    // 1. Fetch Estate Firms
+    const { data: estateFirms, error: efError } = await supabase
+      .from('profiles')
+      .select(`
+        id,
+        full_name,
+        email,
+        phone,
+        avatar_url,
+        location,
+        state,
+        lga,
+        rating,
+        reviews_count,
+        kyc_status,
+        is_kyc_verified,
+        created_at,
+        subscriptions!user_id (
+          id,
+          plan_type,
+          status,
+          expires_at
+        ),
+        active_boosts!user_id (
+          id,
+          started_at,
+          expires_at,
+          package:boost_packages!inner (
+            priority_level
+          )
+        )
+      `)
+      .or('role.eq.estate-firm,role.eq.estate_firm')
+      .order('created_at', { ascending: false });
+
+    if (efError) throw efError;
+
+    // 2. Fetch Service Providers
+    const { data: serviceProvidersRaw, error: spError } = await supabase
+      .from('profiles')
+      .select(`
+        id,
+        full_name,
+        email,
+        phone,
+        avatar_url,
+        rating,
+        reviews_count,
+        kyc_status,
+        is_kyc_verified,
+        free_booking_used,
+        total_bookings,
+        created_at,
+        service_providers!user_id (
+          id,
+          business_name,
+          title,
+          description,
+          category,
+          price_range_low,
+          price_range_high,
+          location,
+          lga,
+          state,
+          response_time,
+          years_experience,
+          success_rate,
+          areas_served,
+          services,
+          avatar_url
+        ),
+        subscriptions!user_id (
+          id,
+          plan_type,
+          status,
+          expires_at
+        ),
+        active_boosts!user_id (
+          id,
+          started_at,
+          expires_at,
+          package:boost_packages!inner (
+            priority_level
+          )
+        )
+      `)
+      .eq('role', 'service-provider')
+      .order('created_at', { ascending: false });
+
+    if (spError) throw spError;
+
+    // 1. Transform Estate Firms
+      const transformedEstateFirms = (estateFirms || []).map(firm => {
+        // Determine boost state
+        const activeBoost = firm.active_boosts?.find(b => 
+          b.status === 'active' && new Date(b.expires_at) > new Date()
+        );
+        const isBoosted = !!activeBoost;
+        const boostPriority = activeBoost?.package?.priority_level || 0;
+
+        // Determine verification state
+        const isVerified = firm.is_kyc_verified === true || firm.kyc_status === 'approved';
+
+        // Determine subscription state
+        const subscription = firm.subscriptions?.[0]; // most recent
+        const isSubscribed = subscription?.status === 'active' && 
+          (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+
+        return {
+          id: firm.id,
+          type: 'estate-firm',
+          name: firm.full_name || 'Estate Firm',
+          description: 'Professional real estate services', // TODO: add description field to profiles/estate_firms
+          logo: firm.avatar_url || '🏢',
+          location: firm.location || `${firm.state || ''} ${firm.lga || ''}`.trim() || 'Nigeria',
+          rating: firm.rating || 4.0,
+          reviews: firm.reviews_count || 0,
+          services: ['Property Management', 'Sales & Rentals', 'Valuation'], // placeholder
+          verificationState: isVerified ? 'verified' : 'unverified',
+          boostState: isBoosted ? 'boosted' : 'not-boosted',
+          subscriptionState: isSubscribed ? 'subscribed' : 'unsubscribed',
+          badges: [
+            ...(isVerified ? ['verified'] : []),
+            ...(isBoosted ? ['boosted'] : []),
+            ...(!isVerified ? ['unverified'] : [])
+          ],
+          yearsExperience: 5, // TODO: add field
+          propertiesManaged: 120, // TODO: add field
+          responseTime: '2-4 hours', // placeholder
+          contact: {
+            phone: firm.phone,
+            email: firm.email
+          },
+          boostPriority,
+          createdAt: firm.created_at
+        };
+      });
+
+      // 2. Transform Service Providers
+      const transformedServiceProviders = (serviceProvidersRaw || []).map(profile => {
+        const providerDetails = profile.service_providers?.[0] || {};
+        const activeBoost = profile.active_boosts?.find(b => 
+          b.status === 'active' && new Date(b.expires_at) > new Date()
+        );
+        const isBoosted = !!activeBoost;
+        const boostPriority = activeBoost?.package?.priority_level || 0;
+        const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
+        const subscription = profile.subscriptions?.[0];
+        const isSubscribed = subscription?.status === 'active' && 
+          (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+        
+        // Free bookings logic
+        const freeBookingUsed = profile.free_booking_used || 0;
+        const freeBookingLimit = 10;
+        const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
+        const subscriptionState = freeBookingUsed >= freeBookingLimit ? 
+          (isSubscribed ? 'subscribed' : 'requires_subscription') : 'free';
+
+        // Build price range string
+        const priceLow = providerDetails.price_range_low || 0;
+        const priceHigh = providerDetails.price_range_high || 0;
+        const priceRange = priceLow && priceHigh 
+          ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
+          : 'Contact for pricing';
+
+        return {
+          id: profile.id,
+          providerId: providerDetails.id,
           type: 'service-provider',
-          name: 'Mike Adekunle',
-          title: 'Professional Painter',
-          description: '15 years experience in residential and commercial painting',
-          profileImage: '👨‍🎨',
-          location: 'Lagos Island',
-          rating: 4.9,
-          reviews: 56,
-          services: ['Interior Painting', 'Exterior Painting', 'Wallpaper Installation'],
-          category: 'painting',
-          priceRange: '₦15,000 - ₦80,000',
-          
-          // Independent States
-          verificationState: 'verified',
-          boostState: 'boosted',
-          subscriptionState: 'free', // Free until 10 bookings
-          
-          badges: ['verified', 'boosted'],
-          
-          // Booking tracking for subscription
-          bookingsCount: 7, // Free bookings used
-          totalBookings: 243,
-          
-          // Performance metrics
-          yearsExperience: 15,
-          successRate: 98,
-          responseTime: 'Within 2 hours',
-          
-          // Service-specific details
-          availability: 'Mon-Sat, 8am-6pm',
-          areasServed: ['Lagos Island', 'Victoria Island', 'Ikoyi']
-        },
-        {
-          id: 102,
-          type: 'service-provider',
-          name: 'CleanPro Services',
-          title: 'Professional Cleaning Company',
-          description: 'Deep cleaning, move-in/move-out cleaning, office cleaning',
-          profileImage: '🧹',
-          location: 'Abuja Central',
-          rating: 4.7,
-          reviews: 134,
-          services: ['Deep Cleaning', 'Office Cleaning', 'Move-in Cleaning'],
-          category: 'cleaning',
-          priceRange: '₦8,000 - ₦35,000',
-          
-          verificationState: 'verified',
-          boostState: 'not-boosted',
-          subscriptionState: 'subscribed', // Already subscribed after 10+ bookings
-          
-          badges: ['verified'],
-          bookingsCount: 12,
-          totalBookings: 567,
-          yearsExperience: 8,
-          successRate: 96,
-          responseTime: 'Within 4 hours'
-        },
-        {
-          id: 103,
-          type: 'service-provider',
-          name: 'John Plumbing Works',
-          title: 'Licensed Plumber',
-          description: 'Emergency plumbing repairs and installations',
-          profileImage: '🔧',
-          location: 'Ikeja, Lagos',
-          rating: 4.6,
-          reviews: 78,
-          services: ['Pipe Repair', 'Drain Cleaning', 'Toilet Installation'],
-          category: 'plumbing',
-          priceRange: '₦5,000 - ₦50,000',
-          
-          verificationState: 'unverified',
-          boostState: 'not-boosted',
-          subscriptionState: 'free',
-          
-          badges: ['unverified'],
-          bookingsCount: 3,
-          totalBookings: 89,
-          yearsExperience: 12,
-          successRate: 94,
-          responseTime: 'Within 1 hour'
-        },
-        {
-          id: 104,
-          type: 'service-provider',
-          name: 'SafeLock Security',
-          title: 'Security Installation',
-          description: 'CCTV, alarm systems, and security consultations',
-          profileImage: '🔒',
-          location: 'Lekki, Lagos',
-          rating: 4.8,
-          reviews: 45,
-          services: ['CCTV Installation', 'Alarm Systems', 'Security Audit'],
-          category: 'security',
-          priceRange: '₦25,000 - ₦150,000',
-          
-          verificationState: 'verified',
-          boostState: 'boosted',
-          subscriptionState: 'free',
-          
-          badges: ['verified', 'boosted'],
-          bookingsCount: 9, // Almost reaching 10 free bookings limit
-          totalBookings: 156,
-          yearsExperience: 6,
-          successRate: 97,
-          responseTime: 'Within 3 hours'
-        }
-      ];
+          name: providerDetails.business_name || profile.full_name || 'Service Provider',
+          title: providerDetails.title || '',
+          description: providerDetails.description || 'Experienced professional',
+          profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
+          location: providerDetails.location || profile.location || `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
+          rating: profile.rating || 4.5,
+          reviews: profile.reviews_count || 0,
+          services: providerDetails.services || [],
+          category: providerDetails.category || '',
+          priceRange,
+          verificationState: isVerified ? 'verified' : 'unverified',
+          boostState: isBoosted ? 'boosted' : 'not-boosted',
+          subscriptionState,
+          badges: [
+            ...(isVerified ? ['verified'] : []),
+            ...(isBoosted ? ['boosted'] : []),
+            ...(!isVerified ? ['unverified'] : [])
+          ],
+          bookingsCount: freeBookingUsed,
+          freeBookingsLeft,
+          totalBookings: profile.total_bookings || 0,
+          yearsExperience: providerDetails.years_experience || 0,
+          successRate: providerDetails.success_rate || 95,
+          responseTime: providerDetails.response_time || 'Within 2-4 hours',
+          areasServed: providerDetails.areas_served || [],
+          boostPriority,
+          createdAt: profile.created_at
+        };
+      });
 
       // Combine all items
-      const allItems = [...estateFirms, ...serviceProviders];
-      
-      // Sort: Boosted items first, then by rating
+      const allItems = [...transformedEstateFirms, ...transformedServiceProviders];
+
+      // Sort: Boosted first (by priority level), then by rating, then by newest
       const sortedItems = allItems.sort((a, b) => {
-        // Boosted items go to top
+        // Boosted items first, higher priority level goes first
         if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
         if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-        
+        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
+          return (b.boostPriority || 0) - (a.boostPriority || 0);
+        }
         // Then by rating
-        return b.rating - a.rating;
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        // Then by newest
+        return new Date(b.createdAt) - new Date(a.createdAt);
       });
 
       setMarketplaceData({
-        estateFirms,
-        serviceProviders,
+        estateFirms: transformedEstateFirms,
+        serviceProviders: transformedServiceProviders,
         allItems: sortedItems
       });
-      
-      setIsLoading(false);
-    };
 
-    loadMarketplaceData();
-  }, []);
+  } catch (err) {
+    console.error('Error fetching marketplace data:', err);
+    setError(err.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  // Filter items based on search and filters
+  // ---------- Filtering & Sorting (client-side) ----------
   const filteredItems = marketplaceData.allItems.filter(item => {
-    // Filter by tab
+    // Tab filter
     if (activeTab === 'estate-firms' && item.type !== 'estate-firm') return false;
     if (activeTab === 'services' && item.type !== 'service-provider') return false;
-    
-    // Search term
+
+    // Search
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       const searchable = [
         item.name,
+        item.title || '',
         item.description,
         ...(item.services || []),
         item.location
       ].join(' ').toLowerCase();
-      
       if (!searchable.includes(term)) return false;
     }
-    
-    // Verified only filter
+
+    // Verified only
     if (filters.verifiedOnly && item.verificationState !== 'verified') return false;
-    
-    // Boost only filter
+
+    // Boosted only
     if (filters.boostOnly && item.boostState !== 'boosted') return false;
-    
-    // Minimum rating
+
+    // Min rating
     if (item.rating < filters.minRating) return false;
-    
-    // Service type filter
+
+    // Service type / category
     if (filters.serviceType && item.type === 'service-provider') {
       if (!item.services.some(s => s.toLowerCase().includes(filters.serviceType.toLowerCase()))) {
         return false;
       }
     }
-    
-    // Category filter
+
     if (filters.category && item.type === 'service-provider') {
       if (item.category !== filters.category) return false;
     }
-    
+
+    // Location filters
+    if (filters.state && item.location) {
+      if (!item.location.toLowerCase().includes(filters.state.toLowerCase())) return false;
+    }
+
     return true;
   });
 
@@ -308,46 +330,60 @@ const MarketplacePage = () => {
       case 'boosted':
         if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
         if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
+          return (b.boostPriority || 0) - (a.boostPriority || 0);
+        }
         return 0;
       case 'newest':
-        return b.id - a.id; // Using ID as proxy for newness
-      default:
-        // Relevance: Boosted first, then rating
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      default: // relevance: boosted first, then rating
         if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
         if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
+          return (b.boostPriority || 0) - (a.boostPriority || 0);
+        }
         return b.rating - a.rating;
     }
   });
 
-  // Handle booking service provider
-  const handleBookService = (provider) => {
-    // Track booking count for subscription logic
-    const bookingsCount = provider.bookingsCount + 1;
-    
-    if (bookingsCount >= 10 && provider.subscriptionState === 'free') {
-      alert(`${provider.name} has reached 10 free bookings. They now require a ₦3,000 monthly subscription to continue receiving bookings.`);
-      // In real implementation, trigger subscription requirement
+  // ---------- Action Handlers ----------
+  const handleBookService = async (provider) => {
+    // Check free booking limit
+    if (provider.subscriptionState === 'free') {
+      // Increment free_booking_used in profile
+      const newCount = (provider.bookingsCount || 0) + 1;
+      if (newCount >= 10) {
+        alert(`${provider.name} has reached 10 free bookings. They now require a ₦3,000 monthly subscription to continue receiving bookings.`);
+        // Optionally redirect to subscription page
+        navigate('/dashboard/provider/subscription');
+        return;
+      } else {
+        // Update the counter in database
+        const { error } = await supabase
+          .from('profiles')
+          .update({ free_booking_used: newCount })
+          .eq('id', provider.id);
+        if (error) console.error('Failed to update free booking count:', error);
+      }
     }
-    
     // Navigate to booking page
-    navigate(`/dashboard/provider/booking/${provider.id}`);
+    navigate(`/dashboard/service/booking/${provider.providerId || provider.id}`);
   };
 
-  // Handle contact estate firm
   const handleContactEstateFirm = (firm) => {
     if (firm.verificationState === 'verified') {
-      // Show contact info or open chat
-      alert(`Contact ${firm.name}:\nPhone: ${firm.contact?.phone || 'Available after verification'}\nEmail: ${firm.contact?.email || 'Available after verification'}`);
+      // Open chat or show contact details
+      navigate(`/dashboard/messages?user=${firm.id}`);
     } else {
       alert(`${firm.name} is not yet verified. Please check back later or contact RentEasy support.`);
     }
   };
 
-  // Render badge based on independent states
+  // ---------- Badge Rendering (independent states) ----------
   const renderBadges = (item) => {
     const badges = [];
-    
-    // Verification Badge (ONLY for KYC approval)
+
+    // Verification badge – ONLY for KYC approval
     if (item.verificationState === 'verified') {
       badges.push({
         type: 'verified',
@@ -363,8 +399,8 @@ const MarketplacePage = () => {
         color: 'var(--badge-unverified)'
       });
     }
-    
-    // Boost Badge (Independent of verification)
+
+    // Boost badge – independent of verification
     if (item.boostState === 'boosted') {
       badges.push({
         type: 'boosted',
@@ -373,19 +409,17 @@ const MarketplacePage = () => {
         color: 'var(--badge-boosted)'
       });
     }
-    
-    // Subscription status (Only for service providers, shown differently)
-    if (item.type === 'service-provider') {
-      if (item.subscriptionState === 'free') {
-        badges.push({
-          type: 'free-bookings',
-          label: `${10 - item.bookingsCount} free bookings left`,
-          icon: <Sparkles size={12} />,
-          color: 'var(--badge-free)'
-        });
-      }
+
+    // Free bookings left (service providers only)
+    if (item.type === 'service-provider' && item.subscriptionState === 'free') {
+      badges.push({
+        type: 'free-bookings',
+        label: `${item.freeBookingsLeft} free booking${item.freeBookingsLeft !== 1 ? 's' : ''} left`,
+        icon: <Sparkles size={12} />,
+        color: 'var(--badge-free)'
+      });
     }
-    
+
     return badges;
   };
 
@@ -398,9 +432,20 @@ const MarketplacePage = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="marketplace-error">
+        <AlertCircle size={48} />
+        <h3>Failed to load marketplace</h3>
+        <p>{error}</p>
+        <button onClick={fetchMarketplaceData}>Retry</button>
+      </div>
+    );
+  }
+
   return (
     <div className="marketplace-container">
-      {/* Header */}
+      {/* Header – same as before */}
       <div className="marketplace-header">
         <div className="header-content">
           <h1>Professional Services Marketplace</h1>
@@ -410,7 +455,7 @@ const MarketplacePage = () => {
         </div>
       </div>
 
-      {/* Search and Filter Bar */}
+      {/* Search and Filter Bar – same UI, keep as is */}
       <div className="search-filter-bar">
         <div className="search-container">
           <div className="search-input-wrapper">
@@ -477,7 +522,7 @@ const MarketplacePage = () => {
           className={`tab ${activeTab === 'services' ? 'active' : ''}`}
           onClick={() => setActiveTab('services')}
         >
-          <ToolCaseIcon size={18} />
+          <ToolCase size={18} />
           <span>Service Providers</span>
         </button>
       </div>
@@ -500,10 +545,9 @@ const MarketplacePage = () => {
         ) : (
           sortedItems.map((item) => {
             const badges = renderBadges(item);
-            
             return (
               <div key={item.id} className={`service-card ${item.boostState === 'boosted' ? 'boosted' : ''}`}>
-                {/* Card Header with Badges */}
+                {/* Card Header */}
                 <div className="card-header">
                   <div className="provider-type">
                     {item.type === 'estate-firm' ? (
@@ -512,31 +556,32 @@ const MarketplacePage = () => {
                       </span>
                     ) : (
                       <span className="type-label">
-                        <ToolCaseIcon size={14} /> Service Provider
+                        <ToolCase size={14} /> Service Provider
                       </span>
                     )}
                   </div>
-                  
                   <div className="badges-container">
-                    {badges.map((badge, index) => (
+                    {badges.map((badge, idx) => (
                       <span 
-                        key={index} 
+                        key={idx} 
                         className="badge"
                         style={{ backgroundColor: badge.color }}
                         title={badge.label}
                       >
                         {badge.icon}
-                        <span className="badge-text">{badge.type === 'free-bookings' ? 'Free' : badge.type}</span>
+                        <span className="badge-text">
+                          {badge.type === 'free-bookings' ? 'Free' : badge.type === 'boosted' ? 'Boosted' : badge.type === 'verified' ? 'Verified' : 'Unverified'}
+                        </span>
                       </span>
                     ))}
                   </div>
                 </div>
 
-                {/* Provider Info */}
+                {/* Card Body */}
                 <div className="card-body">
                   <div className="provider-info">
                     <div className="provider-avatar">
-                      {item.logo || item.profileImage}
+                      {item.type === 'estate-firm' ? item.logo : item.profileImage}
                     </div>
                     <div className="provider-details">
                       <h3 className="provider-name">{item.name}</h3>
@@ -558,7 +603,7 @@ const MarketplacePage = () => {
                       ))}
                     </div>
                     <span className="rating-text">
-                      {item.rating} • {item.reviews} reviews
+                      {item.rating.toFixed(1)} • {item.reviews} reviews
                     </span>
                   </div>
 
@@ -575,21 +620,19 @@ const MarketplacePage = () => {
                   </div>
 
                   {/* Services Offered */}
-                  <div className="services-container">
-                    <h4>Services Offered:</h4>
-                    <div className="services-tags">
-                      {item.services.slice(0, 3).map((service, index) => (
-                        <span key={index} className="service-tag">
-                          {service}
-                        </span>
-                      ))}
-                      {item.services.length > 3 && (
-                        <span className="service-tag more">
-                          +{item.services.length - 3} more
-                        </span>
-                      )}
+                  {item.services && item.services.length > 0 && (
+                    <div className="services-container">
+                      <h4>Services Offered:</h4>
+                      <div className="services-tags">
+                        {item.services.slice(0, 3).map((service, idx) => (
+                          <span key={idx} className="service-tag">{service}</span>
+                        ))}
+                        {item.services.length > 3 && (
+                          <span className="service-tag more">+{item.services.length - 3} more</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Stats */}
                   <div className="stats-grid">
@@ -615,13 +658,13 @@ const MarketplacePage = () => {
                   </div>
                 </div>
 
-                {/* Card Footer - Actions */}
+                {/* Card Footer */}
                 <div className="card-footer">
                   {item.type === 'estate-firm' ? (
                     <>
                       <button 
                         className="btn btn-outline"
-                        onClick={() => handleContactEstateFirm(item)}
+                        onClick={() => alert('View details coming soon')}
                       >
                         <Eye size={16} />
                         <span>View Details</span>
@@ -657,7 +700,7 @@ const MarketplacePage = () => {
         )}
       </div>
 
-      {/* Business Rules Explanation */}
+      {/* Business Rules Info */}
       <div className="business-rules-info">
         <div className="rules-header">
           <Award size={24} />

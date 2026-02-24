@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   FaEdit, FaEye, FaStar, FaPhone, FaEnvelope, FaMapMarkerAlt,
-  FaCalendarAlt, FaCheckCircle,FaEnvelopeOpenText, FaUsers, FaShieldAlt, FaImages,
+  FaCalendarAlt, FaCheckCircle, FaUsers, FaShieldAlt, FaImages,
   FaShareAlt, FaBookmark, FaThumbsUp, FaCertificate,
   FaAward, FaHeart, FaArrowLeft, FaPrint, FaDownload, FaExclamationTriangle,
   FaQuestionCircle, FaGlobe, FaBuilding, FaUser, FaCamera, FaTrash,
@@ -10,236 +12,160 @@ import {
   FaHome, FaFileInvoice, FaSync, FaFilter, FaHistory, FaCreditCard,
   FaReceipt, FaBell, FaMoneyBillWave, FaPercentage, FaFileAlt,
   FaChartLine, FaCommentDots, FaRegStar, FaStarHalfAlt, FaPlus,
-  FaTimes, FaUpload, FaCog, FaLock, FaBell as FaBellIcon
+  FaTimes, FaUpload, FaCog, FaLock, FaBell as FaBellIcon, FaSpinner
 } from 'react-icons/fa';
 import './ProviderProfile.css';
 
-
-const renderStars = (rating) => {
-  const stars = [];
-  const fullStars = Math.floor(rating);
-  const hasHalfStar = rating % 1 >= 0.5;
-  
-  for (let i = 1; i <= 5; i++) {
-    if (i <= fullStars) {
-      stars.push(<FaStar key={i} style={{ color: '#FFD700', fontSize: '1.2rem' }} />);
-    } else if (i === fullStars + 1 && hasHalfStar) {
-      stars.push(<FaStarHalfAlt key={i} style={{ color: '#FFD700', fontSize: '1.2rem' }} />);
-    } else {
-      stars.push(<FaRegStar key={i} style={{ color: '#ddd', fontSize: '1.2rem' }} />);
-    }
-  }
-  
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-      {stars}
-      <span style={{ marginLeft: '0.5rem', fontWeight: '600', fontSize: '1.1rem' }}>
-        {rating.toFixed(1)}
-      </span>
-    </div>
-  );
-};
-
-
 const ProviderProfile = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('edit');
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    businessName: '',
-    tagline: '',
-    description: '',
-    categories: [],
-    contact: {
-      phone: '',
-      email: '',
-      website: '',
-      serviceArea: ''
-    },
-    socialMedia: {
-      facebook: '',
-      twitter: '',
-      instagram: '',
-      linkedin: ''
-    },
-    operatingHours: {
-      mondayToFriday: '',
-      saturday: '',
-      sunday: ''
-    },
-    services: [],
-    portfolioImages: [],
-    certifications: []
-  });
-
-  const [previewMode, setPreviewMode] = useState('desktop');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
   const [reviews, setReviews] = useState([]);
-  const [ratings, setRatings] = useState(null);
-  const [billing, setBilling] = useState(null);
+  const [ratings, setRatings] = useState({ average: 0, total: 0, distribution: {} });
+  const [subscription, setSubscription] = useState(null);
 
   useEffect(() => {
-    loadAllData();
-  }, []);
+    if (!user) return;
+    fetchAllData();
+  }, [user]);
 
-  const loadAllData = () => {
-    setTimeout(() => {
-      // Load profile data
-      const mockProfile = {
-        id: 'provider-001',
-        businessName: 'Professional Cleaners NG',
-        tagline: 'Professional cleaning services for homes & offices',
-        description: 'We provide top-notch cleaning services with eco-friendly products. Serving Lagos for over 5 years with certified professionals and modern equipment.',
-        categories: ['Cleaning', 'Home Services'],
-        contact: {
-          phone: '+2348012345678',
-          email: 'info@cleanersng.com',
-          website: 'www.cleanersng.com',
-          serviceArea: 'Lagos, Nigeria'
-        },
-        socialMedia: {
-          facebook: 'facebook.com/cleanersng',
-          twitter: '@cleanersng',
-          instagram: '@cleanersng',
-          linkedin: 'linkedin.com/company/cleanersng'
-        },
-        operatingHours: {
-          mondayToFriday: '8:00 AM - 6:00 PM',
-          saturday: '9:00 AM - 4:00 PM',
-          sunday: 'Emergency Services Only'
-        },
-        services: [
-          { id: 1, name: 'Deep House Cleaning', price: '₦25,000 - ₦45,000', description: 'Complete home cleaning' },
-          { id: 2, name: 'Office Cleaning', price: '₦35,000 - ₦75,000', description: 'Professional office cleaning' }
-        ],
-        portfolioImages: [],
-        certifications: ['Professional Cleaning Certification', 'Eco-Friendly Certified'],
-        verification: {
-          status: 'verified',
-          verifiedSince: '2022-04-20',
-          badge: 'Verified Service Provider'
-        },
-        boost: {
-          status: 'active',
-          level: 'premium',
-          expires: '2024-02-15',
-          badge: '🔥 Featured'
-        },
-        rating: 4.8,
-        totalReviews: 128,
-        responseRate: '94%',
-        avgResponseTime: '2.3 hours',
-        memberSince: '2022-03-15',
-        completedJobs: 245,
-        profileCompleteness: 85
-      };
+  const fetchAllData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch provider profile from service_providers
+      const { data: providerData, error: providerError } = await supabase
+        .from('service_providers')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
 
-      // Load reviews
-      const mockReviews = [
-        { id: 1, client: 'Adebayo Johnson', rating: 5, date: '2024-01-15', comment: 'Excellent service!' },
-        { id: 2, client: 'Sarah Williams', rating: 4, date: '2024-01-14', comment: 'Good work overall.' }
-      ];
+      if (providerError && providerError.code !== 'PGRST116') throw providerError;
 
-      // Load ratings stats
-      const mockRatings = {
-        averageRating: 4.8,
-        totalReviews: 128,
-        distribution: { 5: 78, 4: 32, 3: 12, 2: 4, 1: 2 },
-        byService: { 'Cleaning': 4.9, 'Painting': 4.6 }
-      };
+      // If no record exists, create a default one
+      let provider = providerData;
+      if (!provider) {
+        const { data: newProvider, error: insertError } = await supabase
+          .from('service_providers')
+          .insert({
+            user_id: user.id,
+            business_name: user.email?.split('@')[0] || 'My Business',
+            contact_json: { phone: user.phone || '', email: user.email, serviceArea: '' },
+            social_media_json: {},
+            operating_hours_json: { mondayToFriday: '9:00 AM - 5:00 PM', saturday: 'Closed', sunday: 'Closed' },
+            services_json: [],
+            portfolio_images: [],
+            certifications_json: []
+          })
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        provider = newProvider;
+      }
 
-      // Load billing info
-      const mockBilling = {
-        subscriptionStatus: 'active',
-        freeBookingsUsed: 7,
-        freeBookingsLimit: 10,
-        nextBillingDate: '2024-02-28',
-        monthlyFee: 3000
-      };
+      setProfile(provider);
 
-      setProfile(mockProfile);
-      setFormData(mockProfile);
-      setReviews(mockReviews);
-      setRatings(mockRatings);
-      setBilling(mockBilling);
+      // 2. Fetch reviews
+      // Inside fetchAllData, replace the reviews query with:
+const { data: reviewsData, error: reviewsError } = await supabase
+  .from('provider_reviews')
+  .select('*')
+  .eq('provider_id', provider.id)
+  .order('created_at', { ascending: false });
+
+      if (reviewsError) throw reviewsError;
+      setReviews(reviewsData || []);
+
+      // 3. Calculate ratings
+      if (reviewsData && reviewsData.length > 0) {
+        const total = reviewsData.length;
+        const sum = reviewsData.reduce((acc, r) => acc + r.rating, 0);
+        const average = sum / total;
+        const distribution = { 5:0,4:0,3:0,2:0,1:0 };
+        reviewsData.forEach(r => distribution[r.rating]++);
+        setRatings({ average, total, distribution });
+      }
+
+      // 4. Fetch subscription info (from profiles or subscriptions table)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('free_booking_used, free_booking_limit, subscription_status')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+      setSubscription(profileData);
+
+    } catch (err) {
+      console.error('Error fetching profile data:', err);
+      setError(err.message);
+    } finally {
       setLoading(false);
-    }, 1000);
-  };
-
-  const handleInputChange = (e, section = null) => {
-    const { name, value } = e.target;
-    
-    if (section) {
-      setFormData(prev => ({
-        ...prev,
-        [section]: {
-          ...prev[section],
-          [name]: value
-        }
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
     }
   };
 
-  const handleSaveProfile = () => {
-    // API call to save profile
-    setProfile(formData);
-    setEditing(false);
-    alert('Profile saved successfully!');
+  const handleSaveProfile = async (updatedData) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('service_providers')
+        .update(updatedData)
+        .eq('id', profile.id);
+      if (error) throw error;
+      setProfile({ ...profile, ...updatedData });
+      alert('Profile saved successfully!');
+    } catch (err) {
+      alert('Save failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  
-  const renderTabContent = () => {
-    switch(activeTab) {
-      case 'edit':
-        return <EditProfileTab 
-          formData={formData} 
-          editing={editing} 
-          setEditing={setEditing}
-          handleInputChange={handleInputChange}
-          handleSaveProfile={handleSaveProfile}
-          profile={profile}
-        />;
-      case 'view':
-        return <ViewProfileTab profile={profile} />;
-      case 'preview':
-        return <PreviewTab profile={profile} previewMode={previewMode} setPreviewMode={setPreviewMode} />;
-      case 'reviews':
-        return <ReviewsTab reviews={reviews} ratings={ratings} />;
-      case 'marketplace':
-        return <MarketplaceTab profile={profile} />;
-      case 'billing':
-        return <BillingTab billing={billing} />;
-      case 'settings':
-        return <SettingsTab />;
-      default:
-        return <EditProfileTab 
-          formData={formData} 
-          editing={editing} 
-          setEditing={setEditing}
-          handleInputChange={handleInputChange}
-          handleSaveProfile={handleSaveProfile}
-          profile={profile}
-        />;
+  const handleUploadImage = async (file, type) => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${type}_${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from('provider-portfolio')
+        .upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('provider-portfolio')
+        .getPublicUrl(fileName);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error('Upload error:', err);
+      throw err;
     }
   };
 
   if (loading) {
     return (
       <div className="provider-profile-loading">
-        <div className="loading-spinner"></div>
+        <FaSpinner className="spinner" />
         <p>Loading your profile...</p>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="provider-profile-error">
+        <FaExclamationTriangle size={48} />
+        <h3>Failed to load profile</h3>
+        <p>{error}</p>
+        <button onClick={fetchAllData}>Retry</button>
+      </div>
+    );
+  }
+
   return (
-    <div className="provider-profile-container">
+    <div className="provider-profile">
       {/* Header */}
       <div className="profile-header">
         <div className="header-left">
@@ -247,8 +173,8 @@ const ProviderProfile = () => {
           <p>Manage your business information and marketplace presence</p>
         </div>
         <div className="header-right">
-          <button className="btn btn-secondary">
-            <FaEye /> Preview Public Profile
+          <button className="btn btn-secondary" onClick={() => window.open(`/provider/${profile.id}`, '_blank')}>
+            <FaEye /> Preview Public
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/dashboard/provider')}>
             <FaArrowLeft /> Back to Dashboard
@@ -256,13 +182,13 @@ const ProviderProfile = () => {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
+      {/* Tabs */}
       <div className="profile-tabs">
         {[
           { id: 'edit', label: 'Edit Profile', icon: <FaEdit /> },
           { id: 'view', label: 'View Profile', icon: <FaEye /> },
           { id: 'preview', label: 'Preview', icon: <FaGlobe /> },
-          { id: 'reviews', label: 'Reviews & Ratings', icon: <FaStar /> },
+          { id: 'reviews', label: 'Reviews', icon: <FaStar /> },
           { id: 'marketplace', label: 'Marketplace', icon: <FaBuilding /> },
           { id: 'billing', label: 'Billing', icon: <FaCreditCard /> },
           { id: 'settings', label: 'Settings', icon: <FaCog /> }
@@ -279,308 +205,361 @@ const ProviderProfile = () => {
       </div>
 
       {/* Tab Content */}
-      <div className="tab-content-container">
-        {renderTabContent()}
+      <div className="tab-content">
+        {activeTab === 'edit' && (
+          <EditTab
+            profile={profile}
+            onSave={handleSaveProfile}
+            saving={saving}
+            onUploadImage={handleUploadImage}
+          />
+        )}
+        {activeTab === 'view' && <ViewTab profile={profile} />}
+        {activeTab === 'preview' && <PreviewTab profile={profile} />}
+        {activeTab === 'reviews' && <ReviewsTab reviews={reviews} ratings={ratings} />}
+        {activeTab === 'marketplace' && <MarketplaceTab profile={profile} />}
+        {activeTab === 'billing' && <BillingTab subscription={subscription} />}
+        {activeTab === 'settings' && <SettingsTab user={user} />}
       </div>
     </div>
   );
 };
 
-// Tab Components
-const EditProfileTab = ({ formData, editing, setEditing, handleInputChange, handleSaveProfile, profile }) => {
-  return (
-    <div className="edit-profile-tab">
-      <div className="tab-header">
-        <h2>Edit Business Profile</h2>
-        <div className="header-actions">
-          {editing ? (
-            <>
-              <button className="btn btn-secondary" onClick={() => setEditing(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={handleSaveProfile}>
-                <FaSave /> Save Changes
-              </button>
-            </>
-          ) : (
-            <button className="btn btn-primary" onClick={() => setEditing(true)}>
-              <FaEdit /> Edit Profile
-            </button>
-          )}
-        </div>
-      </div>
+// --- Tab Components (each receives props) ---
 
-      <div className="edit-form-grid">
-        {/* Business Information */}
-        <div className="form-section">
-          <h3 className="section-title">
-            <FaBuilding /> Business Information
-          </h3>
+const EditTab = ({ profile, onSave, saving, onUploadImage }) => {
+  const [formData, setFormData] = useState({
+    business_name: profile.business_name || '',
+    tagline: profile.tagline || '',
+    description: profile.description || '',
+    contact_json: profile.contact_json || { phone: '', email: '', website: '', serviceArea: '' },
+    social_media_json: profile.social_media_json || {},
+    operating_hours_json: profile.operating_hours_json || { mondayToFriday: '9-5', saturday: 'Closed', sunday: 'Closed' },
+    services_json: profile.services_json || [],
+    certifications_json: profile.certifications_json || []
+  });
+
+  const handleChange = (section, field, value) => {
+    if (section) {
+      setFormData(prev => ({
+        ...prev,
+        [section]: { ...prev[section], [field]: value }
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }
+  };
+
+  const handleAddService = () => {
+    setFormData(prev => ({
+      ...prev,
+      services_json: [...prev.services_json, { name: '', price: '', description: '' }]
+    }));
+  };
+
+  const handleServiceChange = (index, field, value) => {
+    const updated = [...formData.services_json];
+    updated[index][field] = value;
+    setFormData(prev => ({ ...prev, services_json: updated }));
+  };
+
+  const handleRemoveService = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      services_json: prev.services_json.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="edit-tab">
+      <div className="edit-grid">
+        {/* Business Info */}
+        <section className="edit-section">
+          <h3><FaBuilding /> Business Information</h3>
           <div className="form-group">
             <label>Business Name</label>
             <input
               type="text"
-              name="businessName"
-              value={formData.businessName}
-              onChange={handleInputChange}
-              disabled={!editing}
+              value={formData.business_name}
+              onChange={(e) => handleChange(null, 'business_name', e.target.value)}
+              required
             />
           </div>
           <div className="form-group">
             <label>Tagline</label>
             <input
               type="text"
-              name="tagline"
               value={formData.tagline}
-              onChange={handleInputChange}
-              disabled={!editing}
+              onChange={(e) => handleChange(null, 'tagline', e.target.value)}
             />
           </div>
           <div className="form-group">
             <label>Description</label>
             <textarea
-              name="description"
               value={formData.description}
-              onChange={handleInputChange}
-              disabled={!editing}
-              rows={4}
+              onChange={(e) => handleChange(null, 'description', e.target.value)}
+              rows="4"
             />
           </div>
-        </div>
+        </section>
 
-        {/* Contact Information */}
-        <div className="form-section">
-          <h3 className="section-title">
-            <FaPhone /> Contact Information
-          </h3>
-          {Object.entries(formData.contact).map(([key, value]) => (
-            <div className="form-group" key={key}>
-              <label>{key.charAt(0).toUpperCase() + key.slice(1)}</label>
-              <input
-                type="text"
-                name={key}
-                value={value}
-                onChange={(e) => handleInputChange(e, 'contact')}
-                disabled={!editing}
-              />
-            </div>
-          ))}
-        </div>
+        {/* Contact */}
+        <section className="edit-section">
+          <h3><FaPhone /> Contact</h3>
+          <div className="form-group">
+            <label>Phone</label>
+            <input
+              type="text"
+              value={formData.contact_json.phone}
+              onChange={(e) => handleChange('contact_json', 'phone', e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Email</label>
+            <input
+              type="email"
+              value={formData.contact_json.email}
+              onChange={(e) => handleChange('contact_json', 'email', e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Website</label>
+            <input
+              type="url"
+              value={formData.contact_json.website}
+              onChange={(e) => handleChange('contact_json', 'website', e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Service Area</label>
+            <input
+              type="text"
+              value={formData.contact_json.serviceArea}
+              onChange={(e) => handleChange('contact_json', 'serviceArea', e.target.value)}
+            />
+          </div>
+        </section>
 
         {/* Social Media */}
-        <div className="form-section">
-          <h3 className="section-title">
-            <FaGlobe /> Social Media
-          </h3>
-          {Object.entries(formData.socialMedia).map(([key, value]) => (
-            <div className="form-group" key={key}>
-              <label>{key.charAt(0).toUpperCase() + key.slice(1)}</label>
+        <section className="edit-section">
+          <h3><FaGlobe /> Social Media</h3>
+          {['facebook', 'twitter', 'instagram', 'linkedin'].map(platform => (
+            <div key={platform} className="form-group">
+              <label>{platform.charAt(0).toUpperCase() + platform.slice(1)}</label>
               <input
                 type="text"
-                name={key}
-                value={value}
-                onChange={(e) => handleInputChange(e, 'socialMedia')}
-                disabled={!editing}
+                value={formData.social_media_json[platform] || ''}
+                onChange={(e) =>
+                  setFormData(prev => ({
+                    ...prev,
+                    social_media_json: { ...prev.social_media_json, [platform]: e.target.value }
+                  }))
+                }
               />
             </div>
           ))}
-        </div>
+        </section>
+
+        {/* Operating Hours */}
+        <section className="edit-section">
+          <h3><FaClock /> Operating Hours</h3>
+          <div className="form-group">
+            <label>Monday - Friday</label>
+            <input
+              type="text"
+              value={formData.operating_hours_json.mondayToFriday}
+              onChange={(e) => handleChange('operating_hours_json', 'mondayToFriday', e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Saturday</label>
+            <input
+              type="text"
+              value={formData.operating_hours_json.saturday}
+              onChange={(e) => handleChange('operating_hours_json', 'saturday', e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Sunday</label>
+            <input
+              type="text"
+              value={formData.operating_hours_json.sunday}
+              onChange={(e) => handleChange('operating_hours_json', 'sunday', e.target.value)}
+            />
+          </div>
+        </section>
 
         {/* Services */}
-        <div className="form-section">
-          <h3 className="section-title">
-            <FaHome /> Services
-          </h3>
-          <div className="services-list">
-            {formData.services.map((service, index) => (
-              <div key={service.id} className="service-item">
-                <div>
-                  <strong>{service.name}</strong>
-                  <p>{service.price}</p>
-                </div>
-                {editing && (
-                  <button className="btn btn-danger">
-                    <FaTrash />
-                  </button>
-                )}
+        <section className="edit-section full-width">
+          <h3><FaHome /> Services</h3>
+          {formData.services_json.map((service, index) => (
+            <div key={index} className="service-item">
+              <input
+                type="text"
+                placeholder="Service name"
+                value={service.name}
+                onChange={(e) => handleServiceChange(index, 'name', e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Price (e.g. ₦5,000)"
+                value={service.price}
+                onChange={(e) => handleServiceChange(index, 'price', e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Description"
+                value={service.description}
+                onChange={(e) => handleServiceChange(index, 'description', e.target.value)}
+              />
+              <button type="button" className="btn-icon danger" onClick={() => handleRemoveService(index)}>
+                <FaTrash />
+              </button>
+            </div>
+          ))}
+          <button type="button" className="btn btn-secondary" onClick={handleAddService}>
+            <FaPlus /> Add Service
+          </button>
+        </section>
+
+        {/* Certifications */}
+        <section className="edit-section">
+          <h3><FaCertificate /> Certifications</h3>
+          <div className="cert-list">
+            {formData.certifications_json.map((cert, idx) => (
+              <div key={idx} className="cert-item">
+                <input
+                  type="text"
+                  value={cert}
+                  onChange={(e) => {
+                    const newCerts = [...formData.certifications_json];
+                    newCerts[idx] = e.target.value;
+                    setFormData(prev => ({ ...prev, certifications_json: newCerts }));
+                  }}
+                />
+                <button type="button" className="btn-icon danger" onClick={() => {
+                  const newCerts = formData.certifications_json.filter((_, i) => i !== idx);
+                  setFormData(prev => ({ ...prev, certifications_json: newCerts }));
+                }}>
+                  <FaTrash />
+                </button>
               </div>
             ))}
-            {editing && (
-              <button className="btn btn-secondary">
-                <FaPlus /> Add Service
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn-icon"
+              onClick={() => setFormData(prev => ({ ...prev, certifications_json: [...prev.certifications_json, ''] }))}
+            >
+              <FaPlus /> Add
+            </button>
           </div>
-        </div>
+        </section>
+
+        {/* Portfolio Images (placeholder) */}
+        <section className="edit-section">
+          <h3><FaImages /> Portfolio</h3>
+          <p>Coming soon: upload images</p>
+        </section>
       </div>
 
-      {/* Profile Stats */}
-      <div className="profile-stats">
-        <h3>Profile Status</h3>
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-value">{profile?.profileCompleteness}%</div>
-            <div className="stat-label">Profile Complete</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{profile?.rating?.toFixed(1)}</div>
-            <div className="stat-label">Average Rating</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{profile?.totalReviews}</div>
-            <div className="stat-label">Total Reviews</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{profile?.completedJobs}</div>
-            <div className="stat-label">Jobs Completed</div>
-          </div>
-        </div>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          {saving ? <FaSpinner className="spinner" /> : <FaSave />} Save Changes
+        </button>
       </div>
-    </div>
+    </form>
   );
 };
 
-const ViewProfileTab = ({ profile }) => {
+const ViewTab = ({ profile }) => {
+  const formatHours = (hours) => {
+    if (!hours) return {};
+    return typeof hours === 'string' ? JSON.parse(hours) : hours;
+  };
+
   return (
-    <div className="view-profile-tab">
-      <div className="public-profile-header">
-        <div className="profile-avatar">
-          {profile?.businessName?.charAt(0)}
-        </div>
-        <div className="profile-info">
-          <h2>{profile?.businessName}</h2>
-          <p className="tagline">{profile?.tagline}</p>
-          <div className="profile-badges">
-            {profile?.verification?.status === 'verified' && (
-              <span className="badge verified">
-                <FaCheckCircle /> {profile.verification.badge}
-              </span>
-            )}
-            {profile?.boost?.status === 'active' && (
-              <span className="badge boosted">
-                <FaAward /> {profile.boost.badge}
-              </span>
-            )}
-          </div>
+    <div className="view-tab">
+      <div className="public-header">
+        <div className="avatar">{profile.business_name?.charAt(0)}</div>
+        <div>
+          <h2>{profile.business_name}</h2>
+          <p>{profile.tagline}</p>
+          {profile.verified && (
+            <span className="badge verified"><FaCheckCircle /> Verified</span>
+          )}
         </div>
       </div>
 
-      <div className="profile-details-grid">
-        <div className="detail-section">
-          <h3><FaInfoCircle /> About</h3>
-          <p>{profile?.description}</p>
-        </div>
+      <div className="public-details">
+        <section>
+          <h3>About</h3>
+          <p>{profile.description}</p>
+        </section>
 
-        <div className="detail-section">
-          <h3><FaPhone /> Contact</h3>
+        <section>
+          <h3>Contact</h3>
           <div className="contact-list">
-            <div className="contact-item">
-              <FaPhone /> {profile?.contact?.phone}
-            </div>
-            <div className="contact-item">
-              <FaEnvelope /> {profile?.contact?.email}
-            </div>
-            <div className="contact-item">
-              <FaMapMarkerAlt /> {profile?.contact?.serviceArea}
-            </div>
+            {profile.contact_json?.phone && (
+              <div><FaPhone /> {profile.contact_json.phone}</div>
+            )}
+            {profile.contact_json?.email && (
+              <div><FaEnvelope /> {profile.contact_json.email}</div>
+            )}
+            {profile.contact_json?.serviceArea && (
+              <div><FaMapMarkerAlt /> {profile.contact_json.serviceArea}</div>
+            )}
           </div>
-        </div>
+        </section>
 
-        <div className="detail-section">
-          <h3><FaClock /> Operating Hours</h3>
+        <section>
+          <h3>Hours</h3>
           <div className="hours-list">
-            <div className="hours-item">
-              <span>Mon-Fri:</span>
-              <span>{profile?.operatingHours?.mondayToFriday}</span>
-            </div>
-            <div className="hours-item">
-              <span>Saturday:</span>
-              <span>{profile?.operatingHours?.saturday}</span>
-            </div>
-            <div className="hours-item">
-              <span>Sunday:</span>
-              <span>{profile?.operatingHours?.sunday}</span>
-            </div>
+            <div><span>Mon-Fri:</span> {profile.operating_hours_json?.mondayToFriday || 'N/A'}</div>
+            <div><span>Sat:</span> {profile.operating_hours_json?.saturday || 'N/A'}</div>
+            <div><span>Sun:</span> {profile.operating_hours_json?.sunday || 'N/A'}</div>
           </div>
-        </div>
+        </section>
 
-        <div className="detail-section">
-          <h3><FaStar /> Ratings</h3>
-          <div className="rating-display">
-            {renderStars(profile?.rating)}
-            <p>{profile?.totalReviews} reviews</p>
+        <section>
+          <h3>Services</h3>
+          <div className="services-list">
+            {profile.services_json?.map((s, i) => (
+              <div key={i} className="service-card">
+                <h4>{s.name}</h4>
+                <p className="price">{s.price}</p>
+                <p>{s.description}</p>
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
+
+        {profile.certifications_json?.length > 0 && (
+          <section>
+            <h3>Certifications</h3>
+            <ul>
+              {profile.certifications_json.map((c, i) => (
+                <li key={i}><FaCertificate /> {c}</li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );
 };
 
-const PreviewTab = ({ profile, previewMode, setPreviewMode }) => {
+const PreviewTab = ({ profile }) => {
+  // Simplified public preview (similar to view but with device mockup)
   return (
     <div className="preview-tab">
-      <div className="preview-controls">
-        <h2>Profile Preview</h2>
-        <div className="device-toggle">
-          <button 
-            className={`device-btn ${previewMode === 'desktop' ? 'active' : ''}`}
-            onClick={() => setPreviewMode('desktop')}
-          >
-            Desktop
-          </button>
-          <button 
-            className={`device-btn ${previewMode === 'tablet' ? 'active' : ''}`}
-            onClick={() => setPreviewMode('tablet')}
-          >
-            Tablet
-          </button>
-          <button 
-            className={`device-btn ${previewMode === 'mobile' ? 'active' : ''}`}
-            onClick={() => setPreviewMode('mobile')}
-          >
-            Mobile
-          </button>
-        </div>
-      </div>
-
-      <div className={`preview-container ${previewMode}`}>
-        <div className="preview-device">
-          <div className="preview-content">
-            {/* Simplified preview of public profile */}
-            <div className="preview-profile-header">
-              <div className="preview-avatar">
-                {profile?.businessName?.charAt(0)}
-              </div>
-              <div className="preview-info">
-                <h3>{profile?.businessName}</h3>
-                <p>{profile?.tagline}</p>
-                <div className="preview-badges">
-                  <span className="badge">⭐ {profile?.rating?.toFixed(1)}</span>
-                  <span className="badge">📞 {profile?.contact?.phone}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="preview-section">
-              <h4>About</h4>
-              <p>{profile?.description?.substring(0, 200)}...</p>
-            </div>
-            
-            <div className="preview-section">
-              <h4>Services</h4>
-              {profile?.services?.slice(0, 3).map(service => (
-                <div key={service.id} className="preview-service">
-                  <span>{service.name}</span>
-                  <span>{service.price}</span>
-                </div>
-              ))}
-            </div>
-            
-            <div className="preview-actions">
-              <button className="btn btn-primary">Contact Now</button>
-              <button className="btn btn-secondary">View Profile</button>
-            </div>
-          </div>
+      <div className="device-mockup">
+        <div className="preview-content">
+          <ViewTab profile={profile} />
         </div>
       </div>
     </div>
@@ -590,63 +569,38 @@ const PreviewTab = ({ profile, previewMode, setPreviewMode }) => {
 const ReviewsTab = ({ reviews, ratings }) => {
   return (
     <div className="reviews-tab">
-      <div className="reviews-header">
-        <h2>Reviews & Ratings</h2>
-        <div className="ratings-summary">
-          <div className="overall-rating">
-            <div className="rating-value">{ratings?.averageRating?.toFixed(1)}</div>
-            <div className="rating-stars">{renderStars(ratings?.averageRating)}</div>
-            <div className="rating-count">{ratings?.totalReviews} reviews</div>
+      <div className="ratings-header">
+        <div className="overall">
+          <span className="big-number">{ratings.average?.toFixed(1)}</span>
+          <div className="stars">
+            {renderStars(ratings.average)}
           </div>
+          <p>{ratings.total} reviews</p>
         </div>
-      </div>
-
-      <div className="reviews-grid">
-        <div className="reviews-list">
-          <h3>Recent Reviews</h3>
-          {reviews?.map(review => (
-            <div key={review.id} className="review-card">
-              <div className="review-header">
-                <div className="reviewer-info">
-                  <strong>{review.client}</strong>
-                  <div className="review-rating">
-                    {renderStars(review.rating)}
-                    <span>{new Date(review.date).toLocaleDateString()}</span>
-                  </div>
-                </div>
+        <div className="distribution">
+          {[5,4,3,2,1].map(star => (
+            <div key={star} className="bar-row">
+              <span>{star} stars</span>
+              <div className="bar">
+                <div style={{ width: `${(ratings.distribution[star] / ratings.total) * 100 || 0}%` }} />
               </div>
-              <p className="review-comment">{review.comment}</p>
-              <div className="review-actions">
-                <button className="btn btn-sm">
-                  <FaThumbsUp /> Helpful
-                </button>
-                <button className="btn btn-sm">
-                  <FaCommentDots /> Reply
-                </button>
-              </div>
+              <span>{ratings.distribution[star]}</span>
             </div>
           ))}
         </div>
+      </div>
 
-        <div className="ratings-breakdown">
-          <h3>Ratings Breakdown</h3>
-          {ratings?.distribution && Object.entries(ratings.distribution)
-            .sort((a, b) => b[0] - a[0])
-            .map(([stars, count]) => (
-              <div key={stars} className="rating-bar">
-                <div className="stars-label">{stars} stars</div>
-                <div className="bar-container">
-                  <div 
-                    className="bar-fill"
-                    style={{ 
-                      width: `${(count / ratings.totalReviews) * 100}%` 
-                    }}
-                  />
-                </div>
-                <div className="count-label">{count}</div>
-              </div>
-            ))}
-        </div>
+      <div className="reviews-list">
+        {reviews.map(r => (
+          <div key={r.id} className="review-card">
+            <div className="review-header">
+              <strong>{r.client?.full_name || 'Anonymous'}</strong>
+              <span className="rating">{renderStars(r.rating)}</span>
+              <span className="date">{new Date(r.created_at).toLocaleDateString()}</span>
+            </div>
+            <p>{r.comment}</p>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -655,179 +609,82 @@ const ReviewsTab = ({ reviews, ratings }) => {
 const MarketplaceTab = ({ profile }) => {
   return (
     <div className="marketplace-tab">
-      <h2>Marketplace Profile Settings</h2>
-      
-      <div className="marketplace-status">
-        <div className="status-card">
-          <h3>Visibility Status</h3>
-          <div className="status-items">
-            <div className="status-item">
-              <FaEye /> 
-              <span>Appears in Marketplace: <strong>Yes</strong></span>
-            </div>
-            <div className="status-item">
-              <FaCheckCircle /> 
-              <span>Verification: <strong>{profile?.verification?.status || 'Pending'}</strong></span>
-            </div>
-            <div className="status-item">
-              <FaAward /> 
-              <span>Boost Status: <strong>{profile?.boost?.status || 'Inactive'}</strong></span>
-            </div>
-          </div>
+      <h2>Marketplace Presence</h2>
+      <div className="status-cards">
+        <div className="card">
+          <h3>Visibility</h3>
+          <p>Your profile appears in marketplace: <strong>Yes</strong></p>
         </div>
-
-        <div className="status-card">
-          <h3>Profile Performance</h3>
-          <div className="performance-stats">
-            <div className="stat">
-              <div className="stat-value">{profile?.profileCompleteness}%</div>
-              <div className="stat-label">Profile Completeness</div>
-            </div>
-            <div className="stat">
-              <div className="stat-value">{profile?.responseRate}</div>
-              <div className="stat-label">Response Rate</div>
-            </div>
-            <div className="stat">
-              <div className="stat-value">{profile?.avgResponseTime}</div>
-              <div className="stat-label">Avg Response Time</div>
-            </div>
-          </div>
+        <div className="card">
+          <h3>Verification</h3>
+          <p>Status: <span className={profile.verified ? 'verified' : 'pending'}>
+            {profile.verified ? 'Verified' : 'Not Verified'}
+          </span></p>
         </div>
-      </div>
-
-      <div className="marketplace-actions">
-        <button className="btn btn-primary">
-          <FaGlobe /> View Public Profile
-        </button>
-        <button className="btn btn-secondary">
-          <FaAward /> Manage Boost
-        </button>
-        <button className="btn btn-secondary">
-          <FaShareAlt /> Share Profile
-        </button>
+        <div className="card">
+          <h3>Boost</h3>
+          <p>Active Boost: <strong>No</strong></p>
+          <button className="btn btn-primary">Boost Now</button>
+        </div>
       </div>
     </div>
   );
 };
 
-const BillingTab = ({ billing }) => {
+const BillingTab = ({ subscription }) => {
   return (
     <div className="billing-tab">
       <h2>Billing & Subscription</h2>
-      
-      <div className="subscription-status">
-        <h3>Current Subscription</h3>
-        <div className="subscription-card">
-          <div className="subscription-info">
-            <div className="plan-name">Free Tier</div>
-            <div className="plan-details">
-              <p>{billing?.freeBookingsUsed || 0}/{billing?.freeBookingsLimit || 10} free bookings used</p>
-              <p>Monthly fee: ₦{billing?.monthlyFee?.toLocaleString() || '3,000'} after 10 bookings</p>
-            </div>
-          </div>
-          <button className="btn btn-primary">
-            Upgrade Plan
-          </button>
-        </div>
-      </div>
-
-      <div className="billing-details">
-        <div className="invoice-history">
-          <h3>Recent Invoices</h3>
-          <div className="invoices-list">
-            <div className="invoice-item">
-              <div className="invoice-date">Jan 2024</div>
-              <div className="invoice-amount">₦3,000</div>
-              <div className="invoice-status paid">Paid</div>
-              <button className="btn btn-sm">
-                <FaDownload /> Download
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="payment-methods">
-          <h3>Payment Methods</h3>
-          <div className="methods-list">
-            <div className="method-item">
-              <FaCreditCard /> 
-              <span>Visa •••• 4242</span>
-              <button className="btn btn-sm">Remove</button>
-            </div>
-            <button className="btn btn-secondary">
-              <FaPlus /> Add Payment Method
-            </button>
-          </div>
-        </div>
+      <div className="subscription-card">
+        <h3>Free Tier</h3>
+        <p>Free bookings used: {subscription?.free_booking_used || 0}/{subscription?.free_booking_limit || 10}</p>
+        <p>Status: <span className="badge">{subscription?.subscription_status || 'Active'}</span></p>
+        <button className="btn btn-primary">Upgrade</button>
       </div>
     </div>
   );
 };
 
-const SettingsTab = () => {
+const SettingsTab = ({ user }) => {
   return (
     <div className="settings-tab">
       <h2>Account Settings</h2>
-      
-      <div className="settings-sections">
-        <div className="settings-section">
-          <h3><FaUser /> Personal Information</h3>
-          <div className="settings-form">
-            <div className="form-group">
-              <label>Full Name</label>
-              <input type="text" defaultValue="John Doe" />
-            </div>
-            <div className="form-group">
-              <label>Email Address</label>
-              <input type="email" defaultValue="john@example.com" />
-            </div>
-          </div>
+      <div className="settings-section">
+        <h3>Personal Info</h3>
+        <div className="form-group">
+          <label>Name</label>
+          <input type="text" defaultValue={user?.email} />
         </div>
-
-        <div className="settings-section">
-          <h3><FaLock /> Security</h3>
-          <div className="security-settings">
-            <button className="btn btn-secondary">
-              Change Password
-            </button>
-            <button className="btn btn-secondary">
-              Two-Factor Authentication
-            </button>
-          </div>
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" defaultValue={user?.email} />
         </div>
-
-        <div className="settings-section">
-          <h3><FaBellIcon /> Notifications</h3>
-          <div className="notification-settings">
-            <label className="checkbox-label">
-              <input type="checkbox" defaultChecked />
-              <span>Booking notifications</span>
-            </label>
-            <label className="checkbox-label">
-              <input type="checkbox" defaultChecked />
-              <span>Review notifications</span>
-            </label>
-            <label className="checkbox-label">
-              <input type="checkbox" />
-              <span>Marketing emails</span>
-            </label>
-          </div>
-        </div>
+        <button className="btn btn-primary">Update</button>
       </div>
-
-      <div className="settings-actions">
-        <button className="btn btn-primary">
-          <FaSave /> Save Settings
-        </button>
-        <button className="btn btn-danger">
-          Delete Account
-        </button>
+      <div className="settings-section">
+        <h3>Security</h3>
+        <button className="btn btn-secondary">Change Password</button>
+      </div>
+      <div className="settings-section">
+        <h3>Danger Zone</h3>
+        <button className="btn btn-danger">Delete Account</button>
       </div>
     </div>
   );
 };
 
-// Add missing icon component
-const FaInfoCircle = () => <FaQuestionCircle />;
+// Helper function to render stars
+const renderStars = (rating) => {
+  const full = Math.floor(rating);
+  const half = rating % 1 >= 0.5;
+  const empty = 5 - full - (half ? 1 : 0);
+  return (
+    <span className="stars">
+      {[...Array(full)].map((_, i) => <FaStar key={`full-${i}`} />)}
+      {half && <FaStarHalfAlt />}
+      {[...Array(empty)].map((_, i) => <FaRegStar key={`empty-${i}`} />)}
+    </span>
+  );
+};
 
 export default ProviderProfile;

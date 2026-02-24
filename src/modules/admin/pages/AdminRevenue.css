@@ -683,3 +683,24 @@
       min-width: 40px;
     }
   }
+
+  .bar.revenue-bar {
+  background-color: #3b82f6;
+  width: 25px;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.5s ease;
+}
+
+.bar.commission-bar {
+  background-color: #10b981;
+  width: 25px;
+  border-radius: 4px 4px 0 0;
+  margin-top: -5px; /* Sits slightly behind/next to revenue */
+}
+
+.chart-bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}

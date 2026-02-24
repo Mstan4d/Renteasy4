@@ -6,11 +6,14 @@ import {
   Users, Briefcase, Calendar, Shield, Award,
   FileText, DollarSign, Home, Star
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './EstateProfile.css';
 
 const EstateProfile = () => {
-  const { user, updateUser } = useAuth();
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [formData, setFormData] = useState({
     firmName: '',
     contactPerson: '',
@@ -49,56 +52,93 @@ const EstateProfile = () => {
   });
 
   useEffect(() => {
-    // Load profile data
-    const loadProfile = async () => {
-      // Mock data - replace with API call
-      setFormData({
-        firmName: user?.companyName || 'Prime Properties Ltd',
-        contactPerson: user?.name || 'John Doe',
-        email: user?.email || 'contact@primeproperties.com',
-        phone: '+2348012345678',
-        website: 'https://primeproperties.com',
-        address: '123 Broad Street, Lagos Island, Lagos',
-        yearEstablished: '2015',
-        totalAgents: '24',
-        propertiesManaged: '156',
-        specialties: ['Commercial', 'Residential', 'Industrial', 'Luxury'],
-        description: 'A premier real estate firm specializing in luxury and commercial properties across Nigeria. With 8+ years of experience, we provide exceptional service and value to our clients.',
-        logo: '/api/placeholder/100/100',
-        coverImage: '/api/placeholder/1200/300',
-        officeHours: 'Mon - Fri: 9am - 6pm | Sat: 10am - 4pm',
-        socialLinks: {
-          facebook: 'https://facebook.com/primeproperties',
-          twitter: 'https://twitter.com/primeproperties',
-          linkedin: 'https://linkedin.com/company/primeproperties',
-          instagram: 'https://instagram.com/primeproperties'
-        },
-        services: [
-          'Property Sales',
-          'Property Rentals',
-          'Property Management',
-          'Real Estate Consulting',
-          'Valuation Services',
-          'Tenant Screening'
-        ],
-        certification: {
-          cacNumber: 'RC-1234567',
-          rcNumber: 'BN-9876543',
-          certified: true,
-          verificationStatus: 'verified'
-        }
-      });
-
-      setStats({
-        totalProperties: 156,
-        activeClients: 89,
-        monthlyRevenue: 45000000,
-        clientSatisfaction: 4.7
-      });
-    };
-
-    loadProfile();
+    if (user) {
+      loadProfile();
+    }
   }, [user]);
+
+  const loadProfile = async () => {
+    try {
+      setLoading(true);
+
+      // Load estate firm profile
+      const { data: profile, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (profile) {
+        setFormData({
+          firmName: profile.firm_name || '',
+          contactPerson: profile.contact_person || '',
+          email: profile.business_email || user.email || '',
+          phone: profile.business_phone || '',
+          website: profile.website || '',
+          address: profile.address || '',
+          yearEstablished: profile.year_established || '',
+          totalAgents: profile.total_agents || '',
+          propertiesManaged: profile.properties_managed || '',
+          specialties: profile.specialties || [],
+          description: profile.description || '',
+          logo: profile.logo_url || '',
+          coverImage: profile.cover_image_url || '',
+          officeHours: profile.office_hours || '',
+          socialLinks: profile.social_links || {
+            facebook: '',
+            twitter: '',
+            linkedin: '',
+            instagram: ''
+          },
+          services: profile.services || [],
+          certification: profile.certification || {
+            cacNumber: '',
+            rcNumber: '',
+            certified: false,
+            verificationStatus: 'pending'
+          }
+        });
+
+        setStats(profile.stats || {
+          totalProperties: 0,
+          activeClients: 0,
+          monthlyRevenue: 0,
+          clientSatisfaction: 0
+        });
+      } else {
+        // Create initial profile if doesn't exist
+        await createInitialProfile();
+      }
+
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createInitialProfile = async () => {
+    try {
+      const { error } = await supabase
+        .from('estate_firm_profiles')
+        .insert({
+          user_id: user.id,
+          firm_name: user.user_metadata?.company || 'My Estate Firm',
+          business_email: user.email,
+          created_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      
+      // Reload profile
+      loadProfile();
+
+    } catch (error) {
+      console.error('Error creating profile:', error);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -136,52 +176,127 @@ const EstateProfile = () => {
     }));
   };
 
-  const handleLogoUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          logo: reader.result
-        }));
-      };
-      reader.readAsDataURL(file);
+  const uploadImage = async (file, type) => {
+    if (!file || !user) return null;
+
+    try {
+      setUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      const filePath = `profile/${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('estate-files')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('estate-files')
+        .getPublicUrl(filePath);
+
+      return publicUrl;
+
+    } catch (error) {
+      console.error(`Error uploading ${type}:`, error);
+      throw error;
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleCoverUpload = (e) => {
+  const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          coverImage: reader.result
-        }));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    try {
+      const logoUrl = await uploadImage(file, 'logo');
+      if (logoUrl) {
+        setFormData(prev => ({ ...prev, logo: logoUrl }));
+      }
+    } catch (error) {
+      alert('Failed to upload logo. Please try again.');
+    }
+  };
+
+  const handleCoverUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const coverUrl = await uploadImage(file, 'cover');
+      if (coverUrl) {
+        setFormData(prev => ({ ...prev, coverImage: coverUrl }));
+      }
+    } catch (error) {
+      alert('Failed to upload cover image. Please try again.');
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    if (!user) return;
+
     try {
-      // Update profile via API
-      await updateUser(formData);
-      setIsEditing(false);
+      const profileData = {
+        user_id: user.id,
+        firm_name: formData.firmName,
+        contact_person: formData.contactPerson,
+        business_email: formData.email,
+        business_phone: formData.phone,
+        website: formData.website,
+        address: formData.address,
+        year_established: formData.yearEstablished ? parseInt(formData.yearEstablished) : null,
+        total_agents: formData.totalAgents ? parseInt(formData.totalAgents) : 0,
+        properties_managed: formData.propertiesManaged ? parseInt(formData.propertiesManaged) : 0,
+        specialties: formData.specialties,
+        description: formData.description,
+        logo_url: formData.logo,
+        cover_image_url: formData.coverImage,
+        office_hours: formData.officeHours,
+        social_links: formData.socialLinks,
+        services: formData.services,
+        certification: formData.certification,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('estate_firm_profiles')
+        .upsert(profileData, {
+          onConflict: 'user_id'
+        });
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'profile',
+        action: 'update',
+        description: 'Updated estate firm profile',
+        created_at: new Date().toISOString()
+      });
+
       alert('Profile updated successfully!');
+      setIsEditing(false);
+      loadProfile(); // Refresh data
+
     } catch (error) {
-      console.error('Failed to update profile:', error);
+      console.error('Error updating profile:', error);
       alert('Failed to update profile. Please try again.');
     }
   };
 
-  const handleReset = () => {
-    setIsEditing(false);
-    // Reload original data
-  };
+  if (loading) {
+    return (
+      <div className="estate-profile">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="estate-profile">

@@ -127,51 +127,33 @@ const ManagerKYC = () => {
   };
 
   const handleFileUpload = (e, field) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const file = e.target.files[0];
+  if (!file) return;
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size too large. Maximum size is 5MB.');
-      return;
-    }
+  // 1. Validation (Keep this!)
+  if (file.size > 5 * 1024 * 1024) {
+    alert('File size too large. Maximum size is 5MB.');
+    return;
+  }
 
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
-    if (!validTypes.includes(file.type)) {
-      alert('Invalid file type. Please upload JPG, PNG, or PDF files.');
-      return;
-    }
+  const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+  if (!validTypes.includes(file.type)) {
+    alert('Invalid file type. Please upload JPG, PNG, or PDF files.');
+    return;
+  }
 
-    // Simulate upload progress
-    setUploadProgress(prev => ({ ...prev, [field]: 0 }));
-    
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        const newProgress = prev[field] + 20;
-        if (newProgress >= 100) {
-          clearInterval(interval);
-          
-          // Create a preview URL for images
-          let previewUrl = '';
-          if (file.type.startsWith('image/')) {
-            previewUrl = URL.createObjectURL(file);
-          } else {
-            previewUrl = '📄'; // PDF icon
-          }
-          
-          setFormData(prev => ({
-            ...prev,
-            [field]: previewUrl,
-            [`${field}File`]: file
-          }));
-          
-          return { ...prev, [field]: 100 };
-        }
-        return { ...prev, [field]: newProgress };
-      });
-    }, 100);
-  };
+  // 2. UI Preview (Keep this for the user to see what they uploaded)
+  const previewUrl = URL.createObjectURL(file);
+  
+  setFormData(prev => ({
+    ...prev,
+    [field]: previewUrl,      // This is for the <img> src in the UI
+    [`${field}File`]: file    // THIS IS THE RAW FILE for handleSubmit to upload
+  }));
+
+  // 3. Simple UI Progress Simulation (Optional)
+  setUploadProgress(prev => ({ ...prev, [field]: 100 }));
+};
 
   const removeFile = (field) => {
     setFormData(prev => ({
@@ -220,87 +202,77 @@ const ManagerKYC = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    try {
-      setIsLoading(true);
-      
-      // Save KYC data to managers
-      const managers = JSON.parse(localStorage.getItem('managers') || '[]');
-      const managerIndex = managers.findIndex(m => m.email === user?.email);
-      
-      const kycRecord = {
-        fullName: formData.fullName,
-        phone: formData.phone,
-        email: formData.email,
-        dateOfBirth: formData.dateOfBirth,
-        nationality: formData.nationality,
-        state: formData.state,
-        lga: formData.lga,
-        address: formData.address,
-        idType: formData.idType,
-        idNumber: formData.idNumber,
-        bankName: formData.bankName,
-        accountNumber: formData.accountNumber,
-        accountName: formData.accountName,
-        bvn: formData.bvn,
-        submittedAt: new Date().toISOString(),
-        status: 'pending'
-      };
-      
-      if (managerIndex !== -1) {
-        managers[managerIndex] = {
-          ...managers[managerIndex],
-          ...kycRecord,
-          kycStatus: 'pending',
-          updatedAt: new Date().toISOString()
-        };
-      } else {
-        managers.push({
-          id: `manager_${Date.now()}`,
-          userId: user?.id,
-          name: formData.fullName,
-          email: formData.email,
-          phone: formData.phone,
-          kycStatus: 'pending',
-          kycData: kycRecord,
-          status: 'pending_verification',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-      }
-      
-      localStorage.setItem('managers', JSON.stringify(managers));
-      
-      // Notify admin
-      const adminNotifications = JSON.parse(localStorage.getItem('adminNotifications') || '[]');
-      adminNotifications.unshift({
-        id: Date.now(),
-        title: 'New Manager KYC Submission',
-        message: `${formData.fullName} has submitted KYC documents`,
-        type: 'manager_kyc',
-        priority: 'high',
-        data: {
-          managerId: user?.id,
-          managerName: formData.fullName,
-          submittedAt: new Date().toISOString()
-        },
-        timestamp: new Date().toISOString(),
-        read: false
-      });
-      localStorage.setItem('adminNotifications', JSON.stringify(adminNotifications));
-      
-      setVerificationStatus('pending');
-      setStep(5); // Show pending screen
-      alert('KYC submitted successfully! Admin will review your documents.');
-      
-    } catch (error) {
-      console.error('Error submitting KYC:', error);
-      alert('Failed to submit KYC. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  import { supabase } from '../../../shared/lib/supabaseClient';
 
+// ... inside the component
+
+const handleSubmit = async () => {
+  try {
+    setIsLoading(true);
+
+    // 1. Upload files to Supabase Storage first
+    const uploadFile = async (file, folder) => {
+      if (!file) return null;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${folder}_${Date.now()}.${fileExt}`;
+      const { data, error } = await supabase.storage
+        .from('kyc-documents')
+        .upload(fileName, file);
+      
+      if (error) throw error;
+      // Get Public URL
+      const { data: { publicUrl } } = supabase.storage.from('kyc-documents').getPublicUrl(fileName);
+      return publicUrl;
+    };
+
+    const idFrontUrl = await uploadFile(formData.idFrontFile, 'id_front');
+    const idBackUrl = await uploadFile(formData.idBackFile, 'id_back');
+    const selfieUrl = await uploadFile(formData.selfieFile, 'selfie');
+    const proofUrl = await uploadFile(formData.proofOfAddressFile, 'proof_address');
+
+    // 2. Prepare the payload for the Database
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        kyc_status: 'pending',
+        kyc_data: {
+          fullName: formData.fullName,
+          phone: formData.phone,
+          dob: formData.dateOfBirth,
+          address: formData.address,
+          lga: formData.lga,
+          state: formData.state,
+          idType: formData.idType,
+          idNumber: formData.idNumber,
+          documents: {
+            idFront: idFrontUrl,
+            idBack: idBackUrl,
+            selfie: selfieUrl,
+            proofOfAddress: proofUrl
+          }
+        },
+        bank_details: {
+          bankName: formData.bankName,
+          accountNumber: formData.accountNumber,
+          accountName: formData.accountName,
+          bvn: formData.bvn
+        }
+      })
+      .eq('id', user.id);
+
+    if (error) throw error;
+
+    setVerificationStatus('pending');
+    setStep(5); 
+    alert('KYC submitted successfully! Our team will review it within 24-48 hours.');
+
+  } catch (error) {
+    console.error('KYC Submission Error:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
   const steps = [
     { number: 1, title: 'Personal Info', icon: '👤' },
     { number: 2, title: 'ID Verification', icon: '🆔' },

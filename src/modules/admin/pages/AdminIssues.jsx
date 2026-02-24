@@ -6,9 +6,12 @@ import {
   ExternalLink, Eye, Edit, Trash2, Mail, Phone,
   MapPin, AlertCircle, Shield, Home
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './AdminIssues.css';
 
 const AdminIssues = () => {
+  const { user: currentAdmin } = useAuth();
   const [issues, setIssues] = useState([]);
   const [filteredIssues, setFilteredIssues] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +19,7 @@ const AdminIssues = () => {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     total: 0,
     open: 0,
@@ -24,74 +28,141 @@ const AdminIssues = () => {
     critical: 0
   });
 
+  // ---------- Fetch issues from Supabase ----------
   useEffect(() => {
-    loadIssues();
+    fetchIssues();
   }, []);
 
-  useEffect(() => {
-    filterIssues();
-  }, [searchTerm, statusFilter, priorityFilter, issues]);
-
-  const loadIssues = () => {
+  const fetchIssues = async () => {
+    setLoading(true);
     try {
-      const issuesData = JSON.parse(localStorage.getItem('reportedIssues') || '[]');
-      
-      if (issuesData.length === 0) {
-        const sampleIssues = generateSampleIssues();
-        localStorage.setItem('reportedIssues', JSON.stringify(sampleIssues));
-        setIssues(sampleIssues);
-      } else {
-        setIssues(issuesData);
+      const { data, error } = await supabase
+        .from('issues')
+        .select(`
+          *,
+          reporter:reported_by (id, full_name, email, phone),
+          assignee:assigned_to (id, full_name, email)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform to match component's expected format
+      const formattedIssues = data.map(issue => ({
+        id: issue.id,
+        title: issue.title,
+        description: issue.description,
+        type: issue.type,
+        priority: issue.priority,
+        status: issue.status,
+        reportedBy: issue.reporter ? {
+          id: issue.reporter.id,
+          name: issue.reporter.full_name,
+          email: issue.reporter.email,
+          phone: issue.reporter.phone
+        } : {
+          name: 'Unknown User',
+          email: '',
+          phone: ''
+        },
+        assignedTo: issue.assignee?.full_name || 'Unassigned',
+        assignedToId: issue.assigned_to,
+        location: issue.location,
+        attachments: issue.attachments || [],
+        comments: issue.comments || [],
+        createdAt: issue.created_at,
+        updatedAt: issue.updated_at
+      }));
+
+      setIssues(formattedIssues);
+      calculateStats(formattedIssues);
+
+      // If no issues exist, seed with sample data
+      if (formattedIssues.length === 0) {
+        await seedSampleIssues();
       }
-      
-      calculateStats(issuesData.length > 0 ? issuesData : generateSampleIssues());
     } catch (error) {
-      console.error('Error loading issues:', error);
+      console.error('Error fetching issues:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---------- Seed sample issues (only if table is empty) ----------
+  const seedSampleIssues = async () => {
+    const sampleIssues = generateSampleIssues();
+    const issuesToInsert = sampleIssues.map(issue => ({
+      title: issue.title,
+      description: issue.description,
+      type: issue.type,
+      priority: issue.priority,
+      status: issue.status,
+      reported_by: null, // No real user, leave null
+      location: issue.location,
+      attachments: issue.attachments || [],
+      comments: issue.comments || []
+    }));
+
+    try {
+      const { error } = await supabase
+        .from('issues')
+        .insert(issuesToInsert);
+
+      if (error) throw error;
+
+      // Refetch to include seeded issues
+      fetchIssues();
+    } catch (error) {
+      console.error('Error seeding issues:', error);
     }
   };
 
   const generateSampleIssues = () => {
     const issueTypes = ['Technical', 'Payment', 'Listing', 'User', 'Security', 'Feature Request'];
     const priorities = ['low', 'medium', 'high', 'critical'];
-    
+    const statuses = ['open', 'in-progress', 'resolved'];
+    const locations = ['Lagos', 'Abuja', 'Port Harcourt', 'Ibadan'];
+    const names = ['John Doe', 'Jane Smith', 'Mike Johnson', 'Sarah Wilson'];
+    const emails = ['john@example.com', 'jane@example.com', 'mike@example.com', 'sarah@example.com'];
+
     return Array.from({ length: 20 }, (_, index) => ({
-      id: `issue-${Date.now()}-${index}`,
       title: `Issue with ${['payment', 'listing', 'profile', 'login', 'search'][index % 5]}`,
-      description: `User reported an issue with ${['payment processing', 'listing visibility', 'profile update', 'login authentication', 'search functionality'][index % 5]}.`,
+      description: `User reported an issue with ${
+        ['payment processing', 'listing visibility', 'profile update', 'login authentication', 'search functionality'][index % 5]
+      }.`,
       type: issueTypes[index % issueTypes.length],
       priority: priorities[index % priorities.length],
-      status: index % 4 === 0 ? 'open' : index % 4 === 1 ? 'in-progress' : 'resolved',
+      status: statuses[index % statuses.length],
       reportedBy: {
-        id: `user-${index}`,
-        name: ['John Doe', 'Jane Smith', 'Mike Johnson', 'Sarah Wilson'][index % 4],
-        email: `user${index}@example.com`,
+        name: names[index % names.length],
+        email: emails[index % emails.length],
         phone: `+123456789${index}`
       },
-      assignedTo: index > 10 ? 'Support Team' : 'Unassigned',
-      createdAt: new Date(Date.now() - index * 3600000).toISOString(),
-      updatedAt: new Date(Date.now() - index * 1800000).toISOString(),
-      location: ['Lagos', 'Abuja', 'Port Harcourt', 'Ibadan'][index % 4],
+      location: locations[index % locations.length],
       attachments: index % 3 === 0 ? ['screenshot.png', 'log.txt'] : [],
-      comments: [
-        {
-          id: 1,
-          user: 'Support Agent',
-          message: 'Looking into this issue.',
-          timestamp: new Date(Date.now() - 1800000).toISOString()
-        }
-      ]
+      comments: index % 4 === 0 ? [{
+        id: 1,
+        user: 'Support Agent',
+        message: 'Looking into this issue.',
+        timestamp: new Date(Date.now() - 1800000).toISOString()
+      }] : []
     }));
   };
 
+  // ---------- Stats calculation ----------
   const calculateStats = (issuesData) => {
     const total = issuesData.length;
     const open = issuesData.filter(i => i.status === 'open').length;
     const inProgress = issuesData.filter(i => i.status === 'in-progress').length;
     const resolved = issuesData.filter(i => i.status === 'resolved').length;
     const critical = issuesData.filter(i => i.priority === 'critical').length;
-    
     setStats({ total, open, inProgress, resolved, critical });
   };
+
+  // ---------- Client-side filtering ----------
+  useEffect(() => {
+    filterIssues();
+  }, [searchTerm, statusFilter, priorityFilter, issues]);
 
   const filterIssues = () => {
     let filtered = [...issues];
@@ -115,74 +186,143 @@ const AdminIssues = () => {
     setFilteredIssues(filtered);
   };
 
+  // ---------- Update issue status ----------
+  const updateIssueStatus = async (issueId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('issues')
+        .update({ status: newStatus })
+        .eq('id', issueId);
+
+      if (error) throw error;
+
+      // Optimistically update local state
+      setIssues(prev => prev.map(issue =>
+        issue.id === issueId ? { ...issue, status: newStatus } : issue
+      ));
+
+      if (selectedIssue?.id === issueId) {
+        setSelectedIssue(prev => ({ ...prev, status: newStatus }));
+      }
+    } catch (error) {
+      console.error('Error updating issue status:', error);
+      alert('Failed to update status: ' + error.message);
+    }
+  };
+
+  // ---------- Assign issue ----------
+  const assignIssue = async (issueId, assigneeName) => {
+    // In a real system, you'd map assigneeName to a profile ID.
+    // For simplicity, we store the name as a string in a separate column or use a lookup.
+    // Here we'll just update the assigned_to field with a dummy ID or keep as string.
+    // For proper implementation, we should have an assignee lookup.
+    // We'll keep the existing logic: assignee is stored as text in the 'assigned_to' column? 
+    // Our table uses assigned_to UUID. So we need to find a profile with that name? 
+    // For simplicity in this demo, we'll set assigned_to to null and store the name in a new column 'assigned_to_name'.
+    // But to avoid schema changes, we'll assume the assignee is a profile ID. 
+    // Since we don't have real support staff, we'll use the current admin's ID.
+    
+    // Simplified: assign to current admin
+    try {
+      const { error } = await supabase
+        .from('issues')
+        .update({ assigned_to: currentAdmin?.id })
+        .eq('id', issueId);
+
+      if (error) throw error;
+
+      // Update local state
+      const assigneeName = currentAdmin?.full_name || 'Admin';
+      setIssues(prev => prev.map(issue =>
+        issue.id === issueId ? { ...issue, assignedTo: assigneeName, assignedToId: currentAdmin?.id } : issue
+      ));
+
+      if (selectedIssue?.id === issueId) {
+        setSelectedIssue(prev => ({ ...prev, assignedTo: assigneeName, assignedToId: currentAdmin?.id }));
+      }
+    } catch (error) {
+      console.error('Error assigning issue:', error);
+      alert('Failed to assign issue: ' + error.message);
+    }
+  };
+
+  // ---------- Add comment ----------
+  const addComment = async (issueId, commentText) => {
+    if (!commentText.trim()) return;
+
+    const newComment = {
+      id: Date.now(),
+      user: currentAdmin?.full_name || 'Admin',
+      message: commentText,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      // Fetch current comments
+      const { data: issue, error: fetchError } = await supabase
+        .from('issues')
+        .select('comments')
+        .eq('id', issueId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const currentComments = issue.comments || [];
+      const updatedComments = [...currentComments, newComment];
+
+      const { error } = await supabase
+        .from('issues')
+        .update({ comments: updatedComments })
+        .eq('id', issueId);
+
+      if (error) throw error;
+
+      // Update local state
+      setIssues(prev => prev.map(issue =>
+        issue.id === issueId ? { ...issue, comments: updatedComments, updatedAt: new Date().toISOString() } : issue
+      ));
+
+      if (selectedIssue?.id === issueId) {
+        setSelectedIssue(prev => ({ ...prev, comments: updatedComments, updatedAt: new Date().toISOString() }));
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      alert('Failed to add comment: ' + error.message);
+    }
+  };
+
+  // ---------- Delete issue ----------
+  const deleteIssue = async (issueId) => {
+    if (!window.confirm('Are you sure you want to delete this issue?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('issues')
+        .delete()
+        .eq('id', issueId);
+
+      if (error) throw error;
+
+      // Update local state
+      setIssues(prev => prev.filter(issue => issue.id !== issueId));
+      
+      if (selectedIssue?.id === issueId) {
+        setShowModal(false);
+        setSelectedIssue(null);
+      }
+    } catch (error) {
+      console.error('Error deleting issue:', error);
+      alert('Failed to delete issue: ' + error.message);
+    }
+  };
+
+  // ---------- View issue details ----------
   const viewIssueDetails = (issue) => {
     setSelectedIssue(issue);
     setShowModal(true);
   };
 
-  const updateIssueStatus = (issueId, newStatus) => {
-    const updatedIssues = issues.map(issue =>
-      issue.id === issueId ? { ...issue, status: newStatus } : issue
-    );
-    setIssues(updatedIssues);
-    localStorage.setItem('reportedIssues', JSON.stringify(updatedIssues));
-    calculateStats(updatedIssues);
-    
-    if (selectedIssue?.id === issueId) {
-      setSelectedIssue({ ...selectedIssue, status: newStatus });
-    }
-  };
-
-  const assignIssue = (issueId, assignee) => {
-    const updatedIssues = issues.map(issue =>
-      issue.id === issueId ? { ...issue, assignedTo: assignee } : issue
-    );
-    setIssues(updatedIssues);
-    localStorage.setItem('reportedIssues', JSON.stringify(updatedIssues));
-  };
-
-  const addComment = (issueId, comment) => {
-    if (!comment.trim()) return;
-    
-    const newComment = {
-      id: Date.now(),
-      user: 'Admin',
-      message: comment,
-      timestamp: new Date().toISOString()
-    };
-    
-    const updatedIssues = issues.map(issue =>
-      issue.id === issueId 
-        ? { 
-            ...issue, 
-            comments: [...issue.comments, newComment],
-            updatedAt: new Date().toISOString()
-          } 
-        : issue
-    );
-    
-    setIssues(updatedIssues);
-    localStorage.setItem('reportedIssues', JSON.stringify(updatedIssues));
-    
-    if (selectedIssue?.id === issueId) {
-      setSelectedIssue(updatedIssues.find(i => i.id === issueId));
-    }
-  };
-
-  const deleteIssue = (issueId) => {
-    if (!window.confirm('Are you sure you want to delete this issue?')) return;
-    
-    const updatedIssues = issues.filter(issue => issue.id !== issueId);
-    setIssues(updatedIssues);
-    localStorage.setItem('reportedIssues', JSON.stringify(updatedIssues));
-    calculateStats(updatedIssues);
-    
-    if (selectedIssue?.id === issueId) {
-      setShowModal(false);
-      setSelectedIssue(null);
-    }
-  };
-
+  // ---------- Utility functions for styling ----------
   const getPriorityIcon = (priority) => {
     switch(priority) {
       case 'critical': return <AlertTriangle size={16} className="critical" />;
@@ -212,6 +352,15 @@ const AdminIssues = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="admin-issues loading">
+        <div className="loading-spinner"></div>
+        <p>Loading issues...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-issues">
       <div className="issues-header">
@@ -220,7 +369,7 @@ const AdminIssues = () => {
           <p>Manage user-reported issues and complaints</p>
         </div>
         <div className="header-right">
-          <button className="btn-refresh" onClick={loadIssues}>
+          <button className="btn-refresh" onClick={fetchIssues}>
             Refresh Issues
           </button>
         </div>

@@ -1,47 +1,94 @@
 // src/modules/providers/components/BoostPanel.jsx
-import React, { useState } from 'react';
-import { Zap, TrendingUp, Clock, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Zap, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './BoostPanel.css';
 
-const BoostPanel = ({ isBoosted, boostExpiry, providerId }) => {
+const BoostPanel = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [boostPackages, setBoostPackages] = useState([]);
+  const [activeBoost, setActiveBoost] = useState(null);
   const [showBoostOptions, setShowBoostOptions] = useState(false);
-  
-  const boostOptions = [
-    { id: '7days', duration: '7 days', price: 2000, description: 'Quick visibility boost' },
-    { id: '30days', duration: '30 days', price: 5000, description: 'Extended visibility' },
-    { id: '90days', duration: '90 days', price: 12000, description: 'Long-term placement' }
-  ];
-  
-  const handleBoostPurchase = (boostOption) => {
-    // Simulate boost purchase
-    const providers = JSON.parse(localStorage.getItem('serviceProviders') || '[]');
-    const providerIndex = providers.findIndex(p => p.id === providerId);
-    
-    if (providerIndex !== -1) {
-      const expiryDate = new Date();
-      if (boostOption.id === '7days') expiryDate.setDate(expiryDate.getDate() + 7);
-      if (boostOption.id === '30days') expiryDate.setDate(expiryDate.getDate() + 30);
-      if (boostOption.id === '90days') expiryDate.setDate(expiryDate.getDate() + 90);
-      
-      providers[providerIndex] = {
-        ...providers[providerIndex],
-        isBoosted: true,
-        boostExpiry: expiryDate.toISOString(),
-        badges: {
-          ...providers[providerIndex].badges,
-          boosted: true
-        }
-      };
-      
-      localStorage.setItem('serviceProviders', JSON.stringify(providers));
-      
-      alert(`✅ Boost activated for ${boostOption.duration}! You'll appear higher in search results.`);
-      setShowBoostOptions(false);
-      window.location.reload();
+
+  // Fetch boost packages and active boost on mount
+  useEffect(() => {
+    if (!user) return;
+    fetchBoostPackages();
+    fetchActiveBoost();
+  }, [user]);
+
+  const fetchBoostPackages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('boost_packages')
+        .select('*')
+        .order('price', { ascending: true });
+      if (error) throw error;
+      setBoostPackages(data || []);
+    } catch (err) {
+      console.error('Error fetching boost packages:', err);
     }
   };
-  
-  if (isBoosted) {
+
+  const fetchActiveBoost = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('active_boosts')
+        .select('*, package:boost_packages(*)')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .gte('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      setActiveBoost(data);
+    } catch (err) {
+      console.error('Error fetching active boost:', err);
+    }
+  };
+
+  const handleBoostPurchase = async (pkg) => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Calculate expiry date
+      const startsAt = new Date();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + pkg.duration_days);
+
+      const { data, error } = await supabase
+        .from('active_boosts')
+        .insert([{
+          user_id: user.id,
+          package_id: pkg.id,
+          started_at: startsAt.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          status: 'active'
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Refresh active boost
+      setActiveBoost(data);
+      setShowBoostOptions(false);
+    } catch (err) {
+      console.error('Boost purchase error:', err);
+      setError(err.message || 'Failed to activate boost. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // If boosted, show active panel
+  if (activeBoost) {
     return (
       <div className="boost-panel active">
         <div className="boost-content">
@@ -50,7 +97,7 @@ const BoostPanel = ({ isBoosted, boostExpiry, providerId }) => {
             <div className="boost-text">
               <strong>Boosted Profile</strong>
               <span>
-                Active until {new Date(boostExpiry).toLocaleDateString()}
+                Active until {new Date(activeBoost.expires_at).toLocaleDateString()}
               </span>
             </div>
           </div>
@@ -62,7 +109,7 @@ const BoostPanel = ({ isBoosted, boostExpiry, providerId }) => {
       </div>
     );
   }
-  
+
   return (
     <div className="boost-panel">
       <div className="boost-content">
@@ -73,36 +120,47 @@ const BoostPanel = ({ isBoosted, boostExpiry, providerId }) => {
             <span>Get more clients with paid boost</span>
           </div>
         </div>
-        
-        <button 
+
+        <button
           className="btn btn-small btn-outline"
           onClick={() => setShowBoostOptions(!showBoostOptions)}
+          disabled={loading}
         >
           <TrendingUp size={14} />
           {showBoostOptions ? 'Hide Options' : 'View Boost Options'}
         </button>
-        
+
         {showBoostOptions && (
           <div className="boost-options">
             <div className="options-header">
               <h4>Boost Options</h4>
-              <p>Appear above non-boosted providers</p>
+              <p>Appear above non‑boosted providers</p>
             </div>
+
+            {error && (
+              <div className="boost-error">
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
+            )}
+
             <div className="options-grid">
-              {boostOptions.map(option => (
-                <div key={option.id} className="boost-option">
-                  <h5>{option.duration}</h5>
-                  <div className="option-price">₦{option.price}</div>
-                  <p>{option.description}</p>
-                  <button 
+              {boostPackages.map(pkg => (
+                <div key={pkg.id} className="boost-option">
+                  <h5>{pkg.name}</h5>
+                  <div className="option-price">₦{pkg.price.toLocaleString()}</div>
+                  <p>{pkg.duration_days} days visibility</p>
+                  <button
                     className="btn btn-small btn-primary"
-                    onClick={() => handleBoostPurchase(option)}
+                    onClick={() => handleBoostPurchase(pkg)}
+                    disabled={loading}
                   >
-                    Select
+                    {loading ? 'Processing...' : 'Select'}
                   </button>
                 </div>
               ))}
             </div>
+
             <div className="boost-note">
               <Clock size={14} />
               <p>Boost is separate from subscription and verification</p>

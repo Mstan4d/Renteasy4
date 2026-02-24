@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter as Router } from 'react-router-dom' // MAKE SURE IT'S BrowserRouter
+import { BrowserRouter as Router } from 'react-router-dom'
 import { AuthProvider } from './shared/context/AuthContext'
 import { AdminProvider } from './modules/admin/context/AdminContext'
 import AppRoutes from './routes/AppRoutes'
@@ -11,18 +11,18 @@ import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 
 function App() {
   return (
-    <AuthProvider>
-      <AdminProvider>
-        <WebSocketProvider>
-         <ManagerProvider>
-          <Router> {/* THIS MUST BE BrowserRouter */}
-            <AppRoutes />
-            <BottomNav />
-          </Router>
-         </ManagerProvider>
-        </WebSocketProvider>
-      </AdminProvider>
-    </AuthProvider>
+    <Router> {/* ✅ CORRECT: Router is now OUTERMOST */}
+      <AuthProvider> {/* Now all providers are INSIDE Router */}
+        <AdminProvider>
+          <WebSocketProvider>
+            <ManagerProvider>
+              <AppRoutes />
+              <BottomNav />
+            </ManagerProvider>
+          </WebSocketProvider>
+        </AdminProvider>
+      </AuthProvider>
+    </Router>
   )
 }
 

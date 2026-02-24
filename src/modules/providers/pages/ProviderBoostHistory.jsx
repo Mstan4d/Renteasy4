@@ -12,416 +12,92 @@ import {
   XCircle,
   Filter,
   Download,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ProviderBoostHistory.css';
 
 const ProviderBoostHistory = () => {
-  // Mock data - replace with API calls
-  const [boosts, setBoosts] = useState([
-    {
-      id: 'boost-001',
-      type: 'premium',
-      duration: 7,
-      cost: 2500,
-      purchasedAt: '2024-01-15T10:30:00Z',
-      startsAt: '2024-01-15T12:00:00Z',
-      expiresAt: '2024-01-22T12:00:00Z',
-      status: 'expired',
-      marketplaceViews: 1245,
-      profileViews: 289,
-      inquiries: 42,
-      bookings: 8,
-      rankingPosition: 'top-10',
-      paymentMethod: 'wallet',
-      transactionId: 'TX-789456123'
-    },
-    {
-      id: 'boost-002',
-      type: 'standard',
-      duration: 3,
-      cost: 1200,
-      purchasedAt: '2024-01-05T14:20:00Z',
-      startsAt: '2024-01-05T15:00:00Z',
-      expiresAt: '2024-01-08T15:00:00Z',
-      status: 'expired',
-      marketplaceViews: 876,
-      profileViews: 156,
-      inquiries: 28,
-      bookings: 5,
-      rankingPosition: 'top-20',
-      paymentMethod: 'card',
-      transactionId: 'TX-456123789'
-    },
-    {
-      id: 'boost-003',
-      type: 'premium',
-      duration: 7,
-      cost: 2500,
-      purchasedAt: '2024-01-25T09:15:00Z',
-      startsAt: '2024-01-25T10:00:00Z',
-      expiresAt: '2024-02-01T10:00:00Z',
-      status: 'active',
-      marketplaceViews: 567,
-      profileViews: 123,
-      inquiries: 19,
-      bookings: 3,
-      rankingPosition: 'top-5',
-      paymentMethod: 'wallet',
-      transactionId: 'TX-321654987'
-    },
-    {
-      id: 'boost-004',
-      type: 'turbo',
-      duration: 14,
-      cost: 4500,
-      purchasedAt: '2023-12-20T16:45:00Z',
-      startsAt: '2023-12-21T00:00:00Z',
-      expiresAt: '2024-01-04T00:00:00Z',
-      status: 'expired',
-      marketplaceViews: 1987,
-      profileViews: 432,
-      inquiries: 67,
-      bookings: 12,
-      rankingPosition: 'top-3',
-      paymentMethod: 'bank_transfer',
-      transactionId: 'TX-987321654'
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [boosts, setBoosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const [selectedBoost, setSelectedBoost] = useState(null);
   const [stats, setStats] = useState({
-    totalBoosts: 4,
-    totalSpent: 10700,
-    activeBoosts: 1,
-    avgBookingsPerBoost: 7,
-    avgInquiriesPerBoost: 39
+    totalBoosts: 0,
+    totalSpent: 0,
+    activeBoosts: 0,
+    avgBookingsPerBoost: 0,
+    avgInquiriesPerBoost: 0
   });
 
-  // Styles object (same pattern as your other components)
-  const styles = {
-    container: {
-      minHeight: '100vh',
-      background: '#f9fafb',
-      padding: '1rem'
-    },
-    headerContainer: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      marginBottom: '2rem'
-    },
-    header: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '1rem',
-      marginBottom: '1.5rem'
-    },
-    headerTop: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '1rem'
-    },
-    headerTitle: {
-      fontSize: '1.875rem',
-      fontWeight: '700',
-      color: '#111827',
-      marginBottom: '0.5rem'
-    },
-    headerSubtitle: {
-      color: '#6b7280',
-      fontSize: '1rem',
-      marginBottom: '1rem'
-    },
-    headerActions: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      flexWrap: 'wrap'
-    },
-    button: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      padding: '0.5rem 1rem',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      fontWeight: '500',
-      cursor: 'pointer',
-      border: 'none',
-      transition: 'all 0.2s ease'
-    },
-    buttonSecondary: {
-      background: 'white',
-      border: '1px solid #d1d5db',
-      color: '#374151'
-    },
-    buttonPrimary: {
-      background: '#2563eb',
-      color: 'white'
-    },
-    statsGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '1rem',
-      marginBottom: '1.5rem'
-    },
-    statCard: {
-      background: 'white',
-      padding: '1.25rem',
-      borderRadius: '0.75rem',
-      boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-      border: '1px solid #e5e7eb'
-    },
-    statContent: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    },
-    statText: {
-      display: 'flex',
-      flexDirection: 'column'
-    },
-    statLabel: {
-      fontSize: '0.875rem',
-      color: '#6b7280',
-      marginBottom: '0.25rem'
-    },
-    statValue: {
-      fontSize: '1.5rem',
-      fontWeight: '700',
-      color: '#111827'
-    },
-    statIcon: {
-      width: '3rem',
-      height: '3rem',
-      borderRadius: '0.5rem',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    },
-    filtersCard: {
-      background: 'white',
-      borderRadius: '0.75rem',
-      boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-      border: '1px solid #e5e7eb',
-      padding: '1rem',
-      marginBottom: '1.5rem'
-    },
-    filtersContainer: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '1rem'
-    },
-    filterButtons: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: '0.5rem'
-    },
-    filterButton: {
-      padding: '0.5rem 1rem',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      fontWeight: '500',
-      cursor: 'pointer',
-      border: '1px solid #d1d5db',
-      background: '#f9fafb',
-      color: '#374151',
-      transition: 'all 0.2s ease'
-    },
-    filterButtonActive: {
-      background: '#2563eb',
-      color: 'white',
-      borderColor: '#2563eb'
-    },
-    controls: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '1rem',
-      justifyContent: 'flex-end'
-    },
-    selectContainer: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem'
-    },
-    select: {
-      padding: '0.5rem',
-      borderRadius: '0.5rem',
-      border: '1px solid #d1d5db',
-      background: 'white',
-      color: '#374151',
-      fontSize: '0.875rem',
-      cursor: 'pointer'
-    },
-    tableContainer: {
-      background: 'white',
-      borderRadius: '0.75rem',
-      boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-      border: '1px solid #e5e7eb',
-      overflow: 'hidden',
-      marginBottom: '1.5rem'
-    },
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse'
-    },
-    tableHeader: {
-      background: '#f9fafb',
-      borderBottom: '1px solid #e5e7eb'
-    },
-    tableHeaderCell: {
-      padding: '0.75rem 1.5rem',
-      textAlign: 'left',
-      fontSize: '0.75rem',
-      fontWeight: '600',
-      color: '#374151',
-      textTransform: 'uppercase',
-      letterSpacing: '0.05em'
-    },
-    tableRow: {
-      borderBottom: '1px solid #e5e7eb',
-      transition: 'background-color 0.2s ease'
-    },
-    tableCell: {
-      padding: '1rem 1.5rem',
-      fontSize: '0.875rem',
-      color: '#374151'
-    },
-    badge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '0.25rem',
-      padding: '0.25rem 0.75rem',
-      borderRadius: '9999px',
-      fontSize: '0.75rem',
-      fontWeight: '600'
-    },
-    statusBadge: {
-      active: { background: '#d1fae5', color: '#065f46' },
-      expired: { background: '#f3f4f6', color: '#374151' }
-    },
-    typeBadge: {
-      premium: { background: '#f3e8ff', color: '#7c3aed', border: '1px solid #ddd6fe' },
-      standard: { background: '#dbeafe', color: '#1e40af', border: '1px solid #bfdbfe' },
-      turbo: { background: '#ffedd5', color: '#9a3412', border: '1px solid #fed7aa' }
-    },
-    progressBar: {
-      width: '100%',
-      height: '0.5rem',
-      background: '#e5e7eb',
-      borderRadius: '9999px',
-      overflow: 'hidden',
-      margin: '0.5rem 0'
-    },
-    progressFill: {
-      height: '100%',
-      borderRadius: '9999px'
-    },
-    tipsCard: {
-      background: '#eff6ff',
-      border: '1px solid #bfdbfe',
-      borderRadius: '0.75rem',
-      padding: '1.5rem',
-      marginTop: '1.5rem'
-    },
-    tipsTitle: {
-      fontSize: '1.125rem',
-      fontWeight: '600',
-      color: '#1e40af',
-      marginBottom: '1rem',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem'
-    },
-    tipsList: {
-      listStyle: 'none',
-      padding: 0,
-      margin: 0
-    },
-    tipItem: {
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '0.5rem',
-      marginBottom: '0.75rem',
-      color: '#1e40af'
-    },
-    modalOverlay: {
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0, 0, 0, 0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '1rem',
-      zIndex: 50
-    },
-    modal: {
-      background: 'white',
-      borderRadius: '1rem',
-      maxWidth: '800px',
-      width: '100%',
-      maxHeight: '90vh',
-      overflowY: 'auto'
-    },
-    modalHeader: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '1.5rem',
-      borderBottom: '1px solid #e5e7eb'
-    },
-    modalTitle: {
-      fontSize: '1.25rem',
-      fontWeight: '700',
-      color: '#111827'
-    },
-    modalContent: {
-      padding: '1.5rem'
-    },
-    modalGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: '1rem',
-      marginBottom: '1.5rem'
-    },
-    modalSection: {
-      padding: '1rem 0',
-      borderBottom: '1px solid #e5e7eb'
-    },
-    metricGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: '0.75rem',
-      marginTop: '1rem'
-    },
-    metricBox: {
-      background: '#f9fafb',
-      padding: '1rem',
-      borderRadius: '0.5rem',
-      textAlign: 'center'
-    },
-    metricValue: {
-      fontSize: '1.5rem',
-      fontWeight: '700',
-      color: '#111827',
-      marginBottom: '0.25rem'
-    },
-    metricLabel: {
-      fontSize: '0.75rem',
-      color: '#6b7280'
-    },
-    emptyState: {
-      textAlign: 'center',
-      padding: '3rem',
-      color: '#6b7280'
-    },
-    emptyIcon: {
-      margin: '0 auto 1rem',
-      color: '#d1d5db'
+  useEffect(() => {
+    if (!user) return;
+    fetchBoostHistory();
+  }, [user]);
+
+  const fetchBoostHistory = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch all boost purchases for this user, with package details
+      const { data: purchases, error: fetchError } = await supabase
+        .from('boost_purchases')
+        .select(`
+          *,
+          package:boost_packages(name, duration_days, price)
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      // Transform data to match component's expected structure
+      const transformedBoosts = purchases.map(p => ({
+        id: p.id,
+        type: p.package?.name?.toLowerCase().replace(' ', '-') || 'standard',
+        duration: p.package?.duration_days || 0,
+        cost: p.amount,
+        purchasedAt: p.started_at,
+        startsAt: p.started_at,
+        expiresAt: p.expires_at,
+        status: p.status,
+        marketplaceViews: p.marketplace_views || 0,
+        profileViews: p.profile_views || 0,
+        inquiries: p.inquiries || 0,
+        bookings: p.bookings || 0,
+        rankingPosition: p.ranking_position || 'unknown',
+        paymentMethod: p.payment_method || 'wallet',
+        transactionId: p.transaction_id || `TX-${p.id.slice(0, 8)}`
+      }));
+
+      setBoosts(transformedBoosts);
+
+      // Calculate stats
+      const totalSpent = transformedBoosts.reduce((sum, b) => sum + b.cost, 0);
+      const activeBoosts = transformedBoosts.filter(b => b.status === 'active').length;
+      const totalBookings = transformedBoosts.reduce((sum, b) => sum + b.bookings, 0);
+      const totalInquiries = transformedBoosts.reduce((sum, b) => sum + b.inquiries, 0);
+      const avgBookings = transformedBoosts.length ? totalBookings / transformedBoosts.length : 0;
+      const avgInquiries = transformedBoosts.length ? totalInquiries / transformedBoosts.length : 0;
+
+      setStats({
+        totalBoosts: transformedBoosts.length,
+        totalSpent,
+        activeBoosts,
+        avgBookingsPerBoost: Math.round(avgBookings * 10) / 10,
+        avgInquiriesPerBoost: Math.round(avgInquiries * 10) / 10
+      });
+
+    } catch (err) {
+      console.error('Error fetching boost history:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -435,15 +111,14 @@ const ProviderBoostHistory = () => {
   ];
 
   const getStatusBadge = (status) => {
-    const config = styles.statusBadge[status] || styles.statusBadge.expired;
-    const Icon = status === 'active' ? CheckCircle : XCircle;
+    const config = {
+      active: { background: '#d1fae5', color: '#065f46', icon: CheckCircle },
+      expired: { background: '#f3f4f6', color: '#374151', icon: XCircle }
+    };
+    const { background, color, icon: Icon } = config[status] || config.expired;
     
     return (
-      <span style={{
-        ...styles.badge,
-        background: config.background,
-        color: config.color
-      }}>
+      <span className={`badge status-${status}`}>
         <Icon size={12} />
         <span>{status.charAt(0).toUpperCase() + status.slice(1)}</span>
       </span>
@@ -451,15 +126,15 @@ const ProviderBoostHistory = () => {
   };
 
   const getBoostTypeBadge = (type) => {
-    const config = styles.typeBadge[type] || styles.typeBadge.standard;
+    const config = {
+      premium: { background: '#f3e8ff', color: '#7c3aed', border: '#ddd6fe' },
+      standard: { background: '#dbeafe', color: '#1e40af', border: '#bfdbfe' },
+      turbo: { background: '#ffedd5', color: '#9a3412', border: '#fed7aa' }
+    };
+    const { background, color, border } = config[type] || config.standard;
     
     return (
-      <span style={{
-        ...styles.badge,
-        background: config.background,
-        color: config.color,
-        border: config.border
-      }}>
+      <span className={`badge type-${type}`}>
         <Zap size={12} />
         <span>{type.charAt(0).toUpperCase() + type.slice(1)} Boost</span>
       </span>
@@ -498,7 +173,7 @@ const ProviderBoostHistory = () => {
     let filtered = [...boosts];
     
     if (filter !== 'all') {
-      if (['active', 'expired', 'scheduled'].includes(filter)) {
+      if (['active', 'expired'].includes(filter)) {
         filtered = filtered.filter(boost => boost.status === filter);
       } else {
         filtered = filtered.filter(boost => boost.type === filter);
@@ -523,15 +198,14 @@ const ProviderBoostHistory = () => {
   };
 
   const calculateEffectiveness = (boost) => {
-    // Calculate boost effectiveness score (0-100)
-    const conversionRate = boost.bookings / boost.inquiries || 0;
-    const viewsPerCost = boost.marketplaceViews / boost.cost;
+    const conversionRate = boost.bookings / (boost.inquiries || 1);
+    const viewsPerCost = boost.marketplaceViews / (boost.cost || 1);
     
     let score = 0;
-    score += Math.min(conversionRate * 500, 40); // Max 40 points for conversion
-    score += Math.min(viewsPerCost * 0.5, 30); // Max 30 points for views per cost
-    score += boost.bookings * 5; // 5 points per booking
-    score += Math.min(boost.duration * 2, 20); // Max 20 points for duration
+    score += Math.min(conversionRate * 500, 40);
+    score += Math.min(viewsPerCost * 0.5, 30);
+    score += boost.bookings * 5;
+    score += Math.min(boost.duration * 2, 20);
     
     return Math.min(Math.round(score), 100);
   };
@@ -541,29 +215,46 @@ const ProviderBoostHistory = () => {
   };
 
   const refreshData = () => {
-    alert('Refreshing data from server...');
+    fetchBoostHistory();
   };
 
   const filteredBoosts = getFilteredBoosts();
 
+  if (loading) {
+    return (
+      <div className="provider-boost-history-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading boost history...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="provider-boost-history-error">
+        <AlertCircle size={48} />
+        <h3>Error loading data</h3>
+        <p>{error}</p>
+        <button onClick={refreshData} className="btn-primary">Retry</button>
+      </div>
+    );
+  }
+
   return (
-    <div style={styles.container}>
-      <div style={styles.headerContainer}>
+    <div className="provider-boost-history">
+      <div className="container">
         {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.headerTop}>
-            <h1 style={styles.headerTitle}>Boost History</h1>
-            <p style={styles.headerSubtitle}>
+        <div className="header">
+          <div className="header-top">
+            <h1 className="header-title">Boost History</h1>
+            <p className="header-subtitle">
               Track your boost purchases and their performance in the marketplace
             </p>
             
-            <div style={styles.headerActions}>
+            <div className="header-actions">
               <button
                 onClick={refreshData}
-                style={{
-                  ...styles.button,
-                  ...styles.buttonSecondary
-                }}
+                className="btn btn-secondary"
               >
                 <RefreshCw size={16} />
                 Refresh
@@ -571,11 +262,7 @@ const ProviderBoostHistory = () => {
               
               <Link
                 to="/dashboard/provider/boost"
-                style={{
-                  ...styles.button,
-                  ...styles.buttonPrimary,
-                  textDecoration: 'none'
-                }}
+                className="btn btn-primary"
               >
                 <Zap size={16} />
                 Buy New Boost
@@ -584,51 +271,51 @@ const ProviderBoostHistory = () => {
           </div>
           
           {/* Stats Cards */}
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <div style={styles.statContent}>
-                <div style={styles.statText}>
-                  <div style={styles.statLabel}>Total Boosts</div>
-                  <div style={styles.statValue}>{stats.totalBoosts}</div>
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-content">
+                <div>
+                  <div className="stat-label">Total Boosts</div>
+                  <div className="stat-value">{stats.totalBoosts}</div>
                 </div>
-                <div style={{ ...styles.statIcon, background: '#dbeafe' }}>
-                  <Zap size={20} color="#2563eb" />
-                </div>
-              </div>
-            </div>
-            
-            <div style={styles.statCard}>
-              <div style={styles.statContent}>
-                <div style={styles.statText}>
-                  <div style={styles.statLabel}>Total Spent</div>
-                  <div style={styles.statValue}>{formatCurrency(stats.totalSpent)}</div>
-                </div>
-                <div style={{ ...styles.statIcon, background: '#d1fae5' }}>
-                  <TrendingUp size={20} color="#059669" />
+                <div className="stat-icon blue">
+                  <Zap size={20} />
                 </div>
               </div>
             </div>
             
-            <div style={styles.statCard}>
-              <div style={styles.statContent}>
-                <div style={styles.statText}>
-                  <div style={styles.statLabel}>Active Boosts</div>
-                  <div style={styles.statValue}>{stats.activeBoosts}</div>
+            <div className="stat-card">
+              <div className="stat-content">
+                <div>
+                  <div className="stat-label">Total Spent</div>
+                  <div className="stat-value">{formatCurrency(stats.totalSpent)}</div>
                 </div>
-                <div style={{ ...styles.statIcon, background: '#f3e8ff' }}>
-                  <Eye size={20} color="#7c3aed" />
+                <div className="stat-icon green">
+                  <TrendingUp size={20} />
                 </div>
               </div>
             </div>
             
-            <div style={styles.statCard}>
-              <div style={styles.statContent}>
-                <div style={styles.statText}>
-                  <div style={styles.statLabel}>Avg. Bookings/Boost</div>
-                  <div style={styles.statValue}>{stats.avgBookingsPerBoost}</div>
+            <div className="stat-card">
+              <div className="stat-content">
+                <div>
+                  <div className="stat-label">Active Boosts</div>
+                  <div className="stat-value">{stats.activeBoosts}</div>
                 </div>
-                <div style={{ ...styles.statIcon, background: '#ffedd5' }}>
-                  <ArrowUpRight size={20} color="#ea580c" />
+                <div className="stat-icon purple">
+                  <Eye size={20} />
+                </div>
+              </div>
+            </div>
+            
+            <div className="stat-card">
+              <div className="stat-content">
+                <div>
+                  <div className="stat-label">Avg. Bookings/Boost</div>
+                  <div className="stat-value">{stats.avgBookingsPerBoost}</div>
+                </div>
+                <div className="stat-icon orange">
+                  <ArrowUpRight size={20} />
                 </div>
               </div>
             </div>
@@ -636,30 +323,27 @@ const ProviderBoostHistory = () => {
         </div>
         
         {/* Filters and Controls */}
-        <div style={styles.filtersCard}>
-          <div style={styles.filtersContainer}>
-            <div style={styles.filterButtons}>
+        <div className="filters-card">
+          <div className="filters-container">
+            <div className="filter-buttons">
               {filters.map((filterItem) => (
                 <button
                   key={filterItem.id}
                   onClick={() => setFilter(filterItem.id)}
-                  style={{
-                    ...styles.filterButton,
-                    ...(filter === filterItem.id && styles.filterButtonActive)
-                  }}
+                  className={`filter-button ${filter === filterItem.id ? 'active' : ''}`}
                 >
                   {filterItem.label}
                 </button>
               ))}
             </div>
             
-            <div style={styles.controls}>
-              <div style={styles.selectContainer}>
-                <Filter size={16} color="#6b7280" />
+            <div className="controls">
+              <div className="select-container">
+                <Filter size={16} />
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  style={styles.select}
+                  className="select"
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -670,10 +354,7 @@ const ProviderBoostHistory = () => {
               
               <button
                 onClick={exportToCSV}
-                style={{
-                  ...styles.button,
-                  ...styles.buttonSecondary
-                }}
+                className="btn btn-secondary"
               >
                 <Download size={16} />
                 Export CSV
@@ -683,38 +364,30 @@ const ProviderBoostHistory = () => {
         </div>
         
         {/* Boosts Table */}
-        <div style={styles.tableContainer}>
+        <div className="table-container">
           {filteredBoosts.length === 0 ? (
-            <div style={styles.emptyState}>
-              <Zap size={48} style={styles.emptyIcon} />
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>
-                No boosts found
-              </h3>
-              <p style={{ marginBottom: '1rem' }}>
-                No boost purchases match your current filters
-              </p>
+            <div className="empty-state">
+              <Zap size={48} className="empty-icon" />
+              <h3>No boosts found</h3>
+              <p>No boost purchases match your current filters</p>
               <Link
                 to="/dashboard/provider/boost"
-                style={{
-                  ...styles.button,
-                  ...styles.buttonPrimary,
-                  textDecoration: 'none'
-                }}
+                className="btn btn-primary"
               >
                 <Zap size={16} />
                 Buy Your First Boost
               </Link>
             </div>
           ) : (
-            <table style={styles.table}>
-              <thead style={styles.tableHeader}>
+            <table className="table">
+              <thead className="table-header">
                 <tr>
-                  <th style={styles.tableHeaderCell}>Boost Details</th>
-                  <th style={styles.tableHeaderCell}>Duration</th>
-                  <th style={styles.tableHeaderCell}>Performance</th>
-                  <th style={styles.tableHeaderCell}>Cost</th>
-                  <th style={styles.tableHeaderCell}>Status</th>
-                  <th style={styles.tableHeaderCell}>Actions</th>
+                  <th className="table-header-cell">Boost Details</th>
+                  <th className="table-header-cell">Duration</th>
+                  <th className="table-header-cell">Performance</th>
+                  <th className="table-header-cell">Cost</th>
+                  <th className="table-header-cell">Status</th>
+                  <th className="table-header-cell">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -724,96 +397,95 @@ const ProviderBoostHistory = () => {
                                       effectiveness >= 40 ? '#f59e0b' : '#ef4444';
                   
                   return (
-                    <tr key={boost.id} style={styles.tableRow}>
-                      <td style={styles.tableCell}>
+                    <tr key={boost.id} className="table-row">
+                      <td className="table-cell">
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          <div className="badge-group">
                             {getBoostTypeBadge(boost.type)}
                             {getStatusBadge(boost.status)}
                           </div>
-                          <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                          <div className="text-muted">
                             Purchased: {formatDateTime(boost.purchasedAt)}
                           </div>
-                          <div style={{ fontSize: '0.875rem', color: '#6b7280', fontFamily: 'monospace' }}>
+                          <div className="text-muted mono">
                             {boost.transactionId}
                           </div>
                         </div>
                       </td>
                       
-                      <td style={styles.tableCell}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <Calendar size={16} color="#6b7280" />
+                      <td className="table-cell">
+                        <div className="duration-cell">
+                          <Calendar size={16} />
                           <div>
-                            <div style={{ fontWeight: '500' }}>{boost.duration} days</div>
-                            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                              {formatDate(boost.startsAt)} - {formatDate(boost.expiresAt)}
+                            <div className="duration-value">{boost.duration} days</div>
+                            <div className="duration-range">
+                              {formatDate(boost.startsAt)} – {formatDate(boost.expiresAt)}
                             </div>
                           </div>
                         </div>
                       </td>
                       
-                      <td style={styles.tableCell}>
+                      <td className="table-cell">
                         <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                            <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>Effectiveness</span>
-                            <span style={{ fontWeight: '500' }}>{effectiveness}%</span>
+                          <div className="effectiveness-row">
+                            <span className="text-muted">Effectiveness</span>
+                            <span className="effectiveness-value">{effectiveness}%</span>
                           </div>
-                          <div style={styles.progressBar}>
-                            <div style={{
-                              ...styles.progressFill,
-                              width: `${effectiveness}%`,
-                              background: progressColor
-                            }} />
+                          <div className="progress-bar">
+                            <div
+                              className="progress-fill"
+                              style={{
+                                width: `${effectiveness}%`,
+                                backgroundColor: progressColor
+                              }}
+                            />
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
+                          <div className="performance-grid">
                             <div>
-                              <div style={{ fontSize: '1.25rem', fontWeight: '700' }}>{boost.bookings}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Bookings</div>
+                              <div className="performance-number">{boost.bookings}</div>
+                              <div className="performance-label">Bookings</div>
                             </div>
                             <div>
-                              <div style={{ fontSize: '1.25rem', fontWeight: '700' }}>{boost.inquiries}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Inquiries</div>
+                              <div className="performance-number">{boost.inquiries}</div>
+                              <div className="performance-label">Inquiries</div>
                             </div>
                           </div>
                         </div>
                       </td>
                       
-                      <td style={styles.tableCell}>
-                        <div style={{ fontSize: '1.125rem', fontWeight: '700' }}>
-                          {formatCurrency(boost.cost)}
-                        </div>
-                        <div style={{ fontSize: '0.875rem', color: '#6b7280', textTransform: 'capitalize' }}>
-                          Paid via {boost.paymentMethod.replace('_', ' ')}
-                        </div>
-                        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
-                          Ranked: <span style={{ fontWeight: '500' }}>{boost.rankingPosition}</span>
+                      <td className="table-cell">
+                        <div className="cost-cell">
+                          <div className="cost-value">{formatCurrency(boost.cost)}</div>
+                          <div className="payment-method">
+                            Paid via {boost.paymentMethod.replace('_', ' ')}
+                          </div>
+                          <div className="ranking">
+                            Ranked: <span className="ranking-value">{boost.rankingPosition}</span>
+                          </div>
                         </div>
                       </td>
                       
-                      <td style={styles.tableCell}>
+                      <td className="table-cell">
                         <div>
                           {getStatusBadge(boost.status)}
-                          <div style={{ marginTop: '0.5rem' }}>
-                            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                              Views: <span style={{ fontWeight: '500' }}>{boost.marketplaceViews}</span>
+                          <div className="views-stats">
+                            <div className="stat-row">
+                              <span>Views:</span>
+                              <span className="stat-number">{boost.marketplaceViews}</span>
                             </div>
-                            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                              Profile: <span style={{ fontWeight: '500' }}>{boost.profileViews}</span>
+                            <div className="stat-row">
+                              <span>Profile:</span>
+                              <span className="stat-number">{boost.profileViews}</span>
                             </div>
                           </div>
                         </div>
                       </td>
                       
-                      <td style={styles.tableCell}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <td className="table-cell">
+                        <div className="action-buttons">
                           <button
                             onClick={() => setSelectedBoost(boost)}
-                            style={{
-                              ...styles.button,
-                              ...styles.buttonSecondary,
-                              padding: '0.5rem',
-                              fontSize: '0.75rem'
-                            }}
+                            className="btn btn-secondary small"
                           >
                             View Details
                           </button>
@@ -821,16 +493,7 @@ const ProviderBoostHistory = () => {
                           {boost.status === 'expired' && (
                             <Link
                               to="/dashboard/provider/boost"
-                              style={{
-                                ...styles.button,
-                                background: '#dbeafe',
-                                color: '#1e40af',
-                                border: '1px solid #bfdbfe',
-                                padding: '0.5rem',
-                                fontSize: '0.75rem',
-                                textDecoration: 'none',
-                                textAlign: 'center'
-                              }}
+                              className="btn btn-renew small"
                             >
                               Renew
                             </Link>
@@ -846,26 +509,26 @@ const ProviderBoostHistory = () => {
         </div>
         
         {/* Tips Card */}
-        <div style={styles.tipsCard}>
-          <h3 style={styles.tipsTitle}>
+        <div className="tips-card">
+          <h3 className="tips-title">
             <Zap size={20} />
             Boost Performance Tips
           </h3>
-          <ul style={styles.tipsList}>
-            <li style={styles.tipItem}>
-              <CheckCircle size={16} style={{ flexShrink: 0, marginTop: '0.125rem' }} />
+          <ul className="tips-list">
+            <li className="tip-item">
+              <CheckCircle size={16} />
               <span>Boost moves your profile higher in marketplace search results</span>
             </li>
-            <li style={styles.tipItem}>
-              <CheckCircle size={16} style={{ flexShrink: 0, marginTop: '0.125rem' }} />
+            <li className="tip-item">
+              <CheckCircle size={16} />
               <span>Boost is independent of verification - both verified and unverified providers can purchase</span>
             </li>
-            <li style={styles.tipItem}>
-              <CheckCircle size={16} style={{ flexShrink: 0, marginTop: '0.125rem' }} />
+            <li className="tip-item">
+              <CheckCircle size={16} />
               <span>Premium boosts provide better visibility and longer duration</span>
             </li>
-            <li style={styles.tipItem}>
-              <CheckCircle size={16} style={{ flexShrink: 0, marginTop: '0.125rem' }} />
+            <li className="tip-item">
+              <CheckCircle size={16} />
               <span>Boost effectiveness depends on your profile completeness and service quality</span>
             </li>
           </ul>
@@ -874,116 +537,109 @@ const ProviderBoostHistory = () => {
       
       {/* Boost Details Modal */}
       {selectedBoost && (
-        <div style={styles.modalOverlay} onClick={() => setSelectedBoost(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Boost Details</h2>
+        <div className="modal-overlay" onClick={() => setSelectedBoost(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Boost Details</h2>
               <button
                 onClick={() => setSelectedBoost(null)}
-                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#6b7280' }}
+                className="modal-close"
               >
                 ✕
               </button>
             </div>
             
-            <div style={styles.modalContent}>
-              <div style={styles.modalGrid}>
+            <div className="modal-content">
+              <div className="modal-grid">
                 <div>
-                  <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>Boost Type</div>
+                  <div className="modal-label">Boost Type</div>
                   <div>{getBoostTypeBadge(selectedBoost.type)}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>Status</div>
+                  <div className="modal-label">Status</div>
                   <div>{getStatusBadge(selectedBoost.status)}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>Duration</div>
-                  <div style={{ fontSize: '1.125rem', fontWeight: '600' }}>{selectedBoost.duration} days</div>
+                  <div className="modal-label">Duration</div>
+                  <div className="modal-value">{selectedBoost.duration} days</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>Cost</div>
-                  <div style={{ fontSize: '1.125rem', fontWeight: '600' }}>{formatCurrency(selectedBoost.cost)}</div>
+                  <div className="modal-label">Cost</div>
+                  <div className="modal-value">{formatCurrency(selectedBoost.cost)}</div>
                 </div>
               </div>
               
-              <div style={styles.modalSection}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem' }}>Timeline</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#6b7280' }}>Purchased:</span>
-                    <span style={{ fontWeight: '500' }}>{formatDateTime(selectedBoost.purchasedAt)}</span>
+              <div className="modal-section">
+                <h3 className="modal-section-title">Timeline</h3>
+                <div className="timeline-details">
+                  <div className="timeline-row">
+                    <span className="timeline-label">Purchased:</span>
+                    <span className="timeline-value">{formatDateTime(selectedBoost.purchasedAt)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#6b7280' }}>Started:</span>
-                    <span style={{ fontWeight: '500' }}>{formatDateTime(selectedBoost.startsAt)}</span>
+                  <div className="timeline-row">
+                    <span className="timeline-label">Started:</span>
+                    <span className="timeline-value">{formatDateTime(selectedBoost.startsAt)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#6b7280' }}>Expired:</span>
-                    <span style={{ fontWeight: '500' }}>{formatDateTime(selectedBoost.expiresAt)}</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div style={styles.modalSection}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem' }}>Performance Metrics</h3>
-                <div style={styles.metricGrid}>
-                  <div style={styles.metricBox}>
-                    <div style={styles.metricValue}>{selectedBoost.marketplaceViews}</div>
-                    <div style={styles.metricLabel}>Marketplace Views</div>
-                  </div>
-                  <div style={styles.metricBox}>
-                    <div style={styles.metricValue}>{selectedBoost.profileViews}</div>
-                    <div style={styles.metricLabel}>Profile Views</div>
-                  </div>
-                  <div style={styles.metricBox}>
-                    <div style={styles.metricValue}>{selectedBoost.inquiries}</div>
-                    <div style={styles.metricLabel}>Inquiries</div>
-                  </div>
-                  <div style={styles.metricBox}>
-                    <div style={styles.metricValue}>{selectedBoost.bookings}</div>
-                    <div style={styles.metricLabel}>Bookings</div>
+                  <div className="timeline-row">
+                    <span className="timeline-label">Expired:</span>
+                    <span className="timeline-value">{formatDateTime(selectedBoost.expiresAt)}</span>
                   </div>
                 </div>
               </div>
               
-              <div style={{ paddingTop: '1rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem' }}>Transaction Details</h3>
-                <div style={{ background: '#f9fafb', padding: '1rem', borderRadius: '0.5rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#6b7280' }}>Transaction ID:</span>
-                      <span style={{ fontFamily: 'monospace', fontWeight: '500' }}>{selectedBoost.transactionId}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#6b7280' }}>Payment Method:</span>
-                      <span style={{ textTransform: 'capitalize' }}>{selectedBoost.paymentMethod.replace('_', ' ')}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#6b7280' }}>Ranking Position:</span>
-                      <span style={{ fontWeight: '500' }}>{selectedBoost.rankingPosition}</span>
-                    </div>
+              <div className="modal-section">
+                <h3 className="modal-section-title">Performance Metrics</h3>
+                <div className="metric-grid">
+                  <div className="metric-box">
+                    <div className="metric-value">{selectedBoost.marketplaceViews}</div>
+                    <div className="metric-label">Marketplace Views</div>
+                  </div>
+                  <div className="metric-box">
+                    <div className="metric-value">{selectedBoost.profileViews}</div>
+                    <div className="metric-label">Profile Views</div>
+                  </div>
+                  <div className="metric-box">
+                    <div className="metric-value">{selectedBoost.inquiries}</div>
+                    <div className="metric-label">Inquiries</div>
+                  </div>
+                  <div className="metric-box">
+                    <div className="metric-value">{selectedBoost.bookings}</div>
+                    <div className="metric-label">Bookings</div>
                   </div>
                 </div>
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
+              <div className="transaction-details">
+                <h3 className="modal-section-title">Transaction Details</h3>
+                <div className="transaction-box">
+                  <div className="transaction-row">
+                    <span className="transaction-label">Transaction ID:</span>
+                    <span className="transaction-value mono">{selectedBoost.transactionId}</span>
+                  </div>
+                  <div className="transaction-row">
+                    <span className="transaction-label">Payment Method:</span>
+                    <span className="transaction-value capitalize">
+                      {selectedBoost.paymentMethod.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <div className="transaction-row">
+                    <span className="transaction-label">Ranking Position:</span>
+                    <span className="transaction-value">{selectedBoost.rankingPosition}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="modal-actions">
                 <button
                   onClick={() => setSelectedBoost(null)}
-                  style={{
-                    ...styles.button,
-                    ...styles.buttonSecondary
-                  }}
+                  className="btn btn-secondary"
                 >
                   Close
                 </button>
                 {selectedBoost.status === 'expired' && (
                   <Link
                     to="/dashboard/provider/boost"
-                    style={{
-                      ...styles.button,
-                      ...styles.buttonPrimary,
-                      textDecoration: 'none'
-                    }}
+                    className="btn btn-primary"
                   >
                     Renew Boost
                   </Link>

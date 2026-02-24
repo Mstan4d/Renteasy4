@@ -5,98 +5,235 @@ import {
   Calendar, User, Search, Filter, MoreVertical,
   CheckCircle, Clock, AlertCircle, Lock, Globe
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './DocumentManager.css';
 
 const DocumentManager = () => {
+  const { user } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for development
   useEffect(() => {
-    const mockDocuments = [
-      {
-        id: 'doc_001',
-        name: 'Lease Agreement - Lekki Duplex.pdf',
-        type: 'pdf',
-        size: '2.4 MB',
-        uploaded: '2024-11-15',
-        category: 'lease',
-        property: '3-Bedroom Duplex, Lekki',
-        client: 'Mr. Johnson Ade',
-        status: 'active',
-        shared: true,
-        permissions: ['view', 'download']
-      },
-      {
-        id: 'doc_002',
-        name: 'Property Valuation Report.docx',
-        type: 'doc',
-        size: '1.8 MB',
-        uploaded: '2024-11-10',
-        category: 'valuation',
-        property: 'Office Space, VI',
-        client: 'Tech Corp Ltd',
-        status: 'active',
-        shared: false,
-        permissions: ['view']
-      },
-      {
-        id: 'doc_003',
-        name: 'Tenant ID Verification.jpg',
-        type: 'image',
-        size: '3.2 MB',
-        uploaded: '2024-11-05',
-        category: 'verification',
-        property: '2-Bedroom Flat, Ikeja',
-        client: 'David Smith',
-        status: 'expired',
-        shared: true,
-        permissions: ['view', 'download', 'share']
-      },
-      {
-        id: 'doc_004',
-        name: 'Maintenance Invoice.xlsx',
-        type: 'spreadsheet',
-        size: '1.1 MB',
-        uploaded: '2024-10-28',
-        category: 'invoice',
-        property: 'All Properties',
-        client: 'Various',
-        status: 'active',
-        shared: false,
-        permissions: ['view', 'download']
-      },
-      {
-        id: 'doc_005',
-        name: 'Property Photos Archive.zip',
-        type: 'archive',
-        size: '45.6 MB',
-        uploaded: '2024-10-15',
-        category: 'photos',
-        property: 'Shopping Complex, Surulere',
-        client: 'Surulere Properties Ltd',
-        status: 'active',
-        shared: true,
-        permissions: ['view', 'download']
-      }
-    ];
+    loadDocuments();
+  }, [user]);
 
-    setDocuments(mockDocuments);
-  }, []);
+  const loadDocuments = async () => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      
+      const { data, error } = await supabase
+        .from('estate_documents')
+        .select('*, property:listings(title), client:estate_firm_clients(name)')
+        .eq('estate_firm_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setDocuments(data || []);
+
+    } catch (error) {
+      console.error('Error loading documents:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (files) => {
+    if (!user || !files.length) return;
+
+    setUploading(true);
+    
+    try {
+      const uploadPromises = Array.from(files).map(async (file) => {
+        // Upload file to Supabase Storage
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+        const filePath = `estate-firm-${user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('estate-documents')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('estate-documents')
+          .getPublicUrl(filePath);
+
+        // Save document metadata
+        const { data: docData, error: docError } = await supabase
+          .from('estate_documents')
+          .insert({
+            estate_firm_id: user.id,
+            name: file.name,
+            file_type: file.type,
+            file_size: file.size,
+            file_url: urlData.publicUrl,
+            category: 'other',
+            status: 'active',
+            shared: false,
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (docError) throw docError;
+
+        return docData;
+      });
+
+      await Promise.all(uploadPromises);
+      
+      // Refresh documents list
+      await loadDocuments();
+      
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'document',
+        action: 'upload',
+        description: `Uploaded ${files.length} document(s)`,
+        created_at: new Date().toISOString()
+      });
+
+      alert(`Successfully uploaded ${files.length} document(s)`);
+      setShowUploadModal(false);
+
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      alert('Failed to upload documents. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (docId) => {
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+
+    try {
+      const doc = documents.find(d => d.id === docId);
+      
+      // Delete from storage
+      if (doc.file_url) {
+        const filePath = doc.file_url.split('/').pop();
+        await supabase.storage
+          .from('estate-documents')
+          .remove([`estate-firm-${user.id}/${filePath}`]);
+      }
+
+      // Delete from database
+      const { error } = await supabase
+        .from('estate_documents')
+        .delete()
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      // Update state
+      setDocuments(documents.filter(doc => doc.id !== docId));
+      setSelectedDocs(selectedDocs.filter(id => id !== docId));
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'document',
+        action: 'delete',
+        description: `Deleted document: ${doc.name}`,
+        created_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      alert('Failed to delete document. Please try again.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selectedDocs.length} selected documents?`)) return;
+
+    try {
+      const docsToDelete = documents.filter(doc => selectedDocs.includes(doc.id));
+      
+      // Delete from storage
+      const deletePromises = docsToDelete.map(async (doc) => {
+        if (doc.file_url) {
+          const filePath = doc.file_url.split('/').pop();
+          await supabase.storage
+            .from('estate-documents')
+            .remove([`estate-firm-${user.id}/${filePath}`]);
+        }
+      });
+
+      await Promise.all(deletePromises);
+
+      // Delete from database
+      const { error } = await supabase
+        .from('estate_documents')
+        .delete()
+        .in('id', selectedDocs);
+
+      if (error) throw error;
+
+      // Update state
+      setDocuments(documents.filter(doc => !selectedDocs.includes(doc.id)));
+      setSelectedDocs([]);
+
+      // Log activity
+      await supabase.from('activities').insert({
+        user_id: user.id,
+        type: 'document',
+        action: 'bulk_delete',
+        description: `Deleted ${selectedDocs.length} documents`,
+        created_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Error bulk deleting documents:', error);
+      alert('Failed to delete documents. Please try again.');
+    }
+  };
+
+  const handleShare = async (docId) => {
+    try {
+      const { error } = await supabase
+        .from('estate_documents')
+        .update({ shared: true })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      await loadDocuments();
+      alert('Document shared successfully!');
+
+    } catch (error) {
+      console.error('Error sharing document:', error);
+      alert('Failed to share document. Please try again.');
+    }
+  };
+
+  const handleDownload = (docUrl, docName) => {
+    const a = document.createElement('a');
+    a.href = docUrl;
+    a.download = docName;
+    a.click();
+  };
 
   const getFileIcon = (type) => {
-    switch(type) {
-      case 'pdf': return <FileText size={20} color="#ef4444" />;
-      case 'doc': return <FileText size={20} color="#2563eb" />;
-      case 'image': return <FileImage size={20} color="#10b981" />;
-      case 'spreadsheet': return <FileSpreadsheet size={20} color="#059669" />;
-      case 'archive': return <FileArchive size={20} color="#f59e0b" />;
-      default: return <File size={20} color="#6b7280" />;
-    }
+    if (type.includes('pdf')) return <FileText size={20} color="#ef4444" />;
+    if (type.includes('word') || type.includes('document')) return <FileText size={20} color="#2563eb" />;
+    if (type.includes('image')) return <FileImage size={20} color="#10b981" />;
+    if (type.includes('spreadsheet') || type.includes('excel')) return <FileSpreadsheet size={20} color="#059669" />;
+    if (type.includes('zip') || type.includes('compressed')) return <FileArchive size={20} color="#f59e0b" />;
+    return <File size={20} color="#6b7280" />;
   };
 
   const getCategoryColor = (category) => {
@@ -107,7 +244,8 @@ const DocumentManager = () => {
       'invoice': '#f59e0b',
       'photos': '#ef4444',
       'contract': '#ec4899',
-      'report': '#6366f1'
+      'report': '#6366f1',
+      'other': '#6b7280'
     };
     return colors[category] || '#6b7280';
   };
@@ -121,14 +259,22 @@ const DocumentManager = () => {
     }
   };
 
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const filteredDocuments = documents.filter(doc => {
     if (!searchQuery) return true;
     
     const query = searchQuery.toLowerCase();
     return (
       doc.name.toLowerCase().includes(query) ||
-      doc.property.toLowerCase().includes(query) ||
-      doc.client.toLowerCase().includes(query) ||
+      (doc.property?.title || '').toLowerCase().includes(query) ||
+      (doc.client?.name || '').toLowerCase().includes(query) ||
       doc.category.toLowerCase().includes(query)
     );
   }).filter(doc => {
@@ -140,64 +286,18 @@ const DocumentManager = () => {
     return true;
   });
 
-  const handleUpload = async (files) => {
-    setUploading(true);
-    
-    // Simulate upload
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const newDocs = Array.from(files).map((file, index) => ({
-      id: `doc_new_${Date.now()}_${index}`,
-      name: file.name,
-      type: file.type.split('/')[1] || 'file',
-      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      uploaded: new Date().toISOString().split('T')[0],
-      category: 'other',
-      property: 'New Upload',
-      client: 'New Client',
-      status: 'active',
-      shared: false,
-      permissions: ['view', 'download']
-    }));
-    
-    setDocuments([...newDocs, ...documents]);
-    setUploading(false);
-    setShowUploadModal(false);
-  };
+  const totalSize = documents.reduce((sum, doc) => sum + (doc.file_size || 0), 0);
 
-  const handleDelete = (docId) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      setDocuments(documents.filter(doc => doc.id !== docId));
-      setSelectedDocs(selectedDocs.filter(id => id !== docId));
-    }
-  };
-
-  const handleBulkDelete = () => {
-    if (window.confirm(`Delete ${selectedDocs.length} selected documents?`)) {
-      setDocuments(documents.filter(doc => !selectedDocs.includes(doc.id)));
-      setSelectedDocs([]);
-    }
-  };
-
-  const handleShare = (docId) => {
-    const doc = documents.find(d => d.id === docId);
-    alert(`Sharing ${doc.name} with client`);
-  };
-
-  const handleDownload = (docId) => {
-    const doc = documents.find(d => d.id === docId);
-    alert(`Downloading ${doc.name}`);
-  };
-
-  const handlePreview = (docId) => {
-    const doc = documents.find(d => d.id === docId);
-    alert(`Previewing ${doc.name}`);
-  };
-
-  const totalSize = documents.reduce((sum, doc) => {
-    const size = parseFloat(doc.size);
-    return sum + (isNaN(size) ? 0 : size);
-  }, 0);
+  if (loading) {
+    return (
+      <div className="document-manager">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Loading documents...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="document-manager">
@@ -206,7 +306,7 @@ const DocumentManager = () => {
         <div>
           <h2>Document Manager</h2>
           <p className="subtitle">
-            {documents.length} documents • {totalSize.toFixed(1)} MB total
+            {documents.length} documents • {formatFileSize(totalSize)} total
           </p>
         </div>
         
@@ -318,6 +418,8 @@ const DocumentManager = () => {
             <option value="verification">Verification</option>
             <option value="invoice">Invoices</option>
             <option value="photos">Property Photos</option>
+            <option value="contract">Contracts</option>
+            <option value="report">Reports</option>
           </select>
         </div>
       </div>
@@ -372,14 +474,14 @@ const DocumentManager = () => {
                 <div className="doc-actions">
                   <button 
                     className="doc-action-btn"
-                    onClick={() => handlePreview(doc.id)}
+                    onClick={() => window.open(doc.file_url, '_blank')}
                     title="Preview"
                   >
                     <Eye size={14} />
                   </button>
                   <button 
                     className="doc-action-btn"
-                    onClick={() => handleDownload(doc.id)}
+                    onClick={() => handleDownload(doc.file_url, doc.name)}
                     title="Download"
                   >
                     <Download size={14} />
@@ -388,6 +490,7 @@ const DocumentManager = () => {
                     className="doc-action-btn"
                     onClick={() => handleShare(doc.id)}
                     title="Share"
+                    disabled={doc.shared}
                   >
                     <Share2 size={14} />
                   </button>
@@ -403,24 +506,27 @@ const DocumentManager = () => {
 
               <div className="doc-body">
                 <div className="doc-icon">
-                  {getFileIcon(doc.type)}
+                  {getFileIcon(doc.file_type)}
                 </div>
                 
                 <div className="doc-info">
                   <h4 className="doc-name">{doc.name}</h4>
                   
                   <div className="doc-meta">
-                    <span className="doc-size">{doc.size}</span>
+                    <span className="doc-size">{formatFileSize(doc.file_size)}</span>
                     <span className="doc-date">
                       <Calendar size={12} />
-                      {doc.uploaded}
+                      {new Date(doc.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   
                   <div className="doc-category">
                     <span 
                       className="category-tag"
-                      style={{ backgroundColor: `${getCategoryColor(doc.category)}20`, color: getCategoryColor(doc.category) }}
+                      style={{ 
+                        backgroundColor: `${getCategoryColor(doc.category)}20`, 
+                        color: getCategoryColor(doc.category) 
+                      }}
                     >
                       {doc.category}
                     </span>
@@ -433,14 +539,18 @@ const DocumentManager = () => {
               </div>
 
               <div className="doc-footer">
-                <div className="doc-property">
-                  <Home size={12} />
-                  <span>{doc.property}</span>
-                </div>
-                <div className="doc-client">
-                  <User size={12} />
-                  <span>{doc.client}</span>
-                </div>
+                {doc.property?.title && (
+                  <div className="doc-property">
+                    <Home size={12} />
+                    <span>{doc.property.title}</span>
+                  </div>
+                )}
+                {doc.client?.name && (
+                  <div className="doc-client">
+                    <User size={12} />
+                    <span>{doc.client.name}</span>
+                  </div>
+                )}
                 <div className="doc-permissions">
                   {doc.shared ? (
                     <span className="permission-tag shared">
@@ -475,8 +585,8 @@ const DocumentManager = () => {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="upload-modal-overlay">
-          <div className="upload-modal">
+        <div className="upload-modal-overlay" onClick={() => setShowUploadModal(false)}>
+          <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Upload Documents</h3>
               <button 
@@ -495,9 +605,10 @@ const DocumentManager = () => {
                 <input
                   type="file"
                   multiple
-                  onChange={(e) => handleUpload(e.target.files)}
+                  onChange={(e) => handleFileUpload(e.target.files)}
                   className="file-input"
                   id="file-upload"
+                  disabled={uploading}
                 />
                 <label htmlFor="file-upload" className="btn btn-outline">
                   Browse Files
