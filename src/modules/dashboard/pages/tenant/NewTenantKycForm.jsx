@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Upload, Banknote, CheckCircle, Info } from 'lucide-react';
-import { supabase } from '../../../shared/lib/supabaseClient';
+import { supabase } from '../../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../../shared/context/AuthContext';
 import './NewTenantKYCForm.css';
 
 const NewTenantKYCForm = ({ user }) => {

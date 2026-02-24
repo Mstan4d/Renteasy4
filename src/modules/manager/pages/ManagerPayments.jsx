@@ -1,172 +1,164 @@
 // src/modules/manager/pages/ManagerPayments.jsx
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../../shared/context/AuthContext'
-import './ManagerPayments.css'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ManagerPayments.css';
 
 const ManagerPayments = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  
-  const [payments, setPayments] = useState([])
-  const [filter, setFilter] = useState('all') // all, pending, confirmed, withdrawn
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const [commissions, setCommissions] = useState([]);
+  const [filter, setFilter] = useState('all'); // all, pending, confirmed, withdrawn
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEarned: 0,
     available: 0,
     withdrawn: 0,
     pending: 0
-  })
-  const [withdrawalAmount, setWithdrawalAmount] = useState('')
-  const [showWithdrawalModal, setShowWithdrawalModal] = useState(false)
+  });
+  const [withdrawalAmount, setWithdrawalAmount] = useState('');
+  const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
+
+  // Bank details for user (for withdrawal)
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
 
   useEffect(() => {
-    loadPayments()
-  }, [])
-
-  const loadPayments = () => {
-    const allPayments = JSON.parse(localStorage.getItem('payments') || '[]')
-    const managerPayments = allPayments.filter(p => p.managerId === user.id)
-    
-    // Calculate stats
-    const totalEarned = managerPayments.reduce((sum, p) => sum + (p.managerCommission || 0), 0)
-    const withdrawn = managerPayments.filter(p => p.paidToManager).reduce((sum, p) => sum + (p.managerCommission || 0), 0)
-    const available = totalEarned - withdrawn
-    const pending = managerPayments.filter(p => !p.paidToManager).reduce((sum, p) => sum + (p.managerCommission || 0), 0)
-
-    setStats({
-      totalEarned,
-      available,
-      withdrawn,
-      pending
-    })
-
-    setPayments(managerPayments)
-    setLoading(false)
-  }
-
-  const getFilteredPayments = () => {
-    switch(filter) {
-      case 'pending':
-        return payments.filter(p => !p.paidToManager)
-      case 'confirmed':
-        return payments.filter(p => p.paidToManager)
-      case 'withdrawn':
-        return payments.filter(p => p.paidToManager && p.withdrawalDate)
-      default:
-        return payments
+    if (user?.id) {
+      loadCommissions();
+      loadBankDetails();
     }
-  }
+  }, [user]);
 
-  const handleNotifySent = async (chatId) => {
-  // 1. Create a hidden file input to pick the screenshot
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-  
-  fileInput.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const loadCommissions = async () => {
+    try {
+      setLoading(true);
+      // Fetch commissions where this user is the manager
+      const { data, error } = await supabase
+        .from('commissions')
+        .select(`
+          *,
+          listing:listings(id, title, address, price),
+          referrer:referrer_id(id, full_name)
+        `)
+        .eq('manager_id', user.id)
+        .order('created_at', { ascending: false });
 
-    setLoading(true);
-    
-    // 2. Upload the receipt to Supabase Storage
-    const fileExt = file.name.split('.').pop();
-    const fileName = `receipts/${chatId}_${Date.now()}.${fileExt}`;
-    
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('verification-docs') // Reuse your existing bucket
-      .upload(fileName, file);
+      if (error) throw error;
 
-    if (uploadError) {
-      alert("Error uploading receipt");
+      setCommissions(data || []);
+
+      // Calculate stats
+      const totalEarned = data.reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      const paid = data.filter(c => c.paid_to_manager).reduce((sum, c) => sum + c.manager_share, 0);
+      const available = totalEarned - paid;
+      const pending = data.filter(c => !c.paid_to_manager).reduce((sum, c) => sum + c.manager_share, 0);
+
+      setStats({ totalEarned, available, withdrawn: paid, pending });
+    } catch (error) {
+      console.error('Error loading commissions:', error);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('verification-docs')
-      .getPublicUrl(fileName);
-
-    // 3. Update the Chat record
-    const { error: updateError } = await supabase
-      .from('chats')
-      .update({ 
-        admin_confirmed_payment: true, 
-        payment_receipt_url: publicUrl,
-        manager_notified_transfer_at: new Date().toISOString()
-      })
-      .eq('id', chatId);
-
-    if (!updateError) {
-      alert("Receipt uploaded and Admin notified!");
-      loadPayments();
-    }
-    setLoading(false);
   };
 
-  fileInput.click();
-};
+  const loadBankDetails = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('bank_name, account_number, account_name')
+      .eq('id', user.id)
+      .single();
+    if (!error && data) {
+      setBankName(data.bank_name || '');
+      setAccountNumber(data.account_number || '');
+      setAccountName(data.account_name || '');
+    }
+  };
 
-  const updateBankDetails = async (e) => {
-  e.preventDefault();
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      bank_name: bankName,
-      account_number: accNo,
-      account_name: accName
-    })
-    .eq('id', user.id);
-    
-  if(!error) alert("Bank details updated! Admin will use this for your payouts.");
-};
+  const getFilteredCommissions = () => {
+    switch (filter) {
+      case 'pending':
+        return commissions.filter(c => !c.paid_to_manager);
+      case 'confirmed':
+        return commissions.filter(c => c.paid_to_manager);
+      default:
+        return commissions;
+    }
+  };
 
-const getPaymentStatus = (payment) => {
-  if (payment.paid_to_manager) {
-    return { label: 'Paid to Bank', color: '#155724', bgColor: '#d4edda', icon: '✅' };
-  }
-  return { label: 'Awaiting Your Transfer', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
-}
-    
-    return { label: 'Pending', color: '#856404', bgColor: '#fff3cd', icon: '⏳' }
-  }
+  // Notify admin that manager has transferred the full 7.5%
+  const handleNotifySent = async (commissionId) => {
+    // Prompt for file upload (receipt)
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
 
-  const notifyAdminOfTransfer = async (chatId) => {
-  const { error } = await supabase
-    .from('chats')
-    .update({ 
-      admin_confirmed_payment: 'pending_verification' // This flags the admin
-    })
-    .eq('id', chatId);
+      setLoading(true);
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `receipts/${commissionId}_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('verification-docs')
+          .upload(fileName, file);
+        if (uploadError) throw uploadError;
 
-  if(!error) alert("Admin notified! Once they verify the transfer, your payout will be processed.");
-};
+        const { data: urlData } = supabase.storage
+          .from('verification-docs')
+          .getPublicUrl(fileName);
+        const receiptUrl = urlData.publicUrl;
+
+        // Update commission record
+        const { error: updateError } = await supabase
+          .from('commissions')
+          .update({
+            admin_confirmed_payment: false, // pending admin verification
+            payment_receipt_url: receiptUrl,
+            manager_notified_transfer_at: new Date().toISOString()
+          })
+          .eq('id', commissionId);
+        if (updateError) throw updateError;
+
+        alert('Receipt uploaded. Admin will verify and mark as paid.');
+        loadCommissions();
+      } catch (error) {
+        console.error('Error notifying admin:', error);
+        alert('Failed to upload receipt. Try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fileInput.click();
+  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
       style: 'currency',
       currency: 'NGN',
       minimumFractionDigits: 0
-    }).format(amount)
-  }
+    }).format(amount || 0);
+  };
 
-  const getAssociatedListing = (payment) => {
-    const listings = JSON.parse(localStorage.getItem('listings') || '[]')
-    return listings.find(l => l.id === payment.listingId)
-  }
-
-  const getCommissionBreakdown = (payment) => {
-    return {
-      total: payment.totalCommission || payment.managerCommission * 3, // 2.5% * 3 = 7.5%
-      manager: payment.managerCommission,
-      referrer: payment.referrerCommission || payment.managerCommission * 0.4, // Approx 1%
-      platform: payment.platformCommission || payment.managerCommission * 1.6 // Approx 4%
+  const getPaymentStatus = (commission) => {
+    if (commission.paid_to_manager) {
+      return { label: 'Paid to Bank', color: '#155724', bgColor: '#d4edda', icon: '✅' };
     }
-  }
+    if (commission.admin_confirmed_payment === true) {
+      return { label: 'Admin Confirmed', color: '#004085', bgColor: '#cce5ff', icon: '🔵' };
+    }
+    if (commission.admin_confirmed_payment === false && commission.payment_receipt_url) {
+      return { label: 'Awaiting Admin', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
+    }
+    return { label: 'Pending', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
+  };
 
   if (loading) {
-    return <div className="loading">Loading payments...</div>
+    return <div className="loading">Loading payments...</div>;
   }
 
   return (
@@ -177,10 +169,7 @@ const getPaymentStatus = (payment) => {
           <h1>💰 Payments & Commission</h1>
           <p>Track your earnings and request withdrawals</p>
         </div>
-        <button 
-          className="btn btn-primary"
-          onClick={() => navigate('/dashboard/manager')}
-        >
+        <button className="btn btn-primary" onClick={() => navigate('/dashboard/manager')}>
           Back to Dashboard
         </button>
       </div>
@@ -195,7 +184,6 @@ const getPaymentStatus = (payment) => {
             <div className="summary-sub">Lifetime earnings</div>
           </div>
         </div>
-        
 
         <div className="summary-card available">
           <div className="summary-icon">💳</div>
@@ -204,7 +192,7 @@ const getPaymentStatus = (payment) => {
             <div className="summary-amount">{formatCurrency(stats.available)}</div>
             <div className="summary-sub">Ready for withdrawal</div>
           </div>
-          <button 
+          <button
             className="btn-withdraw"
             onClick={() => navigate('/dashboard/manager/withdraw')}
             disabled={stats.available < 5000}
@@ -212,7 +200,7 @@ const getPaymentStatus = (payment) => {
             Withdraw
           </button>
         </div>
-        
+
         <div className="summary-card withdrawn">
           <div className="summary-icon">✅</div>
           <div className="summary-content">
@@ -221,7 +209,7 @@ const getPaymentStatus = (payment) => {
             <div className="summary-sub">Already paid out</div>
           </div>
         </div>
-        
+
         <div className="summary-card pending">
           <div className="summary-icon">⏳</div>
           <div className="summary-content">
@@ -232,22 +220,25 @@ const getPaymentStatus = (payment) => {
         </div>
       </div>
 
-      {/* WITHDRAWAL CTA */}
       {/* RENTEASY BANK DETAILS (PLACEHOLDER) */}
-<div className="renteasy-bank-notice">
-  <div className="notice-icon">🏦</div>
-  <div className="notice-text">
-    <h4>How to complete your commission:</h4>
-    <p>After closing a deal, send the total 7.5% commission to the account below. 
-       Once confirmed, your 2.5% share will be sent to your registered bank account.</p>
-    <div className="bank-details-box">
-      <p><strong>Bank:</strong> Zenith Bank</p>
-      <p><strong>Account Name:</strong> RentEasy Real Estate Ltd</p>
-      <p><strong>Account Number:</strong> 1234567890</p>
-    </div>
-    <small>*Use the Property Title as your transfer narration.</small>
-  </div>
-</div>
+      <div className="renteasy-bank-notice">
+        <div className="notice-icon">🏦</div>
+        <div className="notice-text">
+          <h4>How to complete your commission:</h4>
+          <p>
+            After closing a deal, send the total 7.5% commission to the account below.
+            Once confirmed, your 2.5% share will be sent to your registered bank account.
+          </p>
+          <div className="bank-details-box">
+            <p><strong>Bank:</strong> Zenith Bank</p>
+            <p><strong>Account Name:</strong> RentEasy Real Estate Ltd</p>
+            <p><strong>Account Number:</strong> 1234567890</p>
+          </div>
+          <small>*Use the Property Title as your transfer narration.</small>
+        </div>
+      </div>
+
+      {/* WITHDRAWAL CTA */}
       {stats.available >= 5000 && (
         <div className="withdrawal-cta">
           <div className="cta-content">
@@ -257,10 +248,7 @@ const getPaymentStatus = (payment) => {
               <p>You have ₦{stats.available.toLocaleString()} available for withdrawal</p>
             </div>
           </div>
-          <button 
-            className="btn btn-primary"
-            onClick={() => navigate('/dashboard/manager/withdraw')}
-          >
+          <button className="btn btn-primary" onClick={() => navigate('/dashboard/manager/withdraw')}>
             Request Withdrawal
           </button>
         </div>
@@ -268,42 +256,41 @@ const getPaymentStatus = (payment) => {
 
       {/* FILTERS */}
       <div className="payments-filters">
-        <button 
+        <button
           className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
           onClick={() => setFilter('all')}
         >
           All Payments
         </button>
-        <button 
+        <button
           className={`filter-btn ${filter === 'pending' ? 'active' : ''}`}
           onClick={() => setFilter('pending')}
         >
-          Pending ({payments.filter(p => !p.paidToManager).length})
+          Pending ({commissions.filter(c => !c.paid_to_manager).length})
         </button>
-        <button 
+        <button
           className={`filter-btn ${filter === 'confirmed' ? 'active' : ''}`}
           onClick={() => setFilter('confirmed')}
         >
-          Confirmed ({payments.filter(p => p.paidToManager).length})
+          Confirmed ({commissions.filter(c => c.paid_to_manager).length})
         </button>
       </div>
 
       {/* PAYMENTS TABLE */}
       <div className="payments-table-container">
-        {getFilteredPayments().length === 0 ? (
+        {getFilteredCommissions().length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">💰</div>
             <h3>No {filter} payments found</h3>
             <p>
-              {filter === 'all' ? 'No commission payments yet. Rent properties to earn commissions.' :
-               filter === 'pending' ? 'All payments have been confirmed' :
-               'No confirmed payments yet'}
+              {filter === 'all'
+                ? 'No commission payments yet. Manage properties to earn commissions.'
+                : filter === 'pending'
+                ? 'All payments have been confirmed'
+                : 'No confirmed payments yet'}
             </p>
             {filter !== 'all' && (
-              <button 
-                className="btn btn-outline"
-                onClick={() => setFilter('all')}
-              >
+              <button className="btn btn-outline" onClick={() => setFilter('all')}>
                 View All Payments
               </button>
             )}
@@ -315,44 +302,40 @@ const getPaymentStatus = (payment) => {
                 <th>Property</th>
                 <th>Date</th>
                 <th>Rental Amount</th>
-                <th>Commission</th>
+                <th>Your Share (2.5%)</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {getFilteredPayments().map(payment => {
-                const status = getPaymentStatus(payment)
-                const listing = getAssociatedListing(payment)
-                const breakdown = getCommissionBreakdown(payment)
-                
+              {getFilteredCommissions().map((commission) => {
+                const status = getPaymentStatus(commission);
+                const listing = commission.listing || {};
+
                 return (
-                  <tr key={payment.id}>
+                  <tr key={commission.id}>
                     <td>
                       <div className="property-info">
-                        <strong>{listing?.title || payment.listingTitle}</strong>
-                        <small>{listing?.address || 'Unknown address'}</small>
+                        <strong>{listing.title || 'Unknown'}</strong>
+                        <small>{listing.address || ''}</small>
                       </div>
                     </td>
-                    <td>
-                      {new Date(payment.date || payment.confirmedAt).toLocaleDateString()}
-                    </td>
+                    <td>{new Date(commission.created_at).toLocaleDateString()}</td>
                     <td>
                       <div className="amount-cell">
-                        <strong>{formatCurrency(payment.rentalAmount || breakdown.total * 13.33)}</strong>
+                        <strong>{formatCurrency(commission.rental_amount)}</strong>
                         <small>Rental</small>
                       </div>
                     </td>
                     <td>
                       <div className="commission-cell">
                         <strong className="highlight">
-                          {formatCurrency(payment.managerCommission)}
+                          {formatCurrency(commission.manager_share)}
                         </strong>
-                        <small>Your 2.5% share</small>
                       </div>
                     </td>
                     <td>
-                      <span 
+                      <span
                         className="status-badge"
                         style={{ backgroundColor: status.bgColor, color: status.color }}
                       >
@@ -360,41 +343,33 @@ const getPaymentStatus = (payment) => {
                       </span>
                     </td>
                     <td>
-  {!payment.admin_confirmed_payment ? (
-    <button 
-      className="btn-notify-sent"
-      onClick={() => handleNotifySent(payment.id)}
-    >
-      Confirm 7.5% Sent
-    </button>
-  ) : (
-    <span className="status-waiting">Verification Pending...</span>
-  )}
-</td>
-                    <td>
                       <div className="payment-actions">
-                        <button 
-                          className="btn btn-sm btn-primary"
-                          onClick={() => {
-                            if (listing) {
-                              navigate(`/listings/${listing.id}`)
-                            }
-                          }}
-                        >
-                          View Property
-                        </button>
-                        <button 
+                        {!commission.admin_confirmed_payment && !commission.paid_to_manager && (
+                          <button
+                            className="btn-notify-sent"
+                            onClick={() => handleNotifySent(commission.id)}
+                          >
+                            Confirm 7.5% Sent
+                          </button>
+                        )}
+                        {commission.admin_confirmed_payment === false &&
+                          commission.payment_receipt_url && (
+                            <span className="status-waiting">Verification Pending...</span>
+                          )}
+                        {commission.paid_to_manager && (
+                          <span className="status-paid">Paid</span>
+                        )}
+                        <button
                           className="btn btn-sm btn-outline"
                           onClick={() => {
                             // Show commission breakdown
                             alert(
-                              `Commission Breakdown:\n\n` +
-                              `Total Rental: ${formatCurrency(payment.rentalAmount || breakdown.total * 13.33)}\n` +
-                              `Total Commission (7.5%): ${formatCurrency(breakdown.total)}\n` +
-                              `• Manager (You): ${formatCurrency(breakdown.manager)} (2.5%)\n` +
-                              `• Referrer: ${formatCurrency(breakdown.referrer)} (1%)\n` +
-                              `• RentEasy: ${formatCurrency(breakdown.platform)} (4%)`
-                            )
+                              `Commission Breakdown for ₦${commission.rental_amount?.toLocaleString()}:\n\n` +
+                              `Total Commission (7.5%): ₦${(commission.manager_share + commission.referrer_share + commission.platform_share).toLocaleString()}\n` +
+                              `• Manager (You): ₦${commission.manager_share?.toLocaleString()} (2.5%)\n` +
+                              `• Referrer: ₦${commission.referrer_share?.toLocaleString()} (1.5%)\n` +
+                              `• RentEasy: ₦${commission.platform_share?.toLocaleString()} (3.5%)`
+                            );
                           }}
                         >
                           View Details
@@ -402,14 +377,14 @@ const getPaymentStatus = (payment) => {
                       </div>
                     </td>
                   </tr>
-                )
+                );
               })}
             </tbody>
           </table>
         )}
       </div>
 
-      {/* COMMISSION BREAKDOWN */}
+      {/* COMMISSION BREAKDOWN SECTION */}
       <div className="commission-breakdown-section">
         <h3>📊 Commission Structure</h3>
         <div className="breakdown-cards">
@@ -419,36 +394,34 @@ const getPaymentStatus = (payment) => {
               <span className="breakdown-title">Manager (You)</span>
             </div>
             <div className="breakdown-percentage">2.5%</div>
-            <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned)}
-            </div>
+            <div className="breakdown-amount">{formatCurrency(stats.totalEarned)}</div>
             <div className="breakdown-label">Total Earnings</div>
           </div>
-          
+
           <div className="breakdown-card referrer">
             <div className="breakdown-header">
               <span className="breakdown-icon">👥</span>
               <span className="breakdown-title">Referrer</span>
             </div>
-            <div className="breakdown-percentage">1%</div>
+            <div className="breakdown-percentage">1.5%</div>
             <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned * 0.4)}
+              {formatCurrency(stats.totalEarned * 0.6)} {/* because 2.5% * 0.6 = 1.5% */}
             </div>
             <div className="breakdown-label">Total Referral</div>
           </div>
-          
+
           <div className="breakdown-card platform">
             <div className="breakdown-header">
               <span className="breakdown-icon">🏢</span>
               <span className="breakdown-title">RentEasy</span>
             </div>
-            <div className="breakdown-percentage">4%</div>
+            <div className="breakdown-percentage">3.5%</div>
             <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned * 1.6)}
+              {formatCurrency(stats.totalEarned * 1.4)} {/* 2.5% * 1.4 = 3.5% */}
             </div>
             <div className="breakdown-label">Platform Fee</div>
           </div>
-          
+
           <div className="breakdown-card total">
             <div className="breakdown-header">
               <span className="breakdown-icon">💰</span>
@@ -456,14 +429,14 @@ const getPaymentStatus = (payment) => {
             </div>
             <div className="breakdown-percentage">7.5%</div>
             <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned * 3)}
+              {formatCurrency(stats.totalEarned * 3)} {/* 2.5% * 3 = 7.5% */}
             </div>
             <div className="breakdown-label">Per Rental</div>
           </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ManagerPayments
+export default ManagerPayments;

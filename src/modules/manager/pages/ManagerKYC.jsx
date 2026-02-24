@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './ManagerKYC.css';
 
 const ManagerKYC = () => {
@@ -202,9 +203,6 @@ const ManagerKYC = () => {
     }
   };
 
-  import { supabase } from '../../../shared/lib/supabaseClient';
-
-// ... inside the component
 
 const handleSubmit = async () => {
   try {

@@ -37,7 +37,7 @@ const navigate = useNavigate();
   return () => supabase.removeChannel(channel);
 }, [managerId]);
 
-  const claimListing = async () => {
+ const claimListing = async () => {
   const { data, error } = await supabase
     .from('manager_notifications')
     .update({ status: 'claimed' })
@@ -45,16 +45,14 @@ const navigate = useNavigate();
     .eq('status', 'sent');
 
   if (!error) {
-    // 1. Get the Chat ID for this listing
     const { data: chatData } = await supabase
       .from('chats')
       .select('id')
       .eq('listing_id', incomingListing.id)
       .single();
 
-    // 2. Redirect the manager to that chat immediately
     if (chatData) {
-      navigate(/dashboard/messages/chat/${chatData.id});
+      navigate(`/dashboard/messages/chat/${chatData.id}`); // ✅ fixed
     }
     
     setIncomingListing(null);

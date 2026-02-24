@@ -4,10 +4,12 @@ import path from 'path'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  
+  // For production (deployed to server root), keep '/'
+  // For local file opening, use './'
+  base: mode === 'production' ? '/' : './',
 
-  // 🔑 CRITICAL FIX
-  base: mode === 'production' ? '/Renteasy-frontend/' : '/',
-
+  // Your existing alias – this only matches exact strings, so it's fine
   resolve: {
     alias: {
       '../../../../shared': path.resolve(__dirname, 'src/shared')
