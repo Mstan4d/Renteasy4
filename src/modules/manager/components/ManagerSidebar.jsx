@@ -2,11 +2,15 @@
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../shared/context/AuthContext'
-import './ManagerSidebar.css'
+import './ManagerSideBar.css'
 
 const ManagerSidebar = ({ isOpen, onClose }) => {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  if (!user) {
+    return null; // or a loading spinner
+  }
 
   const handleLinkClick = () => {
     if (onClose && window.innerWidth < 768) {

@@ -15,33 +15,36 @@ import './AdminVerification.css';
 const AdminVerification = () => {
   const { user: currentAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('userKyc'); // 'userKyc', 'managerKyc', 'estateFirmKyc'
-  
+
   // ---------- STATE ----------
   // User KYC (tenants, landlords, service providers)
   const [userVerifications, setUserVerifications] = useState([]);
   const [filteredUserVerifications, setFilteredUserVerifications] = useState([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState('all');
-  
+
   // Manager KYC
   const [managerVerifications, setManagerVerifications] = useState([]);
   const [filteredManagerVerifications, setFilteredManagerVerifications] = useState([]);
   const [managerSearchTerm, setManagerSearchTerm] = useState('');
   const [managerStatusFilter, setManagerStatusFilter] = useState('all');
-  
+
   // Estate Firm KYC
   const [estateFirmVerifications, setEstateFirmVerifications] = useState([]);
   const [filteredEstateFirmVerifications, setFilteredEstateFirmVerifications] = useState([]);
   const [estateFirmSearchTerm, setEstateFirmSearchTerm] = useState('');
   const [estateFirmStatusFilter, setEstateFirmStatusFilter] = useState('all');
-  
+
+  // Documents map: key = profileId, value = array of documents
+  const [documentsMap, setDocumentsMap] = useState({});
+
   // Loading states
   const [loading, setLoading] = useState({
     user: false,
     manager: false,
     estate: false
   });
-  
+
   // Selected items for modals
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedManager, setSelectedManager] = useState(null);
@@ -49,7 +52,7 @@ const AdminVerification = () => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [showEstateFirmModal, setShowEstateFirmModal] = useState(false);
-  
+
   // Stats
   const [userStats, setUserStats] = useState({ total:0, pending:0, approved:0, rejected:0, under_review:0 });
   const [managerStats, setManagerStats] = useState({ total:0, pending:0, approved:0, rejected:0 });
@@ -71,8 +74,27 @@ const AdminVerification = () => {
     }
   };
 
+  // ---------- FETCH DOCUMENTS FOR A LIST OF PROFILE IDS ----------
+  const fetchDocumentsForProfiles = async (profileIds) => {
+    if (!profileIds.length) return {};
+    const { data, error } = await supabase
+      .from('verification_documents')
+      .select('*')
+      .in('provider_id', profileIds); // provider_id = profile id
+    if (error) {
+      console.error('Error fetching documents:', error);
+      return {};
+    }
+    const grouped = {};
+    data.forEach(doc => {
+      if (!grouped[doc.provider_id]) grouped[doc.provider_id] = [];
+      grouped[doc.provider_id].push(doc);
+    });
+    return grouped;
+  };
+
   // ---------- FETCH DATA FROM SUPABASE ----------
-  // 1. User KYC (tenants, landlords, service-providers – excluding managers & estate firms)
+  // 1. User KYC (tenants, landlords, service-providers)
   const fetchUserKyc = async () => {
     setLoading(prev => ({ ...prev, user: true }));
     try {
@@ -82,9 +104,13 @@ const AdminVerification = () => {
         .not('role', 'in', '("manager","estate-firm","estate_firm")')
         .not('kyc_status', 'eq', 'not_started')
         .order('kyc_submitted_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
+      const profileIds = data.map(p => p.id);
+      const docs = await fetchDocumentsForProfiles(profileIds);
+      setDocumentsMap(prev => ({ ...prev, ...docs }));
+
       setUserVerifications(data || []);
       calculateUserStats(data || []);
     } catch (error) {
@@ -104,9 +130,13 @@ const AdminVerification = () => {
         .eq('role', 'manager')
         .not('kyc_status', 'eq', 'not_started')
         .order('kyc_submitted_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
+      const profileIds = data.map(p => p.id);
+      const docs = await fetchDocumentsForProfiles(profileIds);
+      setDocumentsMap(prev => ({ ...prev, ...docs }));
+
       setManagerVerifications(data || []);
       calculateManagerStats(data || []);
     } catch (error) {
@@ -126,9 +156,13 @@ const AdminVerification = () => {
         .or('role.eq.estate-firm,role.eq.estate_firm')
         .not('kyc_status', 'eq', 'not_started')
         .order('kyc_submitted_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
+      const profileIds = data.map(p => p.id);
+      const docs = await fetchDocumentsForProfiles(profileIds);
+      setDocumentsMap(prev => ({ ...prev, ...docs }));
+
       setEstateFirmVerifications(data || []);
       calculateEstateStats(data || []);
     } catch (error) {
@@ -248,14 +282,12 @@ const AdminVerification = () => {
 
       if (error) throw error;
 
-      // Log activity
       await logAdminActivity(
         `user_kyc_${newStatus}`,
         profileId,
         { notes, previous_status: userVerifications.find(u => u.id === profileId)?.kyc_status }
       );
 
-      // Refresh data
       fetchUserKyc();
       setShowUserModal(false);
     } catch (error) {
@@ -433,12 +465,7 @@ const AdminVerification = () => {
     URL.revokeObjectURL(url);
   };
 
-  // ---------- UI RENDERING (same as before, but with Supabase data) ----------
-  // We'll keep your existing JSX mostly unchanged, just replace the data sources
-  // and adjust the functions accordingly.
-  // For brevity, I'll show only the key changes and keep your UI structure.
-
-  // Helper: status color/badge
+  // ---------- UI HELPERS ----------
   const getStatusColor = (status) => {
     switch(status) {
       case 'approved': return 'success';
@@ -459,7 +486,27 @@ const AdminVerification = () => {
     }
   };
 
-  // ---------- RENDER TABS (keep your existing JSX, replace data and functions) ----------
+  const renderDocuments = (profileId) => {
+    const docs = documentsMap[profileId] || [];
+    if (docs.length === 0) return <p>No documents uploaded.</p>;
+    return (
+      <div className="document-list">
+        {docs.map(doc => (
+          <div key={doc.id} className="document-item">
+            <FileText size={16} />
+            <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+              {doc.file_name || doc.document_type}
+            </a>
+            {doc.file_url.match(/\.(jpg|jpeg|png|gif)$/i) && (
+              <img src={doc.file_url} alt="Document preview" style={{ maxWidth: '100px', marginLeft: '1rem' }} />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ---------- RENDER ----------
   return (
     <div className="admin-verification">
       <div className="verification-header">
@@ -469,26 +516,26 @@ const AdminVerification = () => {
         </div>
         <div className="header-right">
           <div className="tab-switcher">
-            <button 
+            <button
               className={`tab-btn ${activeTab === 'userKyc' ? 'active' : ''}`}
               onClick={() => setActiveTab('userKyc')}
             >
               <Users size={18} /> User KYC
             </button>
-            <button 
+            <button
               className={`tab-btn ${activeTab === 'managerKyc' ? 'active' : ''}`}
               onClick={() => setActiveTab('managerKyc')}
             >
               <Building size={18} /> Manager KYC
             </button>
-            <button 
+            <button
               className={`tab-btn ${activeTab === 'estateFirmKyc' ? 'active' : ''}`}
               onClick={() => setActiveTab('estateFirmKyc')}
             >
               <Home size={18} /> Estate Firm KYC
             </button>
           </div>
-          
+
           {activeTab === 'userKyc' && userStats.pending > 0 && (
             <button className="btn-bulk-approve" onClick={bulkApproveUsers}>
               <CheckCircle size={18} /> Approve All ({userStats.pending})
@@ -504,7 +551,7 @@ const AdminVerification = () => {
               <CheckCircle size={18} /> Approve All ({estateStats.pending})
             </button>
           )}
-          
+
           <button className="btn-export" onClick={exportToCsv}>
             <Download size={18} /> Export Data
           </button>
@@ -514,7 +561,6 @@ const AdminVerification = () => {
       {/* User KYC Tab */}
       {activeTab === 'userKyc' && (
         <div className="tab-content">
-          {/* Stats Cards */}
           <div className="verification-stats">
             <div className="stat-card"><Users size={24} /><h3>{userStats.total}</h3><p>Total</p></div>
             <div className="stat-card"><Clock size={24} /><h3>{userStats.pending}</h3><p>Pending</p></div>
@@ -523,7 +569,6 @@ const AdminVerification = () => {
             <div className="stat-card"><AlertCircle size={24} /><h3>{userStats.under_review}</h3><p>Under Review</p></div>
           </div>
 
-          {/* Filters */}
           <div className="verification-filters">
             <div className="search-box">
               <Search size={18} />
@@ -546,7 +591,6 @@ const AdminVerification = () => {
             </button>
           </div>
 
-          {/* User Cards */}
           <div className="verification-grid">
             {loading.user && <p>Loading...</p>}
             {!loading.user && filteredUserVerifications.length === 0 && (
@@ -597,24 +641,162 @@ const AdminVerification = () => {
         </div>
       )}
 
-      {/* Manager KYC Tab (similar structure, use manager data) */}
+      {/* Manager KYC Tab */}
       {activeTab === 'managerKyc' && (
-        // ... adapt using managerVerifications, managerStats, etc.
-        // I'll keep it concise – you can replicate the same pattern.
         <div className="tab-content">
-          {/* Manager stats and cards */}
+          <div className="verification-stats">
+            <div className="stat-card"><Building size={24} /><h3>{managerStats.total}</h3><p>Total</p></div>
+            <div className="stat-card"><Clock size={24} /><h3>{managerStats.pending}</h3><p>Pending</p></div>
+            <div className="stat-card"><CheckCircle size={24} /><h3>{managerStats.approved}</h3><p>Approved</p></div>
+            <div className="stat-card"><XCircle size={24} /><h3>{managerStats.rejected}</h3><p>Rejected</p></div>
+          </div>
+
+          <div className="verification-filters">
+            <div className="search-box">
+              <Search size={18} />
+              <input
+                type="text"
+                placeholder="Search managers..."
+                value={managerSearchTerm}
+                onChange={(e) => setManagerSearchTerm(e.target.value)}
+              />
+            </div>
+            <select value={managerStatusFilter} onChange={(e) => setManagerStatusFilter(e.target.value)}>
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button onClick={() => { setManagerSearchTerm(''); setManagerStatusFilter('all'); }}>
+              <Filter size={16} /> Clear
+            </button>
+          </div>
+
+          <div className="verification-grid">
+            {loading.manager && <p>Loading...</p>}
+            {!loading.manager && filteredManagerVerifications.length === 0 && (
+              <div className="no-verifications">
+                <Building size={48} />
+                <p>No manager KYC submissions found</p>
+              </div>
+            )}
+            {filteredManagerVerifications.map((manager) => (
+              <div key={manager.id} className="verification-card">
+                <div className="card-header">
+                  <div className="user-info">
+                    <div className="user-avatar">{manager.full_name?.charAt(0) || 'M'}</div>
+                    <div>
+                      <h4>{manager.full_name || 'Unnamed'}</h4>
+                      <div className="user-meta">
+                        <span><Mail size={12} /> {manager.email}</span>
+                        <span><Phone size={12} /> {manager.phone || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`status-badge ${getStatusColor(manager.kyc_status)}`}>
+                    {getStatusIcon(manager.kyc_status)} {manager.kyc_status?.replace('_', ' ') || 'pending'}
+                  </span>
+                </div>
+                <div className="card-footer">
+                  <button onClick={() => { setSelectedManager(manager); setShowManagerModal(true); }}>
+                    <Eye size={16} /> View Details
+                  </button>
+                  {manager.kyc_status === 'pending' && (
+                    <>
+                      <button onClick={() => updateManagerVerification(manager.id, 'approved')}>Approve</button>
+                      <button onClick={() => { const r = prompt('Rejection reason:'); if(r) updateManagerVerification(manager.id, 'rejected', r); }}>Reject</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Estate Firm KYC Tab (similar) */}
+      {/* Estate Firm KYC Tab */}
       {activeTab === 'estateFirmKyc' && (
-        // ...
         <div className="tab-content">
-          {/* Estate firm stats and cards */}
+          <div className="verification-stats">
+            <div className="stat-card"><Home size={24} /><h3>{estateStats.total}</h3><p>Total</p></div>
+            <div className="stat-card"><Clock size={24} /><h3>{estateStats.pending}</h3><p>Pending</p></div>
+            <div className="stat-card"><CheckCircle size={24} /><h3>{estateStats.approved}</h3><p>Approved</p></div>
+            <div className="stat-card"><XCircle size={24} /><h3>{estateStats.rejected}</h3><p>Rejected</p></div>
+            <div className="stat-card"><AlertCircle size={24} /><h3>{estateStats.under_review}</h3><p>Under Review</p></div>
+          </div>
+
+          <div className="verification-filters">
+            <div className="search-box">
+              <Search size={18} />
+              <input
+                type="text"
+                placeholder="Search estate firms..."
+                value={estateFirmSearchTerm}
+                onChange={(e) => setEstateFirmSearchTerm(e.target.value)}
+              />
+            </div>
+            <select value={estateFirmStatusFilter} onChange={(e) => setEstateFirmStatusFilter(e.target.value)}>
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="under_review">Under Review</option>
+            </select>
+            <button onClick={() => { setEstateFirmSearchTerm(''); setEstateFirmStatusFilter('all'); }}>
+              <Filter size={16} /> Clear
+            </button>
+          </div>
+
+          <div className="verification-grid">
+            {loading.estate && <p>Loading...</p>}
+            {!loading.estate && filteredEstateFirmVerifications.length === 0 && (
+              <div className="no-verifications">
+                <Home size={48} />
+                <p>No estate firm KYC submissions found</p>
+              </div>
+            )}
+            {filteredEstateFirmVerifications.map((firm) => (
+              <div key={firm.id} className="verification-card">
+                <div className="card-header">
+                  <div className="user-info">
+                    <div className="user-avatar">{firm.full_name?.charAt(0) || 'E'}</div>
+                    <div>
+                      <h4>{firm.full_name || 'Unnamed'}</h4>
+                      <div className="user-meta">
+                        <span><Mail size={12} /> {firm.email}</span>
+                        <span><Phone size={12} /> {firm.phone || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`status-badge ${getStatusColor(firm.kyc_status)}`}>
+                    {getStatusIcon(firm.kyc_status)} {firm.kyc_status?.replace('_', ' ') || 'pending'}
+                  </span>
+                </div>
+                <div className="card-body">
+                  <div className="kyc-details">
+                    <div><span>Business Name:</span> {firm.kyc_data?.business_name || 'N/A'}</div>
+                    <div><span>Registration:</span> {firm.kyc_data?.registration_number || 'N/A'}</div>
+                    <div><span>Submitted:</span> {firm.kyc_submitted_at ? new Date(firm.kyc_submitted_at).toLocaleDateString() : 'N/A'}</div>
+                  </div>
+                </div>
+                <div className="card-footer">
+                  <button onClick={() => { setSelectedEstateFirm(firm); setShowEstateFirmModal(true); }}>
+                    <Eye size={16} /> View Details
+                  </button>
+                  {firm.kyc_status === 'pending' && (
+                    <>
+                      <button onClick={() => updateEstateFirmVerification(firm.id, 'approved')}>Approve</button>
+                      <button onClick={() => { const r = prompt('Rejection reason:'); if(r) updateEstateFirmVerification(firm.id, 'rejected', r); }}>Reject</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ---------- MODALS (keep your existing modal JSX, just adapt update functions) ---------- */}
+      {/* ---------- MODALS ---------- */}
       {/* User Modal */}
       {showUserModal && selectedUser && (
         <div className="modal-overlay">
@@ -624,23 +806,22 @@ const AdminVerification = () => {
               <button onClick={() => setShowUserModal(false)}><XCircle size={20} /></button>
             </div>
             <div className="modal-body">
-              {/* Show user details and documents from selectedUser.kyc_data */}
               <p><strong>Name:</strong> {selectedUser.full_name}</p>
               <p><strong>Email:</strong> {selectedUser.email}</p>
-              <p><strong>ID Type:</strong> {selectedUser.kyc_data?.id_type}</p>
-              <p><strong>ID Number:</strong> {selectedUser.kyc_data?.id_number}</p>
-              {/* Image previews if URLs exist */}
-              {selectedUser.kyc_data?.id_front_url && (
-                <div>
-                  <img src={selectedUser.kyc_data.id_front_url} alt="ID Front" style={{maxWidth:'200px'}} />
-                </div>
-              )}
+              <p><strong>Phone:</strong> {selectedUser.phone || 'N/A'}</p>
+              <p><strong>Role:</strong> {selectedUser.role}</p>
+              <p><strong>ID Type:</strong> {selectedUser.kyc_data?.id_type || 'N/A'}</p>
+              <p><strong>ID Number:</strong> {selectedUser.kyc_data?.id_number || 'N/A'}</p>
+              <p><strong>Submitted At:</strong> {selectedUser.kyc_submitted_at ? new Date(selectedUser.kyc_submitted_at).toLocaleString() : 'N/A'}</p>
+
+              <h4>Uploaded Documents</h4>
+              {renderDocuments(selectedUser.id)}
             </div>
             <div className="modal-footer">
               {selectedUser.kyc_status === 'pending' && (
                 <>
                   <button onClick={() => updateUserVerification(selectedUser.id, 'approved')}>Approve</button>
-                  <button onClick={() => { const r = prompt('Reason:'); if(r) updateUserVerification(selectedUser.id, 'rejected', r); }}>Reject</button>
+                  <button onClick={() => { const r = prompt('Rejection reason:'); if(r) updateUserVerification(selectedUser.id, 'rejected', r); }}>Reject</button>
                   <button onClick={() => { const n = prompt('Notes:'); if(n) updateUserVerification(selectedUser.id, 'under_review', n); }}>Mark for Review</button>
                 </>
               )}
@@ -650,9 +831,70 @@ const AdminVerification = () => {
         </div>
       )}
 
-      {/* Manager Modal (similar) */}
-      {/* Estate Firm Modal (similar) */}
+      {/* Manager Modal */}
+      {showManagerModal && selectedManager && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Manager KYC Details</h3>
+              <button onClick={() => setShowManagerModal(false)}><XCircle size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p><strong>Name:</strong> {selectedManager.full_name}</p>
+              <p><strong>Email:</strong> {selectedManager.email}</p>
+              <p><strong>Phone:</strong> {selectedManager.phone || 'N/A'}</p>
+              <p><strong>ID Type:</strong> {selectedManager.kyc_data?.id_type || 'N/A'}</p>
+              <p><strong>ID Number:</strong> {selectedManager.kyc_data?.id_number || 'N/A'}</p>
+              <p><strong>Submitted At:</strong> {selectedManager.kyc_submitted_at ? new Date(selectedManager.kyc_submitted_at).toLocaleString() : 'N/A'}</p>
 
+              <h4>Uploaded Documents</h4>
+              {renderDocuments(selectedManager.id)}
+            </div>
+            <div className="modal-footer">
+              {selectedManager.kyc_status === 'pending' && (
+                <>
+                  <button onClick={() => updateManagerVerification(selectedManager.id, 'approved')}>Approve</button>
+                  <button onClick={() => { const r = prompt('Rejection reason:'); if(r) updateManagerVerification(selectedManager.id, 'rejected', r); }}>Reject</button>
+                </>
+              )}
+              <button onClick={() => setShowManagerModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Estate Firm Modal */}
+      {showEstateFirmModal && selectedEstateFirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Estate Firm KYC Details</h3>
+              <button onClick={() => setShowEstateFirmModal(false)}><XCircle size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p><strong>Business Name:</strong> {selectedEstateFirm.full_name}</p>
+              <p><strong>Email:</strong> {selectedEstateFirm.email}</p>
+              <p><strong>Phone:</strong> {selectedEstateFirm.phone || 'N/A'}</p>
+              <p><strong>Registration Number:</strong> {selectedEstateFirm.kyc_data?.registration_number || 'N/A'}</p>
+              <p><strong>Tax ID:</strong> {selectedEstateFirm.kyc_data?.tax_id || 'N/A'}</p>
+              <p><strong>Submitted At:</strong> {selectedEstateFirm.kyc_submitted_at ? new Date(selectedEstateFirm.kyc_submitted_at).toLocaleString() : 'N/A'}</p>
+
+              <h4>Uploaded Documents</h4>
+              {renderDocuments(selectedEstateFirm.id)}
+            </div>
+            <div className="modal-footer">
+              {selectedEstateFirm.kyc_status === 'pending' && (
+                <>
+                  <button onClick={() => updateEstateFirmVerification(selectedEstateFirm.id, 'approved')}>Approve</button>
+                  <button onClick={() => { const r = prompt('Rejection reason:'); if(r) updateEstateFirmVerification(selectedEstateFirm.id, 'rejected', r); }}>Reject</button>
+                  <button onClick={() => { const n = prompt('Notes:'); if(n) updateEstateFirmVerification(selectedEstateFirm.id, 'under_review', n); }}>Mark for Review</button>
+                </>
+              )}
+              <button onClick={() => setShowEstateFirmModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

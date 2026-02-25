@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   PlusCircle, Edit, Trash2, Eye, Filter,
   DollarSign, Star, Clock, Users, TrendingUp,
@@ -12,79 +13,85 @@ import './ProviderServices.css';
 const ProviderServices = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+
   const [services, setServices] = useState([]);
   const [filteredServices, setFilteredServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all'); // all, active, paused, draft
   const [sortBy, setSortBy] = useState('newest');
-  
+
+  // Fetch services on mount
   useEffect(() => {
-    loadServices();
-  }, []);
-  
+    if (user?.id) {
+      fetchServices();
+    }
+  }, [user]);
+
+  // Apply client-side filtering and sorting when services or filters change
   useEffect(() => {
     filterAndSortServices();
   }, [services, searchTerm, filterStatus, sortBy]);
-  
-  const loadServices = () => {
+
+  const fetchServices = async () => {
     try {
-      const providerServices = JSON.parse(localStorage.getItem('providerServices') || '[]');
-      const userServices = providerServices.filter(
-        service => service.providerId === user?.id || service.providerEmail === user?.email
-      );
-      
-      setServices(userServices);
-      setFilteredServices(userServices);
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('services')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setServices(data || []);
     } catch (error) {
-      console.error('Error loading services:', error);
+      console.error('Error fetching services:', error);
     } finally {
       setLoading(false);
     }
   };
-  
+
   const filterAndSortServices = () => {
     let filtered = services.filter(service => {
       // Filter by status
       if (filterStatus !== 'all' && service.status !== filterStatus) {
         return false;
       }
-      
+
       // Filter by search term
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         return (
-          service.title.toLowerCase().includes(term) ||
-          service.description.toLowerCase().includes(term) ||
-          service.category.toLowerCase().includes(term)
+          service.service_title?.toLowerCase().includes(term) ||
+          service.description?.toLowerCase().includes(term) ||
+          service.service_category?.toLowerCase().includes(term)
         );
       }
-      
+
       return true;
     });
-    
+
     // Sort services
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'newest':
-          return new Date(b.createdAt) - new Date(a.createdAt);
+          return new Date(b.created_at) - new Date(a.created_at);
         case 'oldest':
-          return new Date(a.createdAt) - new Date(b.createdAt);
+          return new Date(a.created_at) - new Date(b.created_at);
         case 'popular':
           return (b.views || 0) - (a.views || 0);
         case 'price_high':
-          return (b.price || 0) - (a.price || 0);
+          return (b.base_price || 0) - (a.base_price || 0);
         case 'price_low':
-          return (a.price || 0) - (b.price || 0);
+          return (a.base_price || 0) - (b.base_price || 0);
         default:
           return 0;
       }
     });
-    
+
     setFilteredServices(filtered);
   };
-  
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'active': return '#10b981';
@@ -94,7 +101,7 @@ const ProviderServices = () => {
       default: return '#6b7280';
     }
   };
-  
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'active': return <CheckCircle size={14} color="#10b981" />;
@@ -104,89 +111,124 @@ const ProviderServices = () => {
       default: return null;
     }
   };
-  
-  const toggleServiceStatus = (serviceId, currentStatus) => {
+
+  const toggleServiceStatus = async (serviceId, currentStatus) => {
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
-    
-    const updatedServices = services.map(service => 
-      service.id === serviceId ? { ...service, status: newStatus } : service
-    );
-    
-    setServices(updatedServices);
-    
-    // Update localStorage
-    const allServices = JSON.parse(localStorage.getItem('providerServices') || '[]');
-    const updatedAllServices = allServices.map(service =>
-      service.id === serviceId ? { ...service, status: newStatus } : service
-    );
-    
-    localStorage.setItem('providerServices', JSON.stringify(updatedAllServices));
-    
-    alert(`Service ${newStatus === 'active' ? 'activated' : 'paused'} successfully!`);
-  };
-  
-  const deleteService = (serviceId) => {
-    if (window.confirm('Are you sure you want to delete this service? This action cannot be undone.')) {
-      const updatedServices = services.filter(service => service.id !== serviceId);
-      setServices(updatedServices);
-      
-      // Update localStorage
-      const allServices = JSON.parse(localStorage.getItem('providerServices') || '[]');
-      const updatedAllServices = allServices.filter(service => service.id !== serviceId);
-      localStorage.setItem('providerServices', JSON.stringify(updatedAllServices));
-      
-      alert('Service deleted successfully!');
+
+    try {
+      const { error } = await supabase
+        .from('services')
+        .update({ status: newStatus })
+        .eq('id', serviceId);
+
+      if (error) throw error;
+
+      // Update local state
+      setServices(prev =>
+        prev.map(s => (s.id === serviceId ? { ...s, status: newStatus } : s))
+      );
+
+      alert(`Service ${newStatus === 'active' ? 'activated' : 'paused'} successfully!`);
+    } catch (error) {
+      console.error('Error toggling service status:', error);
+      alert('Failed to update service status.');
     }
   };
-  
-  const duplicateService = (service) => {
-    const newService = {
-      ...service,
-      id: `SVC-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: `${service.title} (Copy)`,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      views: 0,
-      inquiries: 0,
-      rating: 0
-    };
-    
-    const updatedServices = [...services, newService];
-    setServices(updatedServices);
-    
-    // Update localStorage
-    const allServices = JSON.parse(localStorage.getItem('providerServices') || '[]');
-    allServices.push(newService);
-    localStorage.setItem('providerServices', JSON.stringify(allServices));
-    
-    alert('Service duplicated successfully! Edit the new draft to customize it.');
+
+  const deleteService = async (serviceId) => {
+    if (!window.confirm('Are you sure you want to delete this service? This action cannot be undone.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('services')
+        .delete()
+        .eq('id', serviceId);
+
+      if (error) throw error;
+
+      setServices(prev => prev.filter(s => s.id !== serviceId));
+      alert('Service deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting service:', error);
+      alert('Failed to delete service.');
+    }
   };
-  
+
+  const duplicateService = async (service) => {
+    // Create a copy with new fields
+    const newService = {
+      provider_id: user.id,
+      service_title: `${service.service_title} (Copy)`,
+      service_category: service.service_category,
+      service_type: service.service_type,
+      description: service.description,
+      experience_years: service.experience_years,
+      team_size: service.team_size,
+      equipment_provided: service.equipment_provided,
+      materials_included: service.materials_included,
+      certifications: service.certifications,
+      pricing_model: service.pricing_model,
+      base_price: service.base_price,
+      hourly_rate: service.hourly_rate,
+      unit_type: service.unit_type,
+      price_per_unit: service.price_per_unit,
+      min_price: service.min_price,
+      max_price: service.max_price,
+      deposit_required: service.deposit_required,
+      deposit_amount: service.deposit_amount,
+      service_areas: service.service_areas,
+      working_hours: service.working_hours,
+      lead_time: service.lead_time,
+      same_day_service: service.same_day_service,
+      features: service.features,
+      requirements: service.requirements,
+      tags: service.tags,
+      images: service.images,
+      status: 'draft'
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('services')
+        .insert([newService])
+        .select();
+
+      if (error) throw error;
+
+      // Add the new service to local state
+      setServices(prev => [data[0], ...prev]);
+      alert('Service duplicated successfully! Edit the new draft to customize it.');
+    } catch (error) {
+      console.error('Error duplicating service:', error);
+      alert('Failed to duplicate service.');
+    }
+  };
+
   const calculateServiceStats = () => {
     const activeServices = services.filter(s => s.status === 'active').length;
     const totalViews = services.reduce((sum, service) => sum + (service.views || 0), 0);
     const totalInquiries = services.reduce((sum, service) => sum + (service.inquiries || 0), 0);
-    const avgRating = services.length > 0 
+    const avgRating = services.length > 0
       ? (services.reduce((sum, service) => sum + (service.rating || 0), 0) / services.length).toFixed(1)
       : 0;
-    
+
     return { activeServices, totalViews, totalInquiries, avgRating };
   };
-  
+
   const formatPrice = (service) => {
-    if (service.priceType === 'hourly') {
-      return `₦${service.price}/hour`;
-    } else if (service.priceType === 'project') {
-      return `₦${service.price}/project`;
-    } else if (service.priceType === 'monthly') {
-      return `₦${service.price}/month`;
+    if (service.pricing_model === 'hourly') {
+      return `₦${service.hourly_rate}/hour`;
+    } else if (service.pricing_model === 'per_unit') {
+      return `₦${service.price_per_unit}/${service.unit_type || 'unit'}`;
+    } else if (service.pricing_model === 'fixed') {
+      return `₦${service.base_price}/project`;
     } else {
       return 'Custom Quote';
     }
   };
-  
+
   const stats = calculateServiceStats();
-  
+
   if (loading) {
     return (
       <div className="services-loading">
@@ -195,7 +237,7 @@ const ProviderServices = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="provider-services">
       <div className="services-container">
@@ -207,15 +249,15 @@ const ProviderServices = () => {
               View, edit, and manage all your service listings
             </p>
           </div>
-          
+
           <div className="header-actions">
-            <Link to="/providers/post-service" className="btn btn-primary">
+            <Link to="/dashboard/provider/post-service" className="btn btn-primary">
               <PlusCircle size={18} />
               Post New Service
             </Link>
           </div>
         </div>
-        
+
         {/* Stats Overview */}
         <div className="services-stats">
           <div className="stat-card">
@@ -227,7 +269,7 @@ const ProviderServices = () => {
               <p>Active Services</p>
             </div>
           </div>
-          
+
           <div className="stat-card">
             <div className="stat-icon" style={{ backgroundColor: '#3b82f620' }}>
               <Eye size={24} color="#3b82f6" />
@@ -237,7 +279,7 @@ const ProviderServices = () => {
               <p>Total Views</p>
             </div>
           </div>
-          
+
           <div className="stat-card">
             <div className="stat-icon" style={{ backgroundColor: '#8b5cf620' }}>
               <Users size={24} color="#8b5cf6" />
@@ -247,7 +289,7 @@ const ProviderServices = () => {
               <p>Total Inquiries</p>
             </div>
           </div>
-          
+
           <div className="stat-card">
             <div className="stat-icon" style={{ backgroundColor: '#f59e0b20' }}>
               <Star size={24} color="#f59e0b" />
@@ -258,7 +300,7 @@ const ProviderServices = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Filters & Search */}
         <div className="services-controls">
           <div className="search-bar">
@@ -270,7 +312,7 @@ const ProviderServices = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          
+
           <div className="controls-right">
             <div className="filter-group">
               <label>
@@ -288,7 +330,7 @@ const ProviderServices = () => {
                 <option value="pending">Pending</option>
               </select>
             </div>
-            
+
             <div className="sort-group">
               <label>Sort by:</label>
               <select
@@ -304,14 +346,14 @@ const ProviderServices = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Services Table/Grid */}
         {filteredServices.length === 0 ? (
           <div className="empty-services">
             <div className="empty-icon">🔧</div>
             <h3>No services found</h3>
             <p>
-              {services.length === 0 
+              {services.length === 0
                 ? "You haven't posted any services yet. Get started by posting your first service!"
                 : "No services match your current filters. Try adjusting your search criteria."}
             </p>
@@ -328,7 +370,7 @@ const ProviderServices = () => {
               <div key={service.id} className="service-card">
                 <div className="service-header">
                   <div className="service-status">
-                    <span 
+                    <span
                       className="status-badge"
                       style={{ backgroundColor: getStatusColor(service.status) }}
                     >
@@ -336,28 +378,28 @@ const ProviderServices = () => {
                       <span>{service.status.toUpperCase()}</span>
                     </span>
                   </div>
-                  
+
                   <div className="service-actions">
                     <div className="dropdown">
                       <button className="dropdown-toggle">
                         <MoreVertical size={18} />
                       </button>
                       <div className="dropdown-menu">
-                        <button 
+                        <button
                           className="dropdown-item"
                           onClick={() => navigate(`/services/edit/${service.id}`)}
                         >
                           <Edit size={14} />
                           Edit Service
                         </button>
-                        <button 
+                        <button
                           className="dropdown-item"
                           onClick={() => duplicateService(service)}
                         >
                           <TrendingUp size={14} />
                           Duplicate
                         </button>
-                        <button 
+                        <button
                           className="dropdown-item"
                           onClick={() => toggleServiceStatus(service.id, service.status)}
                         >
@@ -373,7 +415,7 @@ const ProviderServices = () => {
                             </>
                           )}
                         </button>
-                        <button 
+                        <button
                           className="dropdown-item delete"
                           onClick={() => deleteService(service.id)}
                         >
@@ -384,45 +426,45 @@ const ProviderServices = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="service-body">
-                  <h3 className="service-title">{service.title}</h3>
-                  
+                  <h3 className="service-title">{service.service_title}</h3>
+
                   <p className="service-description">
-                    {service.description.length > 120
+                    {service.description && service.description.length > 120
                       ? `${service.description.substring(0, 120)}...`
-                      : service.description}
+                      : service.description || ''}
                   </p>
-                  
+
                   <div className="service-details">
                     <div className="detail-item">
                       <DollarSign size={14} />
                       <span>{formatPrice(service)}</span>
                     </div>
-                    
+
                     <div className="detail-item">
                       <Clock size={14} />
-                      <span>{service.estimatedTime || 'Flexible'}</span>
+                      <span>{service.duration || 'Flexible'}</span>
                     </div>
-                    
-                    {service.category && (
+
+                    {service.service_category && (
                       <div className="detail-item">
-                        <span className="service-category">{service.category}</span>
+                        <span className="service-category">{service.service_category}</span>
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="service-stats">
                     <div className="stat-item">
                       <Eye size={12} />
                       <span>{service.views || 0} views</span>
                     </div>
-                    
+
                     <div className="stat-item">
                       <Users size={12} />
                       <span>{service.inquiries || 0} inquiries</span>
                     </div>
-                    
+
                     {service.rating > 0 && (
                       <div className="stat-item">
                         <Star size={12} fill="#fbbf24" color="#fbbf24" />
@@ -431,22 +473,22 @@ const ProviderServices = () => {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="service-footer">
                   <div className="service-date">
-                    Posted: {new Date(service.createdAt).toLocaleDateString()}
+                    Posted: {new Date(service.created_at).toLocaleDateString()}
                   </div>
-                  
+
                   <div className="footer-actions">
-                    <button 
+                    <button
                       className="btn btn-small btn-secondary"
                       onClick={() => navigate(`/services/edit/${service.id}`)}
                     >
                       <Edit size={14} />
                       Edit
                     </button>
-                    
-                    <button 
+
+                    <button
                       className="btn btn-small btn-primary"
                       onClick={() => navigate(`/services/${service.id}`)}
                     >
@@ -459,7 +501,7 @@ const ProviderServices = () => {
             ))}
           </div>
         )}
-        
+
         {/* Quick Tips */}
         <div className="services-tips">
           <h3>Service Management Tips</h3>
@@ -473,7 +515,7 @@ const ProviderServices = () => {
                 <li>Include detailed descriptions</li>
               </ul>
             </div>
-            
+
             <div className="tip-card">
               <h4>Boost Visibility</h4>
               <ul>
@@ -483,7 +525,7 @@ const ProviderServices = () => {
                 <li>Update listings regularly</li>
               </ul>
             </div>
-            
+
             <div className="tip-card">
               <h4>Track Performance</h4>
               <ul>

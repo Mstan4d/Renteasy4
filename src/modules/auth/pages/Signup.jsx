@@ -85,11 +85,19 @@ const Signup = () => {
   };
 
 
-
 const handleSubmit = async (e) => {
   e.preventDefault();
   setIsLoading(true);
   setErrors([]);
+
+  // Define role paths (you can move this outside the component if you prefer)
+  const rolePaths = {
+    tenant: '/dashboard/tenant',
+    landlord: '/dashboard/landlord',
+    manager: '/dashboard/manager',
+    'service-provider': '/dashboard/provider',
+    'estate-firm': '/dashboard/estate-firm'
+  };
 
   try {
     // 1. Create the Auth User
@@ -99,7 +107,7 @@ const handleSubmit = async (e) => {
       options: {
         data: {
           full_name: formData.fullName.trim(),
-          role: formData.role // Store in Auth metadata
+          role: formData.role
         }
       }
     });
@@ -117,7 +125,7 @@ const handleSubmit = async (e) => {
           id: userId, 
           email: formData.email.trim(), 
           full_name: formData.fullName.trim(), 
-          role: formData.role // Using the role from your dropdown
+          role: formData.role
         }]);
 
       if (profileErr) {
@@ -126,12 +134,20 @@ const handleSubmit = async (e) => {
         return; // Stop here if profile fails
       }
 
-      // 3. Insert Wallet (Your 1.5% Commission logic)
+      // 3. Insert Wallet (use upsert to avoid duplicate key errors)
       const { error: walletErr } = await supabase
         .from('wallets')
-        .insert([{ user_id: userId, balance: 0, commission_rate: 1.5 }]);
+        .upsert(
+          { user_id: userId, balance: 0, commission_rate: 1.5 },
+          { onConflict: 'user_id' } // ignore if already exists
+        );
 
-      if (walletErr) console.error("Wallet Insert Error:", walletErr.message);
+      if (walletErr) {
+        console.error("Wallet Insert Error:", walletErr.message);
+        // Non‑critical – just log it
+      } else {
+        console.log("✅ Wallet created/verified.");
+      }
 
       console.log("✅ Profile and Wallet created. Logging in...");
 
@@ -141,6 +157,8 @@ const handleSubmit = async (e) => {
       if (loginResult.success) {
         const target = rolePaths[formData.role] || '/dashboard';
         navigate(target);
+      } else {
+        setErrors([loginResult.error || 'Login failed after signup']);
       }
     }
   } catch (error) {

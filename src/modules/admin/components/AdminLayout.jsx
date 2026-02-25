@@ -5,7 +5,7 @@ import { useAuth } from '../../../shared/context/AuthContext';
 import { 
   LayoutDashboard, Users, Home, Building, ShieldCheck, 
   BarChart3, Settings, LogOut, Menu, X, Bell, Search,
-  FileText, AlertCircle, DollarSign, CreditCard, Plus, ToolCase
+  FileText, AlertCircle, DollarSign, CreditCard, Plus, ToolCase, ToolBox
 } from 'lucide-react';
 import './AdminLayout.css';
 
@@ -59,6 +59,7 @@ const AdminLayout = () => {
     { path: '/admin/analytics', label: 'Analytics', icon: <BarChart3 size={20} /> },
     { path: '/admin/settings', label: 'Settings', icon: <Settings size={20} /> },
     { path: '/admin/provider-overview', label: 'Providers', icon: <ToolCase size={20} /> },
+    { path: '/admin/service-categories', label: 'Services', icon: <ToolBox size={20} /> },
   ];
 
   const handleLogout = () => {

@@ -1,6 +1,9 @@
 // src/modules/providers/pages/ProviderPostService.jsx
-import React, { useState } from 'react';
-import { 
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import {
   Upload, X, Plus, DollarSign,
   Clock, MapPin, Calendar, Tag,
   Hash, BookOpen, CheckCircle,
@@ -10,8 +13,26 @@ import {
 } from 'lucide-react';
 
 const ProviderPostService = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
+
+useEffect(() => {
+  const fetchCategories = async () => {
+    const { data } = await supabase
+      .from('service_categories')
+      .select('name, icon')
+      .eq('status', 'active')
+      .order('name');
+    setCategories(data || []);
+  };
+  fetchCategories();
+}, []);
+
+
   const [formData, setFormData] = useState({
     // Step 1: Basic Info
     serviceTitle: '',
@@ -57,18 +78,18 @@ const ProviderPostService = () => {
     tags: []
   });
 
-  const categories = [
-    { id: 'cleaning', name: 'Cleaning Services', icon: '🧹' },
-    { id: 'painting', name: 'Painting', icon: '🎨' },
-    { id: 'plumbing', name: 'Plumbing', icon: '🔧' },
-    { id: 'electrical', name: 'Electrical', icon: '⚡' },
-    { id: 'security', name: 'Security Installation', icon: '🔒' },
-    { id: 'moving', name: 'Moving Services', icon: '🚚' },
-    { id: 'gardening', name: 'Gardening', icon: '🌿' },
-    { id: 'pest-control', name: 'Pest Control', icon: '🐜' },
-    { id: 'ac-repair', name: 'AC Repair', icon: '❄️' },
-    { id: 'carpentry', name: 'Carpentry', icon: '🪚' }
+  const steps = [
+    { number: 1, label: 'Basic Info', icon: '📝' },
+    { number: 2, label: 'Service Details', icon: '🔧' },
+    { number: 3, label: 'Pricing', icon: '💰' },
+    { number: 4, label: 'Availability', icon: '📍' },
+    { number: 5, label: 'Features', icon: '✨' },
+    { number: 6, label: 'Preview', icon: '👁️' }
   ];
+
+// ... inside renderStepContent case 6:
+
+  const selectedCategory = categories.find(c => c.name === formData.serviceCategory); 
 
   const featuresList = [
     'Free Consultation',
@@ -534,36 +555,27 @@ const ProviderPostService = () => {
     }
   };
 
-  const steps = [
-    { number: 1, label: 'Basic Info', icon: '📝' },
-    { number: 2, label: 'Service Details', icon: '🔧' },
-    { number: 3, label: 'Pricing', icon: '💰' },
-    { number: 4, label: 'Availability', icon: '📍' },
-    { number: 5, label: 'Features', icon: '✨' },
-    { number: 6, label: 'Preview', icon: '👁️' }
-  ];
-
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
     const newImages = files.map(file => ({
       file,
       preview: URL.createObjectURL(file)
     }));
-    setImages(prev => [...prev, ...newImages].slice(0, 10)); // Limit to 10 images
+    setImages(prev => [...prev, ...newImages].slice(0, 10));
   };
 
   const handleRemoveImage = (index) => {
     setImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleAddTag = (tag) => {
-    if (tag.trim() && !formData.tags.includes(tag.trim())) {
-      setFormData({ ...formData, tags: [...formData.tags, tag.trim()] });
+  const handleAddTag = (tag, type = 'tags') => {
+    if (tag.trim() && !formData[type].includes(tag.trim())) {
+      setFormData({ ...formData, [type]: [...formData[type], tag.trim()] });
     }
   };
 
-  const handleRemoveTag = (tag) => {
-    setFormData({ ...formData, tags: formData.tags.filter(t => t !== tag) });
+  const handleRemoveTag = (tag, type = 'tags') => {
+    setFormData({ ...formData, [type]: formData[type].filter(t => t !== tag) });
   };
 
   const handleAddFeature = (feature) => {
@@ -584,9 +596,91 @@ const ProviderPostService = () => {
     });
   };
 
-  const handlePublish = () => {
-    alert('Service published successfully!');
-    // In real app, this would submit to API
+  const uploadImages = async () => {
+    const uploadedUrls = [];
+    for (const img of images) {
+      const fileExt = img.file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `service-images/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('service-images')
+        .upload(filePath, img.file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('service-images')
+        .getPublicUrl(filePath);
+
+      uploadedUrls.push(urlData.publicUrl);
+    }
+    return uploadedUrls;
+  };
+
+  const handlePublish = async () => {
+    try {
+      setLoading(true);
+
+      // Basic validation
+      if (!formData.serviceTitle || !formData.serviceCategory || !formData.description) {
+        alert('Please fill in all required fields.');
+        setLoading(false);
+        return;
+      }
+
+      // Upload images first
+      let imageUrls = [];
+      if (images.length > 0) {
+        imageUrls = await uploadImages();
+      }
+
+      // Prepare data for insertion (match database column names)
+      const serviceData = {
+        provider_id: user.id,
+        service_title: formData.serviceTitle,
+        service_category: formData.serviceCategory,
+        service_type: formData.serviceType,
+        description: formData.description,
+        experience_years: formData.experienceYears,
+        team_size: formData.teamSize,
+        equipment_provided: formData.equipmentProvided,
+        materials_included: formData.materialsIncluded,
+        certifications: formData.certifications,
+        pricing_model: formData.pricingModel,
+        base_price: formData.basePrice ? parseFloat(formData.basePrice) : null,
+        hourly_rate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
+        unit_type: formData.unitType,
+        price_per_unit: formData.pricePerUnit ? parseFloat(formData.pricePerUnit) : null,
+        min_price: formData.minPrice ? parseFloat(formData.minPrice) : null,
+        max_price: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
+        deposit_required: formData.depositRequired,
+        deposit_amount: formData.depositAmount ? parseFloat(formData.depositAmount) : null,
+        service_areas: formData.serviceAreas,
+        working_hours: formData.workingHours,
+        lead_time: parseInt(formData.leadTime, 10),
+        same_day_service: formData.sameDayService,
+        features: formData.features,
+        requirements: formData.requirements,
+        tags: formData.tags,
+        images: imageUrls,
+        status: 'published'
+      };
+
+      const { error } = await supabase
+        .from('services')
+        .insert([serviceData]);
+
+      if (error) throw error;
+
+      alert('Service published successfully!');
+      navigate('/dashboard/provider/services');
+    } catch (error) {
+      console.error('Error publishing service:', error);
+      alert('Failed to publish service. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderStepContent = () => {
@@ -618,20 +712,20 @@ const ProviderPostService = () => {
                   Category <span style={styles.requiredStar}>*</span>
                 </label>
                 <div style={styles.categoryGrid}>
-                  {categories.map((category) => (
-                    <div
-                      key={category.id}
-                      onClick={() => setFormData({...formData, serviceCategory: category.id})}
-                      style={{
-                        ...styles.categoryCard,
-                        ...(formData.serviceCategory === category.id ? styles.selectedCategory : {})
-                      }}
-                    >
-                      <div style={styles.categoryIcon}>{category.icon}</div>
-                      <div style={styles.categoryName}>{category.name}</div>
-                    </div>
-                  ))}
-                </div>
+  {categories.map((category) => (
+    <div
+      key={category.name}
+      onClick={() => setFormData({...formData, serviceCategory: category.name})}
+      style={{
+        ...styles.categoryCard,
+        ...(formData.serviceCategory === category.name ? styles.selectedCategory : {})
+      }}
+    >
+      <div style={styles.categoryIcon}>{category.icon}</div>
+      <div style={styles.categoryName}>{category.name}</div>
+    </div>
+  ))}
+</div>
               </div>
               
               <div style={styles.formGroup}>
@@ -795,7 +889,7 @@ const ProviderPostService = () => {
                     style={styles.tagInput}
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
-                        handleAddTag(e.target.value);
+                        handleAddTag(e.target.value, 'certifications');
                         e.target.value = '';
                       }
                     }}
@@ -803,7 +897,7 @@ const ProviderPostService = () => {
                   <button
                     onClick={(e) => {
                       const input = e.target.previousSibling;
-                      handleAddTag(input.value);
+                      handleAddTag(input.value, 'certifications');
                       input.value = '';
                     }}
                     style={styles.addTagButton}
@@ -812,11 +906,11 @@ const ProviderPostService = () => {
                   </button>
                 </div>
                 <div style={styles.tagsContainer}>
-                  {formData.tags.map((tag, index) => (
+                  {formData.certifications.map((cert, index) => (
                     <span key={index} style={styles.tag}>
-                      {tag}
+                      {cert}
                       <button
-                        onClick={() => handleRemoveTag(tag)}
+                        onClick={() => handleRemoveTag(cert, 'certifications')}
                         style={styles.removeTag}
                       >
                         ×
@@ -1052,7 +1146,7 @@ const ProviderPostService = () => {
                     style={styles.tagInput}
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
-                        handleAddTag(e.target.value);
+                        handleAddTag(e.target.value, 'serviceAreas');
                         e.target.value = '';
                       }
                     }}
@@ -1060,7 +1154,7 @@ const ProviderPostService = () => {
                   <button
                     onClick={(e) => {
                       const input = e.target.previousSibling;
-                      handleAddTag(input.value);
+                      handleAddTag(input.value, 'serviceAreas');
                       input.value = '';
                     }}
                     style={styles.addTagButton}
@@ -1074,7 +1168,7 @@ const ProviderPostService = () => {
                       <MapPin size={12} />
                       {area}
                       <button
-                        onClick={() => handleRemoveTag(area)}
+                        onClick={() => handleRemoveTag(area, 'serviceAreas')}
                         style={styles.removeTag}
                       >
                         ×
@@ -1381,7 +1475,7 @@ const ProviderPostService = () => {
       <div style={styles.progressBar}>
         <div style={styles.progressLine}></div>
         {steps.map((stepItem) => (
-          <div key={stepItem.number} style={{position: 'relative', textAlign: 'center'}}>
+          <div key={stepItem.number} style={{ position: 'relative', textAlign: 'center' }}>
             <div style={{
               ...styles.stepCircle,
               ...(step > stepItem.number ? styles.completedStep : {}),
@@ -1409,26 +1503,35 @@ const ProviderPostService = () => {
             <button
               onClick={() => setStep(step - 1)}
               style={styles.navButton}
+              disabled={loading}
             >
               Previous
             </button>
           )}
-          
-          <div style={{marginLeft: 'auto'}}>
+
+          <div style={{ marginLeft: 'auto' }}>
             {step < 6 ? (
               <button
                 onClick={() => setStep(step + 1)}
-                style={{...styles.navButton, ...styles.nextButton}}
+                style={{ ...styles.navButton, ...styles.nextButton }}
+                disabled={loading}
               >
                 Next
               </button>
             ) : (
               <button
                 onClick={handlePublish}
-                style={{...styles.navButton, ...styles.publishButton}}
+                style={{ ...styles.navButton, ...styles.publishButton }}
+                disabled={loading}
               >
-                <CheckCircle size={20} />
-                Publish Service
+                {loading ? (
+                  <>Publishing...</>
+                ) : (
+                  <>
+                    <CheckCircle size={20} />
+                    Publish Service
+                  </>
+                )}
               </button>
             )}
           </div>

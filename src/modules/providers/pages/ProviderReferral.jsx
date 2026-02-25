@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+// src/modules/providers/pages/ProviderReferral.jsx
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
 import {
   FaUserFriends, FaShareAlt, FaGift, FaMoneyBill,
@@ -6,109 +9,139 @@ import {
   FaEnvelope, FaCheckCircle, FaWhatsapp, FaFacebook, FaTwitter,
   FaHistory, FaTrophy, FaCalendarAlt, FaUserPlus
 } from 'react-icons/fa';
+import './ProviderReferral.css';
 
 const ProviderReferral = () => {
+  const { user } = useAuth();
   const [referralStats, setReferralStats] = useState({
-    totalReferrals: 24,
-    activeReferrals: 8,
-    convertedReferrals: 5,
-    pendingEarnings: 12500,
-    totalEarned: 37500,
-    conversionRate: '21%',
-    thisMonth: 3,
-    lastMonth: 5
+    totalReferrals: 0,
+    activeReferrals: 0,
+    convertedReferrals: 0,
+    pendingEarnings: 0,
+    totalEarned: 0,
+    conversionRate: '0%',
+    thisMonth: 0,
+    lastMonth: 0
   });
 
   const [referralProgram] = useState({
     commission: 5000,
-    conditions: 'Friend must complete their first booking',
+    conditions: 'Referred tenant must rent a property through RentEasy',
     reward: '₦5,000 per successful referral',
     terms: [
-      'Both you and your friend must be active users',
-      'Friend must sign up using your referral link',
-      'Friend must complete at least one paid booking',
-      'Commission paid after 7 days of successful booking',
+      'You can refer any user (tenant, landlord, provider, estate firm)',
+      'Bonus is only paid when the referred user is a tenant and completes a rental',
+      'Tenant must rent a property listed on RentEasy',
+      'Commission paid after 7 days of successful rental',
       'No limit on number of referrals'
     ]
   });
 
-  const [referrals, setReferrals] = useState([
-    {
-      id: 1,
-      name: 'John Doe',
-      email: 'john@example.com',
-      dateReferred: '2024-01-10',
-      status: 'converted',
-      bookingCompleted: '2024-01-15',
-      earnings: 5000,
-      service: 'House Cleaning'
-    },
-    {
-      id: 2,
-      name: 'Jane Smith',
-      email: 'jane@example.com',
-      dateReferred: '2024-01-08',
-      status: 'active',
-      bookingCompleted: null,
-      earnings: 0,
-      service: null
-    },
-    {
-      id: 3,
-      name: 'Mike Johnson',
-      email: 'mike@example.com',
-      dateReferred: '2024-01-05',
-      status: 'converted',
-      bookingCompleted: '2024-01-12',
-      earnings: 5000,
-      service: 'Painting Service'
-    },
-    {
-      id: 4,
-      name: 'Sarah Williams',
-      email: 'sarah@example.com',
-      dateReferred: '2023-12-28',
-      status: 'expired',
-      bookingCompleted: null,
-      earnings: 0,
-      service: null
-    },
-    {
-      id: 5,
-      name: 'David Brown',
-      email: 'david@example.com',
-      dateReferred: '2023-12-20',
-      status: 'converted',
-      bookingCompleted: '2023-12-28',
-      earnings: 5000,
-      service: 'Plumbing Repair'
-    },
-    {
-      id: 6,
-      name: 'Lisa Anderson',
-      email: 'lisa@example.com',
-      dateReferred: '2024-01-14',
-      status: 'pending',
-      bookingCompleted: null,
-      earnings: 0,
-      service: null
-    }
-  ]);
+  const [referrals, setReferrals] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [leaderboard, setLeaderboard] = useState([
-    { rank: 1, name: 'Michael Chen', referrals: 42, earnings: 210000 },
-    { rank: 2, name: 'Sarah Johnson', referrals: 35, earnings: 175000 },
-    { rank: 3, name: 'David Smith', referrals: 28, earnings: 140000 },
-    { rank: 4, name: 'Your Position', referrals: 24, earnings: 37500, isCurrentUser: true },
-    { rank: 5, name: 'Emma Wilson', referrals: 22, earnings: 110000 },
-    { rank: 6, name: 'James Brown', referrals: 18, earnings: 90000 },
-    { rank: 7, name: 'Maria Garcia', referrals: 15, earnings: 75000 }
-  ]);
-
-  const [referralLink, setReferralLink] = useState('https://renteasy.com/ref/provider123');
+  const [referralLink, setReferralLink] = useState('');
   const [shareMethod, setShareMethod] = useState('link');
   const [showQRCode, setShowQRCode] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (user?.id) {
+      setReferralLink(`https://renteasy.com/signup?ref=${user.id}`);
+      fetchReferralData();
+    }
+  }, [user]);
+
+  const fetchReferralData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch all referrals for current user (any referred role)
+      const { data: referralsData, error } = await supabase
+        .from('referrals')
+        .select(`
+          *,
+          referred:referred_id (
+            full_name,
+            email,
+            role
+          )
+        `)
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setReferrals(referralsData || []);
+
+      // Compute stats – only count conversions when earnings > 0
+      const total = referralsData.length;
+      const converted = referralsData.filter(r => r.earnings > 0).length;
+      const active = referralsData.filter(r => r.status === 'pending' && !r.earnings).length; // pending referrals
+      const totalEarned = referralsData.reduce((sum, r) => sum + (r.earnings || 0), 0);
+      const pendingEarnings = referralsData
+        .filter(r => r.status === 'converted' && r.earnings === 0) // waiting for rental? adjust as needed
+        .reduce((sum, r) => sum + 5000, 0);
+
+      const conversionRate = total ? Math.round((converted / total) * 100) + '%' : '0%';
+
+      // Monthly stats
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+      const thisMonth = referralsData.filter(r => new Date(r.created_at) >= thisMonthStart).length;
+      const lastMonth = referralsData.filter(r => {
+        const d = new Date(r.created_at);
+        return d >= lastMonthStart && d <= lastMonthEnd;
+      }).length;
+
+      setReferralStats({
+        totalReferrals: total,
+        activeReferrals: active,
+        convertedReferrals: converted,
+        pendingEarnings,
+        totalEarned,
+        conversionRate,
+        thisMonth,
+        lastMonth
+      });
+
+      // 2. Leaderboard: top referrers by earnings (all users)
+      const { data: leaderboardData, error: leaderError } = await supabase
+        .from('referrals')
+        .select(`
+          referrer_id,
+          profiles!inner(full_name),
+          sum(earnings) as total_earnings,
+          count(*) as total_referrals,
+          count(*) filter (where earnings > 0) as converted_count
+        `)
+        .gt('earnings', 0) // only those with earnings
+        .group('referrer_id, profiles.full_name')
+        .order('total_earnings', { ascending: false })
+        .limit(10);
+
+      if (leaderError) throw leaderError;
+
+      // Format leaderboard
+      const formattedLeaderboard = (leaderboardData || []).map((entry, index) => ({
+        rank: index + 1,
+        name: entry.profiles.full_name || 'Anonymous',
+        referrals: entry.total_referrals,
+        converted: entry.converted_count,
+        earnings: entry.total_earnings,
+        isCurrentUser: entry.referrer_id === user.id
+      }));
+
+      setLeaderboard(formattedLeaderboard);
+    } catch (error) {
+      console.error('Error fetching referral data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(referralLink);
@@ -146,7 +179,6 @@ const ProviderReferral = () => {
 
   const handleShare = (method) => {
     let shareUrl = '';
-    
     switch(method) {
       case 'whatsapp':
         shareUrl = `https://wa.me/?text=Join%20RentEasy%20using%20my%20referral%20link:%20${encodeURIComponent(referralLink)}`;
@@ -163,11 +195,12 @@ const ProviderReferral = () => {
       default:
         return;
     }
-    
     window.open(shareUrl, '_blank');
   };
 
-  const filteredReferrals = referrals;
+  if (loading) {
+    return <div className="loading">Loading referral data...</div>;
+  }
 
   return (
     <ProviderPageTemplate
@@ -296,7 +329,7 @@ const ProviderReferral = () => {
       <div className="provider-card" style={{ marginBottom: '2rem' }}>
         <div className="card-header">
           <h3 className="card-title">Your Referral Link</h3>
-          <button 
+          <button
             className="btn-secondary"
             onClick={() => setShowQRCode(!showQRCode)}
           >
@@ -315,7 +348,7 @@ const ProviderReferral = () => {
                 value={referralLink}
                 className="link-input"
               />
-              <button 
+              <button
                 className={`copy-btn ${copied ? 'copied' : ''}`}
                 onClick={copyToClipboard}
               >
@@ -323,7 +356,7 @@ const ProviderReferral = () => {
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
-            
+
             <p className="link-note">
               Share this link with friends. You get ₦{referralProgram.commission.toLocaleString()} when they complete their first booking.
             </p>
@@ -385,29 +418,29 @@ const ProviderReferral = () => {
             </div>
 
             <div className="table-body">
-              {filteredReferrals.map(referral => (
+              {referrals.map(referral => (
                 <div key={referral.id} className="table-row">
                   <div className="table-cell">
                     <div className="referral-info">
                       <div className="referral-avatar">
-                        {referral.name.charAt(0)}
+                        {referral.referred_name?.charAt(0) || '?'}
                       </div>
                       <div>
-                        <div className="referral-name">{referral.name}</div>
-                        <div className="referral-email">{referral.email}</div>
+                        <div className="referral-name">{referral.referred_name || 'Anonymous'}</div>
+                        <div className="referral-email">{referral.referred_email || ''}</div>
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="table-cell">
                     <div className="referral-date">
                       <FaCalendarAlt style={{ marginRight: '0.3rem', color: '#666' }} />
-                      {referral.dateReferred}
+                      {new Date(referral.created_at).toLocaleDateString()}
                     </div>
                   </div>
-                  
+
                   <div className="table-cell">
-                    <div 
+                    <div
                       className="status-badge"
                       style={{
                         background: getStatusColor(referral.status) + '20',
@@ -420,18 +453,18 @@ const ProviderReferral = () => {
                       </span>
                     </div>
                   </div>
-                  
+
                   <div className="table-cell">
-                    {referral.service ? (
+                    {referral.converted_at ? (
                       <div className="booking-info">
-                        <div className="service-name">{referral.service}</div>
-                        <div className="booking-date">{referral.bookingCompleted}</div>
+                        <div className="service-name">Booking</div>
+                        <div className="booking-date">{new Date(referral.converted_at).toLocaleDateString()}</div>
                       </div>
                     ) : (
                       <span className="no-booking">No booking yet</span>
                     )}
                   </div>
-                  
+
                   <div className="table-cell">
                     <div className={`earnings ${referral.earnings > 0 ? 'positive' : 'pending'}`}>
                       {referral.earnings > 0 ? `₦${referral.earnings.toLocaleString()}` : '—'}
@@ -467,8 +500,8 @@ const ProviderReferral = () => {
 
           <div className="leaderboard">
             {leaderboard.map((entry, index) => (
-              <div 
-                key={entry.rank} 
+              <div
+                key={entry.rank}
                 className={`leaderboard-entry ${entry.isCurrentUser ? 'current-user' : ''}`}
               >
                 <div className="rank">
@@ -479,7 +512,7 @@ const ProviderReferral = () => {
                     </span>
                   )}
                 </div>
-                
+
                 <div className="entry-info">
                   <div className="entry-name">
                     {entry.name}
@@ -491,7 +524,7 @@ const ProviderReferral = () => {
                     <span>₦{entry.earnings.toLocaleString()}</span>
                   </div>
                 </div>
-                
+
                 <div className="entry-earnings">
                   <div className="earnings-amount">₦{entry.earnings.toLocaleString()}</div>
                   <div className="earnings-label">earned</div>
@@ -522,7 +555,7 @@ const ProviderReferral = () => {
         <div className="card-header">
           <h3 className="card-title">Tips to Get More Referrals</h3>
         </div>
-        
+
         <div className="tips-grid">
           <div className="tip-card">
             <div className="tip-icon" style={{ background: '#e3f2fd' }}>
@@ -535,7 +568,7 @@ const ProviderReferral = () => {
               </p>
             </div>
           </div>
-          
+
           <div className="tip-card">
             <div className="tip-icon" style={{ background: '#e8f5e9' }}>
               <FaEnvelope style={{ color: '#4caf50' }} />
@@ -547,7 +580,7 @@ const ProviderReferral = () => {
               </p>
             </div>
           </div>
-          
+
           <div className="tip-card">
             <div className="tip-icon" style={{ background: '#fff3e0' }}>
               <FaWhatsapp style={{ color: '#ff9800' }} />
@@ -559,7 +592,7 @@ const ProviderReferral = () => {
               </p>
             </div>
           </div>
-          
+
           <div className="tip-card">
             <div className="tip-icon" style={{ background: '#f3e5f5' }}>
               <FaUserFriends style={{ color: '#9c27b0' }} />
@@ -573,552 +606,6 @@ const ProviderReferral = () => {
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        .reward-badge {
-          display: inline-flex;
-          align-items: center;
-          padding: 0.5rem 1rem;
-          background: linear-gradient(135deg, #ff9800 0%, #ff5722 100%);
-          color: white;
-          border-radius: 20px;
-          font-weight: 600;
-        }
-        
-        .program-details {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 2rem;
-        }
-        
-        .detail-section {
-          padding: 1rem;
-        }
-        
-        .detail-section h4 {
-          margin: 0 0 1rem 0;
-          color: #1a237e;
-        }
-        
-        .steps {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        
-        .step {
-          display: flex;
-          gap: 1rem;
-        }
-        
-        .step-number {
-          width: 30px;
-          height: 30px;
-          background: #1a237e;
-          color: white;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 600;
-          flex-shrink: 0;
-        }
-        
-        .step-content {
-          flex: 1;
-        }
-        
-        .step-content strong {
-          display: block;
-          margin-bottom: 0.3rem;
-        }
-        
-        .step-content p {
-          margin: 0;
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .terms-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-        
-        .terms-list li {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.5rem;
-          margin-bottom: 0.8rem;
-          font-size: 0.9rem;
-          color: #666;
-        }
-        
-        .referral-link-section {
-          display: flex;
-          flex-direction: column;
-          gap: 2rem;
-        }
-        
-        .link-container {
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border-radius: 12px;
-        }
-        
-        .link-display {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          margin-bottom: 1rem;
-        }
-        
-        .link-input {
-          flex: 1;
-          padding: 0.8rem 1rem;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          font-size: 0.9rem;
-          background: white;
-          color: #666;
-        }
-        
-        .copy-btn {
-          padding: 0.8rem 1.5rem;
-          background: #1a237e;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          transition: all 0.3s ease;
-        }
-        
-        .copy-btn:hover {
-          background: #283593;
-          transform: translateY(-2px);
-        }
-        
-        .copy-btn.copied {
-          background: #4caf50;
-        }
-        
-        .link-note {
-          margin: 0;
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .qr-code-section {
-          padding: 2rem;
-          background: white;
-          border-radius: 12px;
-          border: 1px solid #e0e0e0;
-          text-align: center;
-        }
-        
-        .qr-code-placeholder {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .qr-code {
-          padding: 2rem;
-          background: white;
-          border-radius: 12px;
-          border: 2px dashed #ddd;
-        }
-        
-        .qr-instructions {
-          margin: 0;
-          color: #666;
-          max-width: 300px;
-        }
-        
-        .share-methods {
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border-radius: 12px;
-        }
-        
-        .share-buttons {
-          display: flex;
-          gap: 0.5rem;
-          flex-wrap: wrap;
-        }
-        
-        .share-btn {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 1rem;
-          background: white;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          min-width: 80px;
-        }
-        
-        .share-btn:hover {
-          border-color: #1a237e;
-          transform: translateY(-2px);
-        }
-        
-        .share-btn.active {
-          background: #1a237e;
-          color: white;
-          border-color: #1a237e;
-        }
-        
-        .share-btn svg {
-          font-size: 1.5rem;
-        }
-        
-        .share-btn span {
-          font-size: 0.8rem;
-          font-weight: 600;
-        }
-        
-        .referrals-table {
-          width: 100%;
-        }
-        
-        .table-header {
-          background: #f8f9fa;
-          font-weight: 600;
-          color: #333;
-          border-bottom: 2px solid #e0e0e0;
-        }
-        
-        .table-row {
-          display: grid;
-          grid-template-columns: 2fr 1fr 1fr 2fr 1fr;
-          gap: 1rem;
-          padding: 1rem;
-          align-items: center;
-        }
-        
-        .table-body .table-row {
-          border-bottom: 1px solid #e0e0e0;
-          transition: all 0.3s ease;
-        }
-        
-        .table-body .table-row:hover {
-          background: #f8f9fa;
-        }
-        
-        .referral-info {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .referral-avatar {
-          width: 40px;
-          height: 40px;
-          background: #1a237e;
-          color: white;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 600;
-          font-size: 1.2rem;
-        }
-        
-        .referral-name {
-          font-weight: 600;
-          margin-bottom: 0.2rem;
-        }
-        
-        .referral-email {
-          font-size: 0.8rem;
-          color: #666;
-        }
-        
-        .referral-date {
-          display: flex;
-          align-items: center;
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .status-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 1rem;
-          border-radius: 20px;
-          font-size: 0.9rem;
-          font-weight: 600;
-        }
-        
-        .status-icon {
-          font-size: 1rem;
-        }
-        
-        .booking-info {
-          display: flex;
-          flex-direction: column;
-        }
-        
-        .service-name {
-          font-weight: 600;
-          margin-bottom: 0.2rem;
-        }
-        
-        .booking-date {
-          font-size: 0.8rem;
-          color: #666;
-        }
-        
-        .no-booking {
-          color: #666;
-          font-style: italic;
-        }
-        
-        .earnings {
-          font-weight: 600;
-          font-size: 1.1rem;
-        }
-        
-        .earnings.positive {
-          color: #4caf50;
-        }
-        
-        .earnings.pending {
-          color: #ff9800;
-        }
-        
-        .table-summary {
-          display: flex;
-          justify-content: space-around;
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border-radius: 12px;
-          margin-top: 1rem;
-        }
-        
-        .summary-item {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        
-        .summary-item strong {
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .earnings-total {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: #4caf50;
-        }
-        
-        .earnings-pending {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: #ff9800;
-        }
-        
-        .leaderboard {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-          margin: 1rem 0;
-          max-height: 400px;
-          overflow-y: auto;
-        }
-        
-        .leaderboard-entry {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          padding: 1rem;
-          border-radius: 8px;
-          transition: all 0.3s ease;
-        }
-        
-        .leaderboard-entry:hover {
-          background: #f8f9fa;
-        }
-        
-        .leaderboard-entry.current-user {
-          background: #e8f0fe;
-          border-left: 4px solid #1a237e;
-        }
-        
-        .rank {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0.3rem;
-          min-width: 40px;
-        }
-        
-        .rank-number {
-          font-size: 1.2rem;
-          font-weight: 700;
-          color: #1a237e;
-        }
-        
-        .rank-medal {
-          font-size: 1.2rem;
-        }
-        
-        .entry-info {
-          flex: 1;
-        }
-        
-        .entry-name {
-          font-weight: 600;
-          margin-bottom: 0.3rem;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        
-        .you-badge {
-          background: #1a237e;
-          color: white;
-          padding: 0.2rem 0.5rem;
-          border-radius: 12px;
-          font-size: 0.7rem;
-          font-weight: 600;
-        }
-        
-        .entry-stats {
-          display: flex;
-          gap: 0.5rem;
-          font-size: 0.8rem;
-          color: #666;
-        }
-        
-        .entry-earnings {
-          text-align: right;
-        }
-        
-        .earnings-amount {
-          font-weight: 700;
-          color: #4caf50;
-          font-size: 1.1rem;
-        }
-        
-        .earnings-label {
-          font-size: 0.7rem;
-          color: #666;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-        
-        .leaderboard-stats {
-          display: flex;
-          justify-content: space-around;
-          padding: 1.5rem;
-          background: #f8f9fa;
-          border-radius: 12px;
-          margin-top: 1rem;
-        }
-        
-        .leaderboard-stats .stat {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        
-        .leaderboard-stats .stat-value {
-          font-size: 1.8rem;
-          font-weight: 700;
-          color: #1a237e;
-        }
-        
-        .leaderboard-stats .stat-label {
-          color: #666;
-          margin-top: 0.5rem;
-          font-size: 0.9rem;
-        }
-        
-        .tips-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-          gap: 1.5rem;
-          margin-top: 1rem;
-        }
-        
-        .tip-card {
-          display: flex;
-          align-items: flex-start;
-          gap: 1rem;
-          padding: 1.5rem;
-          background: white;
-          border-radius: 12px;
-          border: 1px solid #e0e0e0;
-          transition: all 0.3s ease;
-        }
-        
-        .tip-card:hover {
-          border-color: #1a237e;
-          box-shadow: 0 4px 12px rgba(26, 35, 126, 0.1);
-        }
-        
-        .tip-icon {
-          width: 50px;
-          height: 50px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1.5rem;
-          flex-shrink: 0;
-        }
-        
-        @media (max-width: 1200px) {
-          .provider-card[style*="grid-column: span 2"] {
-            grid-column: span 1;
-          }
-          
-          .program-details {
-            grid-template-columns: 1fr;
-          }
-        }
-        
-        @media (max-width: 768px) {
-          .table-row {
-            grid-template-columns: 1fr;
-            gap: 0.5rem;
-          }
-          
-          .share-buttons {
-            flex-direction: column;
-          }
-          
-          .share-btn {
-            flex-direction: row;
-            justify-content: center;
-          }
-          
-          .table-summary {
-            flex-direction: column;
-            gap: 1rem;
-          }
-          
-          .leaderboard-stats {
-            flex-direction: column;
-            gap: 1rem;
-          }
-          
-          .tips-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
     </ProviderPageTemplate>
   );
 };

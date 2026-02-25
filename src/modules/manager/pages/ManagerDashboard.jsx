@@ -1,452 +1,372 @@
-// src/modules/manager/pages/ManagerDashboard.jsx - UPDATED
-import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../../shared/context/AuthContext'
-import ManagerKYCStatus from '../components/ManagerKYCStatus'
-import ManagerNotificationsPanel from '../components/ManagerNotificationsPanel'
-import ManagerQuickActions from '../components/ManagerQuickActions'
-import ManagerCommissionSummary from '../components/ManagerCommissionSummary'
+// src/modules/manager/pages/ManagerDashboard.jsx
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import ManagerKYCStatus from '../components/ManagerKYCStatus';
+import ManagerNotificationsPanel from '../components/ManagerNotificationsPanel';
+import ManagerQuickActions from '../components/ManagerQuickActions';
+import ManagerCommissionSummary from '../components/ManagerCommissionSummary';
 import ProximityAlert from '../components/ProximityAlert';
-import './ManagerDashboard.css'
+import './ManagerDashboard.css';
 
 const ManagerDashboard = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-  const [assignedChats, setAssignedChats] = useState([])
-  const [availableListings, setAvailableListings] = useState([])
-  const [verifiedProperties, setVerifiedProperties] = useState([])
-  const [earnings, setEarnings] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
-  const [kycStatus, setKycStatus] = useState(null)
-  const [proximityNotifications, setProximityNotifications] = useState([])
+  const [assignedChats, setAssignedChats] = useState([]);
+  const [availableListings, setAvailableListings] = useState([]);
+  const [verifiedProperties, setVerifiedProperties] = useState([]);
+  const [earnings, setEarnings] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [kycStatus, setKycStatus] = useState(null);
+  const [proximityNotifications, setProximityNotifications] = useState([]);
 
-  /* ---------------------------------------------
-     CHECK KYC STATUS
-  ----------------------------------------------*/
+  // ---------- Check KYC status ----------
   useEffect(() => {
     if (!user || user.role !== 'manager') {
-      navigate('/login')
-      return
+      navigate('/login');
+      return;
     }
+    fetchKycStatus();
+  }, [user, navigate]);
 
-    // Check KYC status from localStorage
-    const kycData = JSON.parse(localStorage.getItem('kycVerifications') || '[]')
-    const userKYC = kycData.find(k => k.userId === user.id)
-    setKycStatus(userKYC?.status || 'not_submitted')
-
-    initializeDashboard()
-  }, [user, navigate])
-
-  /* ---------------------------------------------
-     LOAD PROXIMITY NOTIFICATIONS (1km radius)
-  ----------------------------------------------*/
- useEffect(() => {
-  if (!user) return;
-
-  // 1. Initial Load of active notifications
-  const fetchInitialNotifications = async () => {
-    const { data } = await supabase
-      .from('manager_notifications')
-      .select('*')
-      .eq('manager_id', user.id)
-      .eq('accepted', false)
-      .gt('expires_at', new Date().toISOString());
-    
-    setProximityNotifications(data || []);
-  };
-
-  fetchInitialNotifications();
-
-  // 2. Realtime Subscription for NEW notifications
-  const channel = supabase
-    .channel('manager_alerts')
-    .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'manager_notifications',
-        filter: `manager_id=eq.${user.id}` 
-      }, 
-      (payload) => {
-        setProximityNotifications(prev => [payload.new, ...prev]);
-        // Optional: Play a notification sound here
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [user.id]);
-
-  /* ---------------------------------------------
-     INITIALIZE DASHBOARD DATA
-  ----------------------------------------------*/
-  const initializeDashboard = () => {
-    setLoading(true)
-
-    const chats = JSON.parse(localStorage.getItem('chats') || '[]')
-    const listings = JSON.parse(localStorage.getItem('listings') || '[]')
-    const payments = JSON.parse(localStorage.getItem('payments') || '[]')
-    const managerAssignments = JSON.parse(localStorage.getItem('managerAssignments') || '[]')
-
-    /* ---------------------------------------------
-       ASSIGNED CHATS (PERMANENT)
-       BUSINESS RULE: Different chat types based on posting role
-    ----------------------------------------------*/
-    const myChats = chats.filter(chat => {
-      // Manager is participant
-      if (chat.participants.manager === user.id) return true
-      
-      // Check manager assignments
-      const assignment = managerAssignments.find(a => 
-        a.listingId === chat.listingId && a.managerId === user.id
-      )
-      return assignment
-    })
-
-    setAssignedChats(myChats)
-
-    /* ---------------------------------------------
-       AVAILABLE LISTINGS WITH PROXIMITY CHECK
-    ----------------------------------------------*/
-    loadProximityNotifications()
-
-    /* ---------------------------------------------
-       VERIFIED PROPERTIES (PERMANENT ASSIGNMENT)
-    ----------------------------------------------*/
-    const verified = listings.filter(l => 
-      l.managerId === user.id && l.verified === true
-    )
-    setVerifiedProperties(verified)
-
-    /* ---------------------------------------------
-       EARNINGS CALCULATION (2.5% COMMISSION)
-    ----------------------------------------------*/
-    const myPayments = payments.filter(p => 
-      p.managerId === user.id && p.status === 'confirmed'
-    )
-
-    const totalEarnings = myPayments.reduce((sum, p) => sum + p.managerCommission, 0)
-    setEarnings(totalEarnings)
-
-    setLoading(false)
-  }
-
-  /* ---------------------------------------------
-     ACCEPT LISTING WITH KYC CHECK
-     BUSINESS RULE: Must have KYC approved to manage
-  ----------------------------------------------*/
-  const acceptListing = (listingId) => {
-    // Check KYC status
-    if (kycStatus !== 'approved') {
-      alert('⚠️ KYC Verification Required\n\nYou must complete KYC verification before managing properties.')
-      navigate('/dashboard/manager/kyc')
-      return
-    }
-
-    const chats = JSON.parse(localStorage.getItem('chats') || '[]')
-    const listings = JSON.parse(localStorage.getItem('listings') || '[]')
-    const managerAssignments = JSON.parse(localStorage.getItem('managerAssignments') || '[]')
-
-    const listing = listings.find(l => l.id === listingId)
-    if (!listing) return
-
-    // BUSINESS RULE: Skip estate firms
-    if (listing.posterRole === 'estate_firm') {
-      alert('Estate firm listings do not require managers')
-      return
-    }
-
-    const chatIndex = chats.findIndex(c => c.listingId === listingId)
-    
-    if (chatIndex === -1) {
-      // Create new chat based on posting role
-      const chatTemplate = {
-        id: `chat_${Date.now()}_${listingId}`,
-        listingId,
-        listingTitle: listing.title,
-        listingPrice: listing.price,
-        posterRole: listing.posterRole,
-        participants: {
-          tenant: listing.posterRole === 'tenant' ? listing.posterId : null,
-          landlord: listing.posterRole === 'landlord' ? listing.posterId : null,
-          manager: user.id,
-          incomingTenant: null
-        },
-        messages: [],
-        state: 'pending_availability',
-        managerAssigned: true,
-        managerLocked: true,
-        managerAssignedAt: new Date().toISOString(),
-        chatType: listing.posterRole === 'tenant' ? 'manager_intermediary' : 'monitoring',
-        adminCanOverride: true,
-        createdAt: new Date().toISOString()
-      }
-
-      // Add initial system message based on chat type
-      if (listing.posterRole === 'tenant') {
-        chatTemplate.messages.push({
-          senderId: 'system',
-          senderRole: 'system',
-          text: `🏠 Manager ${user.name} assigned to this property. All communications between incoming tenants and property owner will go through the manager.`,
-          timestamp: new Date().toISOString(),
-          isSystem: true
-        })
-      } else {
-        chatTemplate.messages.push({
-          senderId: 'system',
-          senderRole: 'system',
-          text: `👨‍💼 Manager ${user.name} assigned to monitor this conversation and ensure commission collection.`,
-          timestamp: new Date().toISOString(),
-          isSystem: true
-        })
-      }
-
-      chats.push(chatTemplate)
-      
-      // Record assignment
-      const assignment = {
-        id: `assign_${Date.now()}`,
-        listingId,
-        managerId: user.id,
-        managerName: user.name,
-        assignedAt: new Date().toISOString(),
-        acceptedViaProximity: true,
-        isPermanent: false // Will become permanent after verification
-      }
-      managerAssignments.push(assignment)
-      
-      // Update listing
-      const listingIndex = listings.findIndex(l => l.id === listingId)
-      if (listingIndex !== -1) {
-        listings[listingIndex].managerId = user.id
-        listings[listingIndex].managerName = user.name
-        listings[listingIndex].managerAssigned = true
-        listings[listingIndex].managerAssignedAt = new Date().toISOString()
-      }
-      
-      // Save all changes
-      localStorage.setItem('chats', JSON.stringify(chats))
-      localStorage.setItem('managerAssignments', JSON.stringify(managerAssignments))
-      localStorage.setItem('listings', JSON.stringify(listings))
-      
-      // Remove from notifications
-      setProximityNotifications(prev => 
-        prev.filter(n => n.listingId !== listingId)
-      )
-      
-      alert(`✅ You are now managing "${listing.title}"\n\n📊 Commission: ₦${(listing.price * 0.025).toLocaleString()} (2.5%)\n\n${listing.posterRole === 'tenant' ? '💬 You will act as intermediary between tenant and landlord' : '👁️ You will monitor landlord-tenant chat for commission collection'}`)
-      
+  const fetchKycStatus = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('kyc_status')
+      .eq('id', user.id)
+      .single();
+    if (!error && data) {
+      setKycStatus(data.kyc_status || 'not_submitted');
     } else {
-      if (chats[chatIndex].managerLocked) {
-        alert('This listing already has a manager')
-        return
-      }
-
-      // Assign manager to existing chat
-      chats[chatIndex].participants.manager = user.id
-      chats[chatIndex].managerLocked = true
-      chats[chatIndex].managerAssigned = true
-      chats[chatIndex].managerAssignedAt = new Date().toISOString()
-      
-      // Record assignment
-      const assignment = {
-        id: `assign_${Date.now()}`,
-        listingId,
-        managerId: user.id,
-        managerName: user.name,
-        assignedAt: new Date().toISOString(),
-        acceptedViaProximity: true,
-        isPermanent: false
-      }
-      managerAssignments.push(assignment)
-      
-      localStorage.setItem('chats', JSON.stringify(chats))
-      localStorage.setItem('managerAssignments', JSON.stringify(managerAssignments))
-      
-      alert(`✅ You are now managing "${listing.title}"`)
+      setKycStatus('not_submitted');
     }
+  };
 
-    initializeDashboard()
+  // ---------- Load proximity notifications (real‑time) ----------
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchInitialNotifications = async () => {
+      const { data } = await supabase
+        .from('manager_notifications')
+        .select('*')
+        .eq('manager_id', user.id)
+        .eq('accepted', false)
+        .gt('expires_at', new Date().toISOString());
+      setProximityNotifications(data || []);
+    };
+
+    fetchInitialNotifications();
+
+    const channel = supabase
+      .channel('manager_alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'manager_notifications',
+          filter: `manager_id=eq.${user.id}`,
+        },
+        (payload) => {
+          setProximityNotifications((prev) => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  // ---------- Load all dashboard data ----------
+  const loadDashboardData = async () => {
+  setLoading(true);
+  try {
+    // 1. Get manager's assigned chats
+    const { data: chats, error: chatsError } = await supabase
+      .from('chats')
+      .select('*')
+      .or(
+        `participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id},manager_assigned.eq.true`
+      );
+    if (chatsError) throw chatsError;
+    setAssignedChats(chats || []);
+
+    // 2. Get verified properties (listings where manager is assigned and verified)
+    const { data: verified, error: verifiedError } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('manager_by', user.id)
+      .eq('verified', true);
+    if (verifiedError) throw verifiedError;
+    setVerifiedProperties(verified || []);
+
+    // 3. Calculate total earnings (sum of manager_share from commissions)
+    const { data: commissions, error: commError } = await supabase
+      .from('commissions')
+      .select('manager_share')
+      .eq('manager_id', user.id)
+      .eq('status', 'paid');
+    if (commError) throw commError;
+    const total = (commissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
+    setEarnings(total);
+  } catch (error) {
+    console.error('Error loading dashboard data:', error);
+  } finally {
+    setLoading(false);
   }
+};
 
-  /* ---------------------------------------------
-     VERIFY PROPERTY (PERMANENT ASSIGNMENT)
-     BUSINESS RULE: Must have KYC approval
-  ----------------------------------------------*/
-  const verifyProperty = (listingId) => {
+  useEffect(() => {
+    if (user) loadDashboardData();
+  }, [user]);
+
+  // ---------- Accept a listing ----------
+  const acceptListing = async (listingId) => {
     if (kycStatus !== 'approved') {
-      alert('Complete KYC verification first')
-      navigate('/dashboard/manager/kyc')
-      return
+      alert('⚠️ KYC Verification Required');
+      navigate('/dashboard/manager/kyc');
+      return;
     }
 
-    const listings = JSON.parse(localStorage.getItem('listings') || '[]')
-    const index = listings.findIndex(l => l.id === listingId)
+    try {
+      // Fetch listing details
+      const { data: listing, error: listingError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('id', listingId)
+        .single();
+      if (listingError) throw listingError;
 
-    if (index === -1) return
-
-    // Check if manager is assigned to this property
-    const isAssigned = assignedChats.some(chat => 
-      chat.listingId === listingId && chat.participants.manager === user.id
-    )
-
-    if (!isAssigned) {
-      alert('You can only verify properties you are managing')
-      return
-    }
-
-    // BUSINESS RULE: Permanent assignment upon verification
-    listings[index].verified = true
-    listings[index].verificationDate = new Date().toISOString()
-    listings[index].verifiedBy = user.id
-    listings[index].verificationMethod = 'onsite'
-    listings[index].permanentManager = true
-    listings[index].managerId = user.id
-    listings[index].managerName = user.name
-
-    localStorage.setItem('listings', JSON.stringify(listings))
-    
-    // Update chat to reflect permanent assignment
-    const chats = JSON.parse(localStorage.getItem('chats') || '[]')
-    const chatIndex = chats.findIndex(c => c.listingId === listingId)
-    if (chatIndex !== -1) {
-      chats[chatIndex].permanentAssignment = true
-      
-      chats[chatIndex].messages.push({
-        senderId: 'system',
-        senderRole: 'system',
-        text: `✅ Property verified on-site by manager ${user.name}. Manager is now permanently assigned to this property.`,
-        timestamp: new Date().toISOString(),
-        isSystem: true
-      })
-      
-      localStorage.setItem('chats', JSON.stringify(chats))
-    }
-    
-    alert('✅ Property verified successfully!\n\nYou are now permanently assigned as the manager for this property.')
-    initializeDashboard()
-  }
-
-  /* ---------------------------------------------
-     CONFIRM PAYMENT & MARK AS RENTED
-     BUSINESS RULE: Different confirmation flow for tenant vs landlord posts
-  ----------------------------------------------*/
-  const confirmRental = (chat) => {
-    const listings = JSON.parse(localStorage.getItem('listings') || '[]')
-    const listing = listings.find(l => l.id === chat.listingId)
-
-    if (!listing) {
-      alert('Listing not found')
-      return
-    }
-
-    // Calculate commission
-    const rentalAmount = listing.price || 0
-    const totalCommission = rentalAmount * 0.075
-    const managerCommission = rentalAmount * 0.025
-    const referrerCommission = rentalAmount * 0.01
-    const platformCommission = rentalAmount * 0.04
-
-    // Update payment records
-    const payments = JSON.parse(localStorage.getItem('payments') || '[]')
-    const payment = {
-      id: `pay_${Date.now()}`,
-      chatId: chat.id,
-      listingId: chat.listingId,
-      listingTitle: chat.listingTitle,
-      managerId: user.id,
-      managerName: user.name,
-      rentalAmount,
-      totalCommission,
-      managerCommission,
-      referrerCommission,
-      platformCommission,
-      status: 'confirmed',
-      confirmedAt: new Date().toISOString(),
-      paidToManager: false,
-      paidToReferrer: false,
-      commissionSplit: {
-        total: 7.5,
-        manager: 2.5,
-        referrer: 1.0,
-        platform: 4.0
+      // Check if it's an estate firm – they don't need managers
+      if (listing.poster_role === 'estate-firm' || listing.poster_role === 'estate_firm') {
+        alert('Estate firm listings do not require managers');
+        return;
       }
+
+      // Create or update chat
+      const { data: existingChat } = await supabase
+        .from('chats')
+        .select('id')
+        .eq('listing_id', listingId)
+        .maybeSingle();
+
+      // Inside acceptListing, after fetching listing:
+if (!existingChat) {
+  // Create new chat with manager assigned
+  const chatTemplate = {
+    listing_id: listingId,
+    participant1_id: listing.poster_role === 'tenant' ? listing.poster_id : null,
+    participant2_id: listing.poster_role === 'landlord' ? listing.poster_id : null,
+    monitoring_manager_id: user.id,
+    state: 'pending_availability',
+    manager_assigned: true,
+    manager_assigned_at: new Date().toISOString(),
+    chat_type: listing.poster_role === 'tenant' ? 'manager_intermediary' : 'monitoring',
+  };
+
+  const { error: chatError } = await supabase.from('chats').insert([chatTemplate]);
+  if (chatError) throw chatError;
+
+  // Get the newly created chat id
+  const { data: newChat } = await supabase
+    .from('chats')
+    .select('id')
+    .eq('listing_id', listingId)
+    .single();
+
+  // Add a system message
+  await supabase.from('messages').insert([
+    {
+      chat_id: newChat.id,
+      sender_id: '00000000-0000-0000-0000-000000000000',
+      content:
+        listing.poster_role === 'tenant'
+          ? `🏠 Manager ${user.name} assigned. All communication will go through manager.`
+          : `👨‍💼 Manager ${user.name} assigned to monitor this conversation.`,
+      is_system: true,
+    },
+  ]);
+} else {
+  // Update existing chat – assign manager if not already
+  const { error: updateError } = await supabase
+    .from('chats')
+    .update({
+      monitoring_manager_id: user.id,
+      manager_assigned: true,
+      manager_assigned_at: new Date().toISOString(),
+    })
+    .eq('id', existingChat.id);
+  if (updateError) throw updateError;
+}
+      // Mark notification as accepted
+      await supabase
+        .from('manager_notifications')
+        .update({ accepted: true })
+        .eq('listing_id', listingId)
+        .eq('manager_id', user.id);
+
+      // Remove from local notifications
+      setProximityNotifications((prev) => prev.filter((n) => n.listingId !== listingId));
+
+      alert(`✅ You are now managing "${listing.title}"`);
+      loadDashboardData(); // refresh data
+    } catch (error) {
+      console.error('Error accepting listing:', error);
+      alert('Failed to accept listing');
+    }
+  };
+
+  // ---------- Verify a property ----------
+  const verifyProperty = async (listingId) => {
+    if (kycStatus !== 'approved') {
+      alert('Complete KYC verification first');
+      navigate('/dashboard/manager/kyc');
+      return;
     }
 
-    payments.push(payment)
-    localStorage.setItem('payments', JSON.stringify(payments))
-    
-    // Update chat and listing status
-    const chats = JSON.parse(localStorage.getItem('chats') || '[]')
-    const chatIndex = chats.findIndex(c => c.id === chat.id)
-    
-    if (chatIndex !== -1) {
-      chats[chatIndex].state = 'rented'
-      chats[chatIndex].rented = true
-      chats[chatIndex].rentedAt = new Date().toISOString()
-      chats[chatIndex].confirmedBy = user.id
-      chats[chatIndex].commissionPaid = true
-      
-      // Add commission breakdown message
-      chats[chatIndex].messages.push({
-        senderId: 'system',
-        senderRole: 'system',
-        text: `🏠 PROPERTY RENTED - COMMISSION CONFIRMED\n\n` +
-              `Rental Amount: ₦${rentalAmount.toLocaleString()}\n` +
-              `Total Commission: ₦${totalCommission.toLocaleString()} (7.5%)\n` +
-              `• Manager (You): ₦${managerCommission.toLocaleString()} (2.5%)\n` +
-              `• Referrer: ₦${referrerCommission.toLocaleString()} (1%)\n` +
-              `• RentEasy: ₦${platformCommission.toLocaleString()} (4%)\n\n` +
-              `✅ Property removed from market listings`,
-        timestamp: new Date().toISOString(),
-        isSystem: true
-      })
-      
-      localStorage.setItem('chats', JSON.stringify(chats))
+    try {
+      // Check if manager is assigned to this property
+      // Replace the check inside verifyProperty:
+const { data: chat } = await supabase
+  .from('chats')
+  .select('monitoring_manager_id, participant1_id, participant2_id')
+  .eq('listing_id', listingId)
+  .single();
+
+if (
+  !chat ||
+  (chat.monitoring_manager_id !== user.id &&
+   chat.participant1_id !== user.id &&
+   chat.participant2_id !== user.id)
+) {
+  alert('You can only verify properties you are managing');
+  return;
+}
+
+      // Update listing
+      const { error: listingError } = await supabase
+        .from('listings')
+        .update({
+          verified: true,
+          verification_date: new Date().toISOString(),
+          verified_by: user.id,
+          permanent_manager: true,
+          managed_by: user.id,
+        })
+        .eq('id', listingId);
+      if (listingError) throw listingError;
+
+      // Add system message to chat
+      const { data: chatData } = await supabase
+        .from('chats')
+        .select('id')
+        .eq('listing_id', listingId)
+        .single();
+      if (chatData) {
+        await supabase.from('messages').insert([
+          {
+            chat_id: chatData.id,
+            sender_id: '00000000-0000-0000-0000-000000000000',
+            content: `✅ Property verified on‑site by manager ${user.name}. Manager is now permanently assigned.`,
+            is_system: true,
+          },
+        ]);
+      }
+
+      alert('✅ Property verified successfully!');
+      loadDashboardData();
+    } catch (error) {
+      console.error('Error verifying property:', error);
+      alert('Failed to verify property');
     }
+  };
 
-    // Update listing status
-    const listingIndex = listings.findIndex(l => l.id === chat.listingId)
-    if (listingIndex !== -1) {
-      listings[listingIndex].status = 'rented'
-      listings[listingIndex].rentedAt = new Date().toISOString()
-      listings[listingIndex].rentedBy = chat.participants.incomingTenant
-      listings[listingIndex].commissionCollected = true
-      localStorage.setItem('listings', JSON.stringify(listings))
+  // ---------- Confirm rental (mark as rented) ----------
+  const confirmRental = async (chat) => {
+    try {
+      // Fetch listing details
+      const { data: listing, error: listingError } = await supabase
+        .from('listings')
+        .select('price, title')
+        .eq('id', chat.listing_id)
+        .single();
+      if (listingError) throw listingError;
+
+      const rentalAmount = listing.price || 0;
+      const managerShare = rentalAmount * 0.025;
+      const referrerShare = rentalAmount * 0.015;
+      const platformShare = rentalAmount * 0.035;
+
+      // Insert commission record
+      const { error: commError } = await supabase.from('commissions').insert([
+        {
+          listing_id: chat.listing_id,
+          manager_id: user.id,
+          rental_amount: rentalAmount,
+          manager_share: managerShare,
+          referrer_share: referrerShare,
+          platform_share: platformShare,
+          status: 'pending', // will be paid after admin confirmation
+        },
+      ]);
+      if (commError) throw commError;
+
+      // Update chat state
+      await supabase
+        .from('chats')
+        .update({ state: 'rented', rented_at: new Date().toISOString() })
+        .eq('id', chat.id);
+
+      // Update listing status
+      await supabase
+        .from('listings')
+        .update({ status: 'rented', rented_at: new Date().toISOString() })
+        .eq('id', chat.listing_id);
+
+      // Add system message
+      await supabase.from('messages').insert([
+        {
+          chat_id: chat.id,
+          sender_id: '00000000-0000-0000-0000-000000000000',
+          content: `🏠 PROPERTY RENTED\nRental: ₦${rentalAmount.toLocaleString()}\nYour share: ₦${managerShare.toLocaleString()}`,
+          is_system: true,
+        },
+      ]);
+
+      alert(`✅ Rental confirmed! Your commission: ₦${managerShare.toLocaleString()}`);
+      loadDashboardData();
+    } catch (error) {
+      console.error('Error confirming rental:', error);
+      alert('Failed to confirm rental');
     }
+  };
 
-    alert(`✅ Rental confirmed!\n\n` +
-          `Commission breakdown recorded.\n` +
-          `Your earnings: ₦${managerCommission.toLocaleString()}`)
-    
-    initializeDashboard()
-  }
-
-  /* ---------------------------------------------
-     RENDER
-  ----------------------------------------------*/
+  // ---------- UI rendering (same as before, but using state variables) ----------
   if (loading) {
-    return <div className="manager-loading">Loading dashboard...</div>
+    return <div className="manager-loading">Loading dashboard...</div>;
   }
 
   return (
     <div className="manager-dashboard">
-      {/* HEADER WITH KYC STATUS */}
-      <ProximityAlert managerId={user.id} managerState={user.state} />
+      {/* Header with KYC status */}
+      <ProximityAlert managerId={user?.id} managerState={{}} />
       <header className="manager-header">
         <div className="header-left">
           <h1>👨‍💼 RentEasy Manager Dashboard</h1>
           <p className="manager-subtitle">
-            {user.name} • 2.5% Commission • {kycStatus === 'approved' ? '✅ KYC Verified' : '⚠️ KYC Required'}
+            {user?.name} • 2.5% Commission •{' '}
+            {kycStatus === 'approved' ? '✅ KYC Verified' : '⚠️ KYC Required'}
           </p>
         </div>
         <ManagerKYCStatus status={kycStatus} />
       </header>
 
-      {/* KYC WARNING BANNER */}
+      {/* KYC warning banner */}
       {kycStatus !== 'approved' && (
         <div className="kyc-warning-banner">
           <div className="warning-content">
@@ -455,52 +375,49 @@ const ManagerDashboard = () => {
               <strong>KYC Verification Required</strong>
               <p>You must complete KYC verification before managing properties and earning commissions.</p>
             </div>
-            <button 
-              className="btn btn-primary"
-              onClick={() => navigate('/dashboard/manager/kyc')}
-            >
+            <button className="btn btn-primary" onClick={() => navigate('/dashboard/manager/kyc')}>
               Complete KYC Now
             </button>
           </div>
         </div>
       )}
 
-      {/* PROXIMITY NOTIFICATIONS */}
+      {/* Proximity notifications panel */}
       {proximityNotifications.length > 0 && (
-        <ManagerNotificationsPanel 
+        <ManagerNotificationsPanel
           notifications={proximityNotifications}
           onAccept={acceptListing}
-          onDismiss={(id) => setProximityNotifications(prev => prev.filter(n => n.id !== id))}
+          onDismiss={(id) => setProximityNotifications((prev) => prev.filter((n) => n.id !== id))}
         />
       )}
 
-      {/* TABS */}
+      {/* Tabs */}
       <div className="manager-tabs">
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
           📊 Overview
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
           onClick={() => setActiveTab('notifications')}
         >
           🔔 Notifications ({proximityNotifications.length})
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'chats' ? 'active' : ''}`}
           onClick={() => setActiveTab('chats')}
         >
           💬 My Chats ({assignedChats.length})
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'properties' ? 'active' : ''}`}
           onClick={() => setActiveTab('properties')}
         >
           🏠 Properties ({verifiedProperties.length})
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'earnings' ? 'active' : ''}`}
           onClick={() => setActiveTab('earnings')}
         >
@@ -922,7 +839,7 @@ const ManagerDashboard = () => {
                 <div className="breakdown-bar referrer">
                   <div className="bar-label">
                     <span>Referrer</span>
-                    <span>1%</span>
+                    <span>1.5%</span>
                   </div>
                   <div className="bar-fill" style={{ width: '13%' }}></div>
                 </div>
@@ -930,7 +847,7 @@ const ManagerDashboard = () => {
                 <div className="breakdown-bar renteasy">
                   <div className="bar-label">
                     <span>RentEasy Platform</span>
-                    <span>4%</span>
+                    <span>3.5%</span>
                   </div>
                   <div className="bar-fill" style={{ width: '54%' }}></div>
                 </div>

@@ -24,6 +24,20 @@ const ProviderSubscription = () => {
   const [showPaymentMethods, setShowPaymentMethods] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
 
+  // Helper to safely parse JSON arrays from database
+  const parseJsonArray = (data) => {
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+      try {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
   useEffect(() => {
     if (user?.id) {
       loadData();
@@ -85,7 +99,7 @@ const ProviderSubscription = () => {
       if (invoicesError) throw invoicesError;
       setBillingHistory(invoicesData || []);
 
-      // Fetch payment methods (from your existing table)
+      // Fetch payment methods
       const { data: methodsData, error: methodsError } = await supabase
         .from('payment_methods')
         .select('*')
@@ -112,11 +126,9 @@ const ProviderSubscription = () => {
     setUpgradeLoading(true);
 
     try {
-      // Update subscription in DB
       const updates = {
         plan_id: selectedPlan.id,
         features: selectedPlan.features,
-        // Reset free bookings if upgrading from free
         ...(subscription.plan?.name === 'Free' && { free_bookings_used: 0 }),
         next_billing_date: selectedPlan.price > 0 ? new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0] : null
       };
@@ -128,7 +140,6 @@ const ProviderSubscription = () => {
 
       if (error) throw error;
 
-      // Create invoice for upgrade (if paid plan)
       if (selectedPlan.price > 0) {
         await supabase
           .from('billing_invoices')
@@ -138,11 +149,10 @@ const ProviderSubscription = () => {
             description: `${selectedPlan.name} Plan - Upgrade`,
             amount: selectedPlan.price,
             status: 'paid',
-            payment_method: 'Card ****1234' // placeholder
+            payment_method: 'Card ****1234'
           }]);
       }
 
-      // Reload data
       await loadData();
       setShowUpgradeModal(false);
       setSelectedPlan(null);
@@ -327,7 +337,7 @@ const ProviderSubscription = () => {
           <div className="current-features">
             <h4 style={{ marginBottom: '1rem' }}>Current Plan Features</h4>
             <div className="features-grid">
-              {currentPlan.features?.map((feature, idx) => (
+              {parseJsonArray(currentPlan.features).map((feature, idx) => (
                 <div key={idx} className="feature-item">
                   <div className="feature-icon"><FaCheckCircle style={{ color: '#4caf50' }} /></div>
                   <div className="feature-info">
@@ -395,6 +405,8 @@ const ProviderSubscription = () => {
           {plans.map(plan => {
             const benefits = getPlanBenefits(plan.id);
             const isCurrentPlan = subscription?.plan?.id === plan.id;
+            const safeFeatures = parseJsonArray(plan.features);
+            const safeLimitations = parseJsonArray(plan.limitations);
             
             return (
               <div 
@@ -449,7 +461,7 @@ const ProviderSubscription = () => {
                 <div className="plan-features">
                   <h4 style={{ marginBottom: '1rem' }}>Features</h4>
                   <ul>
-                    {plan.features?.map((feature, index) => (
+                    {safeFeatures.map((feature, index) => (
                       <li key={index}>
                         <FaCheckCircle style={{ color: '#4caf50' }} />
                         <span>{feature}</span>
@@ -457,11 +469,11 @@ const ProviderSubscription = () => {
                     ))}
                   </ul>
                   
-                  {plan.limitations && plan.limitations.length > 0 && (
+                  {safeLimitations.length > 0 && (
                     <>
                       <h4 style={{ margin: '1.5rem 0 1rem 0', color: '#666' }}>Limitations</h4>
                       <ul className="limitations">
-                        {plan.limitations.map((limitation, index) => (
+                        {safeLimitations.map((limitation, index) => (
                           <li key={index}>
                             <FaTimesCircle style={{ color: '#f44336' }} />
                             <span>{limitation}</span>
@@ -676,8 +688,8 @@ const ProviderSubscription = () => {
               <div className="feature-comparison">
                 <h4 style={{ marginBottom: '1rem' }}>What You Get:</h4>
                 <div className="features-list">
-                  {selectedPlan.features.map((feature, index) => {
-                    const hasFeature = currentPlan.features?.includes(feature);
+                  {parseJsonArray(selectedPlan.features).map((feature, index) => {
+                    const hasFeature = parseJsonArray(currentPlan.features).includes(feature);
                     return (
                       <div key={index} className="feature-comparison-item">
                         <div className="feature-name">{feature}</div>

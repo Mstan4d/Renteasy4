@@ -1,149 +1,27 @@
-import React, { useState } from 'react';
+// src/modules/providers/pages/ProviderPricing.jsx
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import ProviderPageTemplate from '../templates/ProviderPageTemplate';
-import { 
-  FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaTag, 
+import {
+  FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaTag,
   FaClock, FaUsers, FaStar, FaPercent, FaCopy
 } from 'react-icons/fa';
+import './ProviderPricing.css';
 
 const ProviderPricing = () => {
-  const [pricingPlans, setPricingPlans] = useState([
-    {
-      id: 1,
-      name: 'Basic Cleaning',
-      description: 'Standard cleaning for small apartments',
-      price: 15000,
-      currency: '₦',
-      type: 'fixed',
-      duration: '2-3 hours',
-      features: [
-        'Dusting and wiping surfaces',
-        'Vacuuming and mopping',
-        'Kitchen and bathroom cleaning',
-        'Trash removal'
-      ],
-      popular: true,
-      active: true,
-      serviceCategory: 'Cleaning'
-    },
-    {
-      id: 2,
-      name: 'Deep Cleaning',
-      description: 'Thorough cleaning for all spaces',
-      price: 30000,
-      currency: '₦',
-      type: 'fixed',
-      duration: '4-6 hours',
-      features: [
-        'Everything in Basic',
-        'Window cleaning',
-        'Appliance cleaning',
-        'Carpet shampooing',
-        'Disinfection'
-      ],
-      popular: false,
-      active: true,
-      serviceCategory: 'Cleaning'
-    },
-    {
-      id: 3,
-      name: 'Painting Service',
-      description: 'Professional painting per square meter',
-      price: 2500,
-      currency: '₦',
-      type: 'per_unit',
-      unit: 'per m²',
-      features: [
-        'Surface preparation',
-        'Primer application',
-        'Two coats of paint',
-        'Cleanup'
-      ],
-      popular: true,
-      active: true,
-      serviceCategory: 'Painting'
-    },
-    {
-      id: 4,
-      name: 'Plumbing Consultation',
-      description: 'Hourly rate for plumbing services',
-      price: 5000,
-      currency: '₦',
-      type: 'hourly',
-      minHours: 1,
-      features: [
-        'Diagnosis of issues',
-        'Minor repairs',
-        'Parts recommendation',
-        'Maintenance advice'
-      ],
-      popular: false,
-      active: true,
-      serviceCategory: 'Plumbing'
-    },
-    {
-      id: 5,
-      name: 'Monthly Maintenance',
-      description: 'Monthly package for regular maintenance',
-      price: 45000,
-      currency: '₦',
-      type: 'monthly',
-      duration: 'Monthly',
-      features: [
-        '4 visits per month',
-        'Regular cleaning',
-        'Minor repairs',
-        'Priority support',
-        '20% discount on parts'
-      ],
-      popular: false,
-      active: false,
-      serviceCategory: 'Maintenance'
-    }
-  ]);
-
-  const [discounts, setDiscounts] = useState([
-    {
-      id: 1,
-      name: 'First Time Customer',
-      code: 'WELCOME10',
-      type: 'percentage',
-      value: 10,
-      minAmount: 0,
-      maxUses: 100,
-      used: 45,
-      validUntil: '2024-03-31',
-      active: true
-    },
-    {
-      id: 2,
-      name: 'Bulk Booking',
-      code: 'BULK15',
-      type: 'percentage',
-      value: 15,
-      minAmount: 50000,
-      maxUses: 50,
-      used: 12,
-      validUntil: '2024-06-30',
-      active: true
-    },
-    {
-      id: 3,
-      name: 'Referral Discount',
-      code: 'REFER20',
-      type: 'fixed',
-      value: 5000,
-      minAmount: 20000,
-      maxUses: 1000,
-      used: 89,
-      validUntil: '2024-12-31',
-      active: true
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [pricingPlans, setPricingPlans] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedDiscount, setSelectedDiscount] = useState(null);
+  const [selectedProvider, setSelectedProvider] = useState(null);
+  const [showPricingModal, setShowPricingModal] = useState(false);
+  const [providerPlans, setProviderPlans] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
 
   const [newPlan, setNewPlan] = useState({
     name: '',
@@ -173,50 +51,236 @@ const ProviderPricing = () => {
 
   const serviceCategories = ['Cleaning', 'Painting', 'Plumbing', 'Electrical', 'Maintenance', 'Renovation', 'Landscaping'];
 
-  const handleSavePlan = () => {
+  // Fetch data on mount
+  useEffect(() => {
+    if (user?.id) {
+      fetchPricingPlans();
+      fetchDiscounts();
+    }
+  }, [user]);
+
+  const fetchPricingPlans = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('pricing_plans')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPricingPlans(data || []);
+    } catch (error) {
+      console.error('Error fetching pricing plans:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDiscounts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('discounts')
+        .select('*')
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDiscounts(data || []);
+    } catch (error) {
+      console.error('Error fetching discounts:', error);
+    }
+  };
+
+  const handleSavePlan = async () => {
     if (!newPlan.name || !newPlan.price || !newPlan.serviceCategory) {
       alert('Please fill in required fields');
       return;
     }
 
     const features = newPlan.features.split('\n').filter(f => f.trim());
-    
-    if (selectedPlan) {
-      // Update existing plan
-      setPricingPlans(plans => plans.map(plan => 
-        plan.id === selectedPlan.id 
-          ? { 
-              ...plan,
-              ...newPlan,
-              price: parseInt(newPlan.price),
-              features,
-              minHours: newPlan.type === 'hourly' ? parseInt(newPlan.minHours) : undefined,
-              unit: newPlan.type === 'per_unit' ? newPlan.unit : undefined
-            }
-          : plan
-      ));
-    } else {
-      // Add new plan
-      const newPlanItem = {
-        id: pricingPlans.length + 1,
-        name: newPlan.name,
-        description: newPlan.description,
-        price: parseInt(newPlan.price),
-        currency: newPlan.currency,
-        type: newPlan.type,
-        unit: newPlan.type === 'per_unit' ? newPlan.unit : undefined,
-        minHours: newPlan.type === 'hourly' ? parseInt(newPlan.minHours) : undefined,
-        duration: newPlan.duration,
-        features,
-        popular: newPlan.popular,
-        active: newPlan.active,
-        serviceCategory: newPlan.serviceCategory
-      };
 
-      setPricingPlans([...pricingPlans, newPlanItem]);
+    const planData = {
+      provider_id: user.id,
+      name: newPlan.name,
+      description: newPlan.description,
+      price: parseFloat(newPlan.price),
+      currency: newPlan.currency,
+      type: newPlan.type,
+      unit: newPlan.type === 'per_unit' ? newPlan.unit : null,
+      min_hours: newPlan.type === 'hourly' ? parseInt(newPlan.minHours) : null,
+      duration: newPlan.duration,
+      features,
+      popular: newPlan.popular,
+      active: newPlan.active,
+      service_category: newPlan.serviceCategory
+    };
+
+    try {
+      if (selectedPlan) {
+        // Update
+        const { error } = await supabase
+          .from('pricing_plans')
+          .update(planData)
+          .eq('id', selectedPlan.id);
+        if (error) throw error;
+      } else {
+        // Insert
+        const { error } = await supabase
+          .from('pricing_plans')
+          .insert([planData]);
+        if (error) throw error;
+      }
+
+      await fetchPricingPlans();
+      setShowPlanModal(false);
+      resetPlanForm();
+    } catch (error) {
+      console.error('Error saving plan:', error);
+      alert('Failed to save plan');
+    }
+  };
+
+  const handleSaveDiscount = async () => {
+    if (!newDiscount.name || !newDiscount.code || !newDiscount.value) {
+      alert('Please fill in required fields');
+      return;
     }
 
-    setShowPlanModal(false);
+    const discountData = {
+      provider_id: user.id,
+      name: newDiscount.name,
+      code: newDiscount.code.toUpperCase(),
+      type: newDiscount.type,
+      value: parseFloat(newDiscount.value),
+      min_amount: parseFloat(newDiscount.minAmount) || 0,
+      max_uses: parseInt(newDiscount.maxUses) || 1000,
+      used: selectedDiscount ? selectedDiscount.used : 0,
+      valid_until: newDiscount.validUntil || null,
+      active: newDiscount.active
+    };
+
+    try {
+      if (selectedDiscount) {
+        // Update
+        const { error } = await supabase
+          .from('discounts')
+          .update(discountData)
+          .eq('id', selectedDiscount.id);
+        if (error) throw error;
+      } else {
+        // Insert
+        const { error } = await supabase
+          .from('discounts')
+          .insert([discountData]);
+        if (error) throw error;
+      }
+
+      await fetchDiscounts();
+      setShowDiscountModal(false);
+      resetDiscountForm();
+    } catch (error) {
+      console.error('Error saving discount:', error);
+      alert('Failed to save discount');
+    }
+  };
+
+  const handleTogglePlanStatus = async (id) => {
+    const plan = pricingPlans.find(p => p.id === id);
+    if (!plan) return;
+    try {
+      const { error } = await supabase
+        .from('pricing_plans')
+        .update({ active: !plan.active })
+        .eq('id', id);
+      if (error) throw error;
+      setPricingPlans(plans =>
+        plans.map(p => p.id === id ? { ...p, active: !p.active } : p)
+      );
+    } catch (error) {
+      console.error('Error toggling plan status:', error);
+    }
+  };
+
+  const handleToggleDiscountStatus = async (id) => {
+    const discount = discounts.find(d => d.id === id);
+    if (!discount) return;
+    try {
+      const { error } = await supabase
+        .from('discounts')
+        .update({ active: !discount.active })
+        .eq('id', id);
+      if (error) throw error;
+      setDiscounts(ds =>
+        ds.map(d => d.id === id ? { ...d, active: !d.active } : d)
+      );
+    } catch (error) {
+      console.error('Error toggling discount status:', error);
+    }
+  };
+
+  const handleDeletePlan = async (id) => {
+    if (!window.confirm('Delete this pricing plan?')) return;
+    try {
+      const { error } = await supabase
+        .from('pricing_plans')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      setPricingPlans(plans => plans.filter(p => p.id !== id));
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+    }
+  };
+
+  const handleDeleteDiscount = async (id) => {
+    if (!window.confirm('Delete this discount?')) return;
+    try {
+      const { error } = await supabase
+        .from('discounts')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      setDiscounts(ds => ds.filter(d => d.id !== id));
+    } catch (error) {
+      console.error('Error deleting discount:', error);
+    }
+  };
+
+  const handleEditPlan = (plan) => {
+    setSelectedPlan(plan);
+    setNewPlan({
+      name: plan.name,
+      description: plan.description || '',
+      price: plan.price.toString(),
+      currency: plan.currency,
+      type: plan.type,
+      unit: plan.unit || '',
+      minHours: plan.min_hours || 1,
+      duration: plan.duration || '',
+      features: plan.features.join('\n'),
+      popular: plan.popular,
+      active: plan.active,
+      serviceCategory: plan.service_category
+    });
+    setShowPlanModal(true);
+  };
+
+  const handleEditDiscount = (discount) => {
+    setSelectedDiscount(discount);
+    setNewDiscount({
+      name: discount.name,
+      code: discount.code,
+      type: discount.type,
+      value: discount.value.toString(),
+      minAmount: discount.min_amount.toString(),
+      maxUses: discount.max_uses.toString(),
+      validUntil: discount.valid_until || '',
+      active: discount.active
+    });
+    setShowDiscountModal(true);
+  };
+
+  const resetPlanForm = () => {
     setSelectedPlan(null);
     setNewPlan({
       name: '',
@@ -234,44 +298,7 @@ const ProviderPricing = () => {
     });
   };
 
-  const handleSaveDiscount = () => {
-    if (!newDiscount.name || !newDiscount.code || !newDiscount.value) {
-      alert('Please fill in required fields');
-      return;
-    }
-
-    if (selectedDiscount) {
-      // Update existing discount
-      setDiscounts(discounts => discounts.map(discount => 
-        discount.id === selectedDiscount.id 
-          ? { 
-              ...discount,
-              ...newDiscount,
-              value: parseInt(newDiscount.value),
-              minAmount: parseInt(newDiscount.minAmount) || 0,
-              maxUses: parseInt(newDiscount.maxUses) || 1000
-            }
-          : discount
-      ));
-    } else {
-      // Add new discount
-      const newDiscountItem = {
-        id: discounts.length + 1,
-        name: newDiscount.name,
-        code: newDiscount.code,
-        type: newDiscount.type,
-        value: parseInt(newDiscount.value),
-        minAmount: parseInt(newDiscount.minAmount) || 0,
-        maxUses: parseInt(newDiscount.maxUses) || 1000,
-        used: 0,
-        validUntil: newDiscount.validUntil,
-        active: newDiscount.active
-      };
-
-      setDiscounts([...discounts, newDiscountItem]);
-    }
-
-    setShowDiscountModal(false);
+  const resetDiscountForm = () => {
     setSelectedDiscount(null);
     setNewDiscount({
       name: '',
@@ -284,52 +311,7 @@ const ProviderPricing = () => {
       active: true
     });
   };
-
-  const handleEditPlan = (plan) => {
-    setSelectedPlan(plan);
-    setNewPlan({
-      name: plan.name,
-      description: plan.description,
-      price: plan.price.toString(),
-      currency: plan.currency,
-      type: plan.type,
-      unit: plan.unit || '',
-      minHours: plan.minHours || 1,
-      duration: plan.duration || '',
-      features: plan.features.join('\n'),
-      popular: plan.popular,
-      active: plan.active,
-      serviceCategory: plan.serviceCategory
-    });
-    setShowPlanModal(true);
-  };
-
-  const handleEditDiscount = (discount) => {
-    setSelectedDiscount(discount);
-    setNewDiscount({
-      name: discount.name,
-      code: discount.code,
-      type: discount.type,
-      value: discount.value.toString(),
-      minAmount: discount.minAmount.toString(),
-      maxUses: discount.maxUses.toString(),
-      validUntil: discount.validUntil,
-      active: discount.active
-    });
-    setShowDiscountModal(true);
-  };
-
-  const handleTogglePlanStatus = (id) => {
-    setPricingPlans(plans => plans.map(plan => 
-      plan.id === id ? { ...plan, active: !plan.active } : plan
-    ));
-  };
-
-  const handleToggleDiscountStatus = (id) => {
-    setDiscounts(discounts => discounts.map(discount => 
-      discount.id === id ? { ...discount, active: !discount.active } : discount
-    ));
-  };
+  
 
   const handleCopyCode = (code) => {
     navigator.clipboard.writeText(code);
@@ -337,7 +319,7 @@ const ProviderPricing = () => {
   };
 
   const calculateUsage = (used, maxUses) => {
-    return Math.round((used / maxUses) * 100);
+    return maxUses ? Math.round((used / maxUses) * 100) : 0;
   };
 
   const stats = {
@@ -348,22 +330,30 @@ const ProviderPricing = () => {
     activeDiscounts: discounts.filter(d => d.active).length
   };
 
+  if (loading) return <div className="loading">Loading pricing data...</div>;
+
   return (
     <ProviderPageTemplate
       title="Pricing & Packages"
       subtitle="Manage your service packages and discounts"
       actions={
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button 
+          <button
             className="btn-secondary"
-            onClick={() => setShowDiscountModal(true)}
+            onClick={() => {
+              resetDiscountForm();
+              setShowDiscountModal(true);
+            }}
           >
             <FaTag style={{ marginRight: '0.5rem' }} />
             Add Discount
           </button>
-          <button 
+          <button
             className="btn-primary"
-            onClick={() => setShowPlanModal(true)}
+            onClick={() => {
+              resetPlanForm();
+              setShowPlanModal(true);
+            }}
           >
             <FaPlus style={{ marginRight: '0.5rem' }} />
             Add Pricing Plan
@@ -378,12 +368,8 @@ const ProviderPricing = () => {
             <h3 className="card-title">Total Plans</h3>
             <FaTag style={{ color: '#1a237e', fontSize: '1.5rem' }} />
           </div>
-          <div style={{ fontSize: '2.5rem', fontWeight: '700', color: '#1a237e', textAlign: 'center' }}>
-            {stats.totalPlans}
-          </div>
-          <div style={{ textAlign: 'center', color: '#666', marginTop: '0.5rem' }}>
-            Pricing plans
-          </div>
+          <div className="stats-number">{stats.totalPlans}</div>
+          <div className="stats-label">Pricing plans</div>
         </div>
 
         <div className="provider-card">
@@ -391,12 +377,8 @@ const ProviderPricing = () => {
             <h3 className="card-title">Active Plans</h3>
             <FaCheck style={{ color: '#4caf50', fontSize: '1.5rem' }} />
           </div>
-          <div style={{ fontSize: '2.5rem', fontWeight: '700', color: '#4caf50', textAlign: 'center' }}>
-            {stats.activePlans}
-          </div>
-          <div style={{ textAlign: 'center', color: '#666', marginTop: '0.5rem' }}>
-            Currently active
-          </div>
+          <div className="stats-number">{stats.activePlans}</div>
+          <div className="stats-label">Currently active</div>
         </div>
 
         <div className="provider-card">
@@ -404,12 +386,8 @@ const ProviderPricing = () => {
             <h3 className="card-title">Popular Plans</h3>
             <FaStar style={{ color: '#ff9800', fontSize: '1.5rem' }} />
           </div>
-          <div style={{ fontSize: '2.5rem', fontWeight: '700', color: '#ff9800', textAlign: 'center' }}>
-            {stats.popularPlans}
-          </div>
-          <div style={{ textAlign: 'center', color: '#666', marginTop: '0.5rem' }}>
-            Marked as popular
-          </div>
+          <div className="stats-number">{stats.popularPlans}</div>
+          <div className="stats-label">Marked as popular</div>
         </div>
 
         <div className="provider-card">
@@ -417,12 +395,8 @@ const ProviderPricing = () => {
             <h3 className="card-title">Active Discounts</h3>
             <FaPercent style={{ color: '#9c27b0', fontSize: '1.5rem' }} />
           </div>
-          <div style={{ fontSize: '2.5rem', fontWeight: '700', color: '#9c27b0', textAlign: 'center' }}>
-            {stats.activeDiscounts}
-          </div>
-          <div style={{ textAlign: 'center', color: '#666', marginTop: '0.5rem' }}>
-            Discount codes
-          </div>
+          <div className="stats-number">{stats.activeDiscounts}</div>
+          <div className="stats-label">Discount codes</div>
         </div>
       </div>
 
@@ -461,7 +435,7 @@ const ProviderPricing = () => {
               <div className="plan-details">
                 <div className="detail-item">
                   <FaTag />
-                  <span>{plan.serviceCategory}</span>
+                  <span>{plan.service_category}</span>
                 </div>
                 {plan.duration && (
                   <div className="detail-item">
@@ -488,27 +462,23 @@ const ProviderPricing = () => {
               </div>
 
               <div className="plan-actions">
-                <button 
+                <button
                   className={`status-toggle ${plan.active ? 'active' : 'inactive'}`}
                   onClick={() => handleTogglePlanStatus(plan.id)}
                 >
                   {plan.active ? 'Active' : 'Inactive'}
                 </button>
-                
+
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button 
+                  <button
                     className="btn-secondary"
                     onClick={() => handleEditPlan(plan)}
                   >
                     <FaEdit />
                   </button>
-                  <button 
+                  <button
                     className="btn-secondary"
-                    onClick={() => {
-                      if (window.confirm('Delete this pricing plan?')) {
-                        setPricingPlans(pricingPlans.filter(p => p.id !== plan.id));
-                      }
-                    }}
+                    onClick={() => handleDeletePlan(plan.id)}
                     style={{ background: '#f44336', color: 'white' }}
                   >
                     <FaTrash />
@@ -546,14 +516,14 @@ const ProviderPricing = () => {
                 <div className="table-cell">
                   <strong>{discount.name}</strong>
                   <div style={{ fontSize: '0.8rem', color: '#666' }}>
-                    Min: ₦{discount.minAmount.toLocaleString()}
+                    Min: ₦{discount.min_amount?.toLocaleString()}
                   </div>
                 </div>
-                
+
                 <div className="table-cell">
                   <div className="discount-code">
                     <code>{discount.code}</code>
-                    <button 
+                    <button
                       className="copy-btn"
                       onClick={() => handleCopyCode(discount.code)}
                       title="Copy code"
@@ -562,7 +532,7 @@ const ProviderPricing = () => {
                     </button>
                   </div>
                 </div>
-                
+
                 <div className="table-cell">
                   <div style={{ fontWeight: '600' }}>
                     {discount.type === 'percentage' ? `${discount.value}%` : `₦${discount.value.toLocaleString()}`}
@@ -571,27 +541,27 @@ const ProviderPricing = () => {
                     {discount.type === 'percentage' ? 'Percentage' : 'Fixed Amount'}
                   </div>
                 </div>
-                
+
                 <div className="table-cell">
                   <div style={{ marginBottom: '0.3rem' }}>
-                    {discount.used} / {discount.maxUses}
+                    {discount.used} / {discount.max_uses}
                   </div>
                   <div className="usage-bar">
-                    <div 
+                    <div
                       className="usage-fill"
-                      style={{ 
-                        width: `${calculateUsage(discount.used, discount.maxUses)}%`,
-                        background: calculateUsage(discount.used, discount.maxUses) > 80 ? '#f44336' : 
-                                   calculateUsage(discount.used, discount.maxUses) > 50 ? '#ff9800' : '#4caf50'
+                      style={{
+                        width: `${calculateUsage(discount.used, discount.max_uses)}%`,
+                        background: calculateUsage(discount.used, discount.max_uses) > 80 ? '#f44336' :
+                                    calculateUsage(discount.used, discount.max_uses) > 50 ? '#ff9800' : '#4caf50'
                       }}
                     />
                   </div>
                 </div>
-                
+
                 <div className="table-cell">
-                  {new Date(discount.validUntil) > new Date() ? (
+                  {discount.valid_until && new Date(discount.valid_until) > new Date() ? (
                     <span style={{ color: '#4caf50', fontWeight: '600' }}>
-                      {new Date(discount.validUntil).toLocaleDateString()}
+                      {new Date(discount.valid_until).toLocaleDateString()}
                     </span>
                   ) : (
                     <span style={{ color: '#f44336', fontWeight: '600' }}>
@@ -599,31 +569,27 @@ const ProviderPricing = () => {
                     </span>
                   )}
                 </div>
-                
+
                 <div className="table-cell">
-                  <button 
+                  <button
                     className={`status-toggle ${discount.active ? 'active' : 'inactive'}`}
                     onClick={() => handleToggleDiscountStatus(discount.id)}
                   >
                     {discount.active ? 'Active' : 'Inactive'}
                   </button>
                 </div>
-                
+
                 <div className="table-cell">
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button 
+                    <button
                       className="btn-secondary"
                       onClick={() => handleEditDiscount(discount)}
                     >
                       <FaEdit />
                     </button>
-                    <button 
+                    <button
                       className="btn-secondary"
-                      onClick={() => {
-                        if (window.confirm('Delete this discount?')) {
-                          setDiscounts(discounts.filter(d => d.id !== discount.id));
-                        }
-                      }}
+                      onClick={() => handleDeleteDiscount(discount.id)}
                       style={{ background: '#f44336', color: 'white' }}
                     >
                       <FaTrash />
@@ -917,265 +883,6 @@ const ProviderPricing = () => {
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .pricing-plans-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-          gap: 1.5rem;
-        }
-        
-        .pricing-plan {
-          background: white;
-          border: 2px solid #e0e0e0;
-          border-radius: 12px;
-          padding: 1.5rem;
-          position: relative;
-          transition: all 0.3s ease;
-          display: flex;
-          flex-direction: column;
-        }
-        
-        .pricing-plan:hover {
-          border-color: #1a237e;
-          box-shadow: 0 8px 15px rgba(26, 35, 126, 0.1);
-        }
-        
-        .pricing-plan.popular {
-          border-color: #ff9800;
-          background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
-        }
-        
-        .popular-badge {
-          position: absolute;
-          top: -12px;
-          right: 1.5rem;
-          background: linear-gradient(135deg, #ff9800 0%, #ff5722 100%);
-          color: white;
-          padding: 0.5rem 1rem;
-          border-radius: 20px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .plan-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 1.5rem;
-        }
-        
-        .plan-name {
-          margin: 0 0 0.5rem 0;
-          font-size: 1.3rem;
-          font-weight: 700;
-          color: #1a237e;
-        }
-        
-        .plan-description {
-          margin: 0;
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .plan-price {
-          font-size: 1.8rem;
-          font-weight: 700;
-          color: #1a237e;
-          line-height: 1;
-        }
-        
-        .plan-unit {
-          font-size: 1rem;
-          color: #666;
-          font-weight: 500;
-        }
-        
-        .plan-type {
-          font-size: 0.8rem;
-          color: #666;
-          text-transform: capitalize;
-          margin-top: 0.3rem;
-        }
-        
-        .plan-details {
-          display: flex;
-          gap: 1rem;
-          margin-bottom: 1.5rem;
-          padding: 1rem;
-          background: #f8f9fa;
-          border-radius: 8px;
-          flex-wrap: wrap;
-        }
-        
-        .detail-item {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 0.9rem;
-          color: #666;
-        }
-        
-        .plan-features {
-          flex: 1;
-          margin-bottom: 1.5rem;
-        }
-        
-        .plan-features h5 {
-          margin: 0 0 0.5rem 0;
-          color: #333;
-        }
-        
-        .plan-features ul {
-          margin: 0;
-          padding-left: 1.2rem;
-        }
-        
-        .plan-features li {
-          margin-bottom: 0.5rem;
-          display: flex;
-          align-items: flex-start;
-          gap: 0.5rem;
-          color: #666;
-          font-size: 0.9rem;
-        }
-        
-        .plan-features li span {
-          flex: 1;
-        }
-        
-        .plan-actions {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-top: auto;
-        }
-        
-        .status-toggle {
-          padding: 0.5rem 1rem;
-          border-radius: 20px;
-          border: none;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .status-toggle.active {
-          background: #e8f5e9;
-          color: #2e7d32;
-        }
-        
-        .status-toggle.inactive {
-          background: #f5f5f5;
-          color: #757575;
-        }
-        
-        .status-toggle:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        /* Discounts Table */
-        .discounts-table {
-          width: 100%;
-        }
-        
-        .table-header {
-          background: #f8f9fa;
-          font-weight: 600;
-          color: #333;
-          border-bottom: 2px solid #e0e0e0;
-        }
-        
-        .table-body .table-row {
-          border-bottom: 1px solid #e0e0e0;
-          transition: all 0.3s ease;
-        }
-        
-        .table-body .table-row:hover {
-          background: #f8f9fa;
-        }
-        
-        .table-row {
-          display: flex;
-          padding: 1rem;
-        }
-        
-        .table-cell {
-          padding: 0.5rem;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-        }
-        
-        .discount-code {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        
-        .discount-code code {
-          background: #f0f0f0;
-          padding: 0.3rem 0.6rem;
-          border-radius: 4px;
-          font-family: monospace;
-          font-weight: 600;
-          color: #1a237e;
-        }
-        
-        .copy-btn {
-          background: none;
-          border: none;
-          color: #666;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .copy-btn:hover {
-          color: #1a237e;
-        }
-        
-        .usage-bar {
-          height: 6px;
-          background: #e0e0e0;
-          border-radius: 3px;
-          overflow: hidden;
-        }
-        
-        .usage-fill {
-          height: 100%;
-          transition: width 0.3s ease;
-        }
-        
-        @media (max-width: 768px) {
-          .pricing-plans-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .table-row {
-            flex-direction: column;
-            gap: 1rem;
-          }
-          
-          .table-cell {
-            width: 100% !important;
-          }
-          
-          .plan-header {
-            flex-direction: column;
-            gap: 1rem;
-          }
-          
-          .plan-actions {
-            flex-direction: column;
-            gap: 1rem;
-          }
-        }
-      `}</style>
     </ProviderPageTemplate>
   );
 };

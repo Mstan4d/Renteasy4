@@ -7,6 +7,7 @@ import Signup from '../modules/auth/pages/Signup';
 import PublicLayout from '../shared/components/layout/PublicLayout';
 import ForceSingleLayout from '../components/ForceSingleLayout';
 import AuthCallback from '../modules/auth/pages/AuthCallback';
+import ErrorBoundary from '../shared/components/ErrorBoundary';
 
 // Loading Components
 const DashboardLoading = () => (
@@ -69,6 +70,9 @@ const AdminTransactions = lazy(() => import('../modules/admin/pages/AdminTransac
 const AdminRevenue = lazy(() => import('../modules/admin/pages/AdminRevenue'));
 const AdminSettings = lazy(() => import('../modules/admin/pages/AdminSettings'));
 const AdminProviderOverview = lazy(() => import('../modules/admin/pages/AdminProviderOverview'));
+const AdminServiceCategories = lazy(() => import('../modules/admin/pages/AdminServiceCategories'));
+const AdminReferrals = lazy(() => import('../modules/admin/pages/AdminReferrals'));
+
 
 // Manager Dashboard Components
 const ManagerDashboard = lazy(() => import('../modules/manager/pages/ManagerDashboard'));
@@ -261,6 +265,8 @@ const AppRoutes = () => {
         <Route path="revenue" element={<AdminRevenue />} />
         <Route path="settings" element={<AdminSettings />} />
         <Route path="provider-overview" element={<AdminProviderOverview />} />
+        <Route path="categories" element={<AdminServiceCategories />} />
+        <Route path="referrals" element={<AdminReferrals />} />
       </Route>
 
       {/* ========== TENANT ROUTES ========== */}
@@ -509,7 +515,9 @@ const AppRoutes = () => {
         path="/marketplace" 
         element={
           <Suspense fallback={<DashboardLoading />}>
+             <ErrorBoundary>
             <MarketplacePage />
+             </ErrorBoundary>
           </Suspense>
         } 
       />

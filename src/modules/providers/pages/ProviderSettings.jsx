@@ -1,31 +1,40 @@
 // src/modules/providers/pages/ProviderSettings.jsx
-import React, { useState } from 'react';
-import { 
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import {
   Save, Bell, Shield, User, Globe,
   Moon, Eye, EyeOff, Smartphone,
   MapPin, Calendar, CreditCard, Key,
   Trash2, LogOut, CheckCircle, AlertCircle
 } from 'lucide-react';
+import './ProviderSettings.css';
 
 const ProviderSettings = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Profile data
   const [profileData, setProfileData] = useState({
-    fullName: 'John Doe',
-    email: 'john@example.com',
-    phone: '+2348012345678',
-    businessName: 'CleanPro Services',
-    businessType: 'cleaning',
-    description: 'Professional cleaning services with 5 years experience',
-    website: 'https://cleanpro.com',
-    location: 'Lagos, Nigeria',
-    serviceAreas: ['Lagos Island', 'Victoria Island', 'Ikoyi']
+    fullName: '',
+    email: '',
+    phone: '',
+    businessName: '',
+    businessType: '',
+    description: '',
+    website: '',
+    location: '',
+    serviceAreas: []
   });
 
+  // Notification settings
   const [notificationSettings, setNotificationSettings] = useState({
     emailNotifications: true,
     pushNotifications: true,
@@ -35,11 +44,17 @@ const ProviderSettings = () => {
     weeklyReports: true
   });
 
+  // Security data (password change)
   const [securityData, setSecurityData] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
     twoFactorEnabled: false
+  });
+
+  // Appearance
+  const [appearance, setAppearance] = useState({
+    theme: 'light'
   });
 
   const tabs = [
@@ -51,290 +66,101 @@ const ProviderSettings = () => {
     { id: 'appearance', label: 'Appearance', icon: <Moon size={18} /> }
   ];
 
-  const styles = {
-    container: {
-      maxWidth: '1000px',
-      margin: '0 auto',
-      padding: '1rem',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    },
-    header: {
-      marginBottom: '2rem'
-    },
-    title: {
-      fontSize: '2rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    subtitle: {
-      color: '#6b7280',
-      fontSize: '1rem'
-    },
-    layout: {
-      display: 'grid',
-      gridTemplateColumns: '1fr',
-      gap: '2rem'
-    },
-    '@media (min-width: 768px)': {
-      layout: {
-        gridTemplateColumns: '250px 1fr'
+  // Fetch user profile data on mount
+  useEffect(() => {
+    if (user?.id) {
+      fetchProfile();
+    } else {
+      navigate('/login');
+    }
+  }, [user]);
+
+  const fetchProfile = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setProfileData({
+          fullName: data.full_name || '',
+          email: data.email || user.email || '',
+          phone: data.phone || '',
+          businessName: data.business_name || '',
+          businessType: data.business_type || '',
+          description: data.description || '',
+          website: data.website || '',
+          location: data.location || '',
+          serviceAreas: data.service_areas || []
+        });
+        setNotificationSettings(data.notification_settings || notificationSettings);
+        setAppearance(data.appearance_settings || { theme: 'light' });
+        // Two-factor status might come from auth meta, but we'll keep it local for now
+        setSecurityData(prev => ({ ...prev, twoFactorEnabled: false })); // placeholder
       }
-    },
-    sidebar: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '1px solid #e5e7eb',
-      padding: '1rem',
-      height: 'fit-content'
-    },
-    tabList: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '0.5rem'
-    },
-    tab: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      padding: '0.75rem 1rem',
-      border: 'none',
-      background: 'transparent',
-      color: '#6b7280',
-      fontWeight: '500',
-      cursor: 'pointer',
-      borderRadius: '0.5rem',
-      textAlign: 'left',
-      transition: 'all 0.2s'
-    },
-    activeTab: {
-      background: '#eff6ff',
-      color: '#2563eb'
-    },
-    content: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '1px solid #e5e7eb',
-      padding: '2rem'
-    },
-    contentHeader: {
-      marginBottom: '2rem',
-      paddingBottom: '1rem',
-      borderBottom: '1px solid #e5e7eb'
-    },
-    contentTitle: {
-      fontSize: '1.5rem',
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    contentDescription: {
-      color: '#6b7280',
-      fontSize: '0.875rem'
-    },
-    formGrid: {
-      display: 'grid',
-      gridTemplateColumns: '1fr',
-      gap: '1.5rem'
-    },
-    '@media (min-width: 640px)': {
-      formGrid: {
-        gridTemplateColumns: 'repeat(2, 1fr)'
-      }
-    },
-    formGroup: {
-      marginBottom: '1rem'
-    },
-    formLabel: {
-      display: 'block',
-      fontSize: '0.875rem',
-      fontWeight: '500',
-      color: '#374151',
-      marginBottom: '0.5rem'
-    },
-    formInput: {
-      width: '100%',
-      padding: '0.75rem 1rem',
-      border: '1px solid #d1d5db',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      color: '#374151',
-      transition: 'border-color 0.2s'
-    },
-    formTextarea: {
-      width: '100%',
-      padding: '0.75rem 1rem',
-      border: '1px solid #d1d5db',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      color: '#374151',
-      minHeight: '100px',
-      resize: 'vertical'
-    },
-    formSelect: {
-      width: '100%',
-      padding: '0.75rem 1rem',
-      border: '1px solid #d1d5db',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      color: '#374151',
-      background: 'white'
-    },
-    passwordInput: {
-      position: 'relative'
-    },
-    passwordToggle: {
-      position: 'absolute',
-      right: '1rem',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      background: 'none',
-      border: 'none',
-      color: '#9ca3af',
-      cursor: 'pointer'
-    },
-    checkboxGroup: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      marginBottom: '1rem'
-    },
-    checkbox: {
-      width: '1.25rem',
-      height: '1.25rem',
-      borderRadius: '0.25rem',
-      border: '2px solid #d1d5db',
-      cursor: 'pointer'
-    },
-    checkboxLabel: {
-      fontSize: '0.875rem',
-      color: '#374151',
-      cursor: 'pointer'
-    },
-    serviceAreas: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: '0.5rem',
-      marginTop: '0.5rem'
-    },
-    serviceTag: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      padding: '0.375rem 0.75rem',
-      background: '#f3f4f6',
-      color: '#374151',
-      borderRadius: '9999px',
-      fontSize: '0.875rem'
-    },
-    removeTag: {
-      background: 'none',
-      border: 'none',
-      color: '#9ca3af',
-      cursor: 'pointer',
-      padding: '0'
-    },
-    addTagInput: {
-      display: 'flex',
-      gap: '0.5rem',
-      marginTop: '0.5rem'
-    },
-    tagInput: {
-      flex: 1,
-      padding: '0.5rem 0.75rem',
-      border: '1px solid #d1d5db',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem'
-    },
-    addTagButton: {
-      padding: '0.5rem 1rem',
-      background: '#2563eb',
-      color: 'white',
-      border: 'none',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      cursor: 'pointer'
-    },
-    dangerZone: {
-      marginTop: '3rem',
-      padding: '1.5rem',
-      background: '#fef2f2',
-      border: '1px solid #fecaca',
-      borderRadius: '0.75rem'
-    },
-    dangerTitle: {
-      fontSize: '1.125rem',
-      fontWeight: '600',
-      color: '#dc2626',
-      marginBottom: '1rem'
-    },
-    dangerButton: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      padding: '0.75rem 1.5rem',
-      background: '#dc2626',
-      color: 'white',
-      border: 'none',
-      borderRadius: '0.5rem',
-      fontSize: '0.875rem',
-      fontWeight: '500',
-      cursor: 'pointer',
-      transition: 'background-color 0.2s'
-    },
-    saveButton: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      padding: '0.75rem 2rem',
-      background: '#2563eb',
-      color: 'white',
-      border: 'none',
-      borderRadius: '0.5rem',
-      fontSize: '1rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      marginTop: '2rem'
-    },
-    appearanceOptions: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '1rem'
-    },
-    themeOption: {
-      padding: '1.5rem',
-      border: '2px solid #e5e7eb',
-      borderRadius: '0.75rem',
-      cursor: 'pointer',
-      textAlign: 'center',
-      transition: 'all 0.3s'
-    },
-    selectedTheme: {
-      borderColor: '#2563eb',
-      background: '#eff6ff'
-    },
-    themeIcon: {
-      fontSize: '2rem',
-      marginBottom: '0.5rem'
-    },
-    themeName: {
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '0.25rem'
-    },
-    themeDescription: {
-      fontSize: '0.875rem',
-      color: '#6b7280'
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
-    // Simulate API call
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      const updates = {
+        full_name: profileData.fullName,
+        phone: profileData.phone,
+        business_name: profileData.businessName,
+        business_type: profileData.businessType,
+        description: profileData.description,
+        website: profileData.website,
+        location: profileData.location,
+        service_areas: profileData.serviceAreas,
+        notification_settings: notificationSettings,
+        appearance_settings: appearance,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Handle password change if fields are filled
+      if (securityData.currentPassword && securityData.newPassword && securityData.confirmPassword) {
+        if (securityData.newPassword !== securityData.confirmPassword) {
+          alert('New passwords do not match');
+          return;
+        }
+        // Update password via Supabase Auth
+        const { error: authError } = await supabase.auth.updateUser({
+          password: securityData.newPassword
+        });
+        if (authError) throw authError;
+        // Clear password fields
+        setSecurityData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+          twoFactorEnabled: securityData.twoFactorEnabled
+        });
+      }
+
       alert('Settings saved successfully!');
-    }, 1000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('Failed to save settings: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAddServiceArea = (area) => {
@@ -353,66 +179,81 @@ const ProviderSettings = () => {
     });
   };
 
+  const handleLogout = async () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      await logout();
+      navigate('/login');
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+      // Implement account deletion (requires admin or separate flow)
+      alert('Account deletion is not available in demo. Please contact support.');
+    }
+  };
+
   const renderContent = () => {
-    switch(activeTab) {
+    switch (activeTab) {
       case 'profile':
         return (
           <div>
-            <div style={styles.contentHeader}>
-              <h2 style={styles.contentTitle}>Profile Settings</h2>
-              <p style={styles.contentDescription}>
+            <div className="content-header">
+              <h2 className="content-title">Profile Settings</h2>
+              <p className="content-description">
                 Manage your personal and business information
               </p>
             </div>
 
-            <div style={styles.formGrid}>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Full Name *</label>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Full Name *</label>
                 <input
                   type="text"
                   value={profileData.fullName}
-                  onChange={(e) => setProfileData({...profileData, fullName: e.target.value})}
-                  style={styles.formInput}
+                  onChange={(e) => setProfileData({ ...profileData, fullName: e.target.value })}
+                  className="form-input"
                 />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Email Address *</label>
+              <div className="form-group">
+                <label className="form-label">Email Address *</label>
                 <input
                   type="email"
                   value={profileData.email}
-                  onChange={(e) => setProfileData({...profileData, email: e.target.value})}
-                  style={styles.formInput}
+                  disabled
+                  className="form-input"
                 />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Phone Number *</label>
+              <div className="form-group">
+                <label className="form-label">Phone Number *</label>
                 <input
                   type="tel"
                   value={profileData.phone}
-                  onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
-                  style={styles.formInput}
+                  onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                  className="form-input"
                 />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Business Name *</label>
+              <div className="form-group">
+                <label className="form-label">Business Name *</label>
                 <input
                   type="text"
                   value={profileData.businessName}
-                  onChange={(e) => setProfileData({...profileData, businessName: e.target.value})}
-                  style={styles.formInput}
+                  onChange={(e) => setProfileData({ ...profileData, businessName: e.target.value })}
+                  className="form-input"
                 />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Business Type</label>
+              <div className="form-group">
+                <label className="form-label">Business Type</label>
                 <select
                   value={profileData.businessType}
-                  onChange={(e) => setProfileData({...profileData, businessType: e.target.value})}
-                  style={styles.formSelect}
+                  onChange={(e) => setProfileData({ ...profileData, businessType: e.target.value })}
+                  className="form-select"
                 >
+                  <option value="">Select type</option>
                   <option value="cleaning">Cleaning Services</option>
                   <option value="painting">Painting</option>
                   <option value="plumbing">Plumbing</option>
@@ -421,46 +262,47 @@ const ProviderSettings = () => {
                 </select>
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Website</label>
+              <div className="form-group">
+                <label className="form-label">Website</label>
                 <input
                   type="url"
                   value={profileData.website}
-                  onChange={(e) => setProfileData({...profileData, website: e.target.value})}
+                  onChange={(e) => setProfileData({ ...profileData, website: e.target.value })}
                   placeholder="https://example.com"
-                  style={styles.formInput}
+                  className="form-input"
                 />
               </div>
 
-              <div style={{...styles.formGroup, gridColumn: '1 / -1'}}>
-                <label style={styles.formLabel}>Business Description</label>
+              <div className="form-group full-width">
+                <label className="form-label">Business Description</label>
                 <textarea
                   value={profileData.description}
-                  onChange={(e) => setProfileData({...profileData, description: e.target.value})}
-                  style={styles.formTextarea}
+                  onChange={(e) => setProfileData({ ...profileData, description: e.target.value })}
+                  className="form-textarea"
+                  rows="4"
                 />
               </div>
 
-              <div style={{...styles.formGroup, gridColumn: '1 / -1'}}>
-                <label style={styles.formLabel}>Service Areas</label>
-                <div style={styles.serviceAreas}>
+              <div className="form-group full-width">
+                <label className="form-label">Service Areas</label>
+                <div className="service-areas">
                   {profileData.serviceAreas.map((area, index) => (
-                    <span key={index} style={styles.serviceTag}>
+                    <span key={index} className="service-tag">
                       {area}
                       <button
                         onClick={() => handleRemoveServiceArea(area)}
-                        style={styles.removeTag}
+                        className="remove-tag"
                       >
                         ×
                       </button>
                     </span>
                   ))}
                 </div>
-                <div style={styles.addTagInput}>
+                <div className="add-tag-input">
                   <input
                     type="text"
                     placeholder="Add new service area"
-                    style={styles.tagInput}
+                    className="tag-input"
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
                         handleAddServiceArea(e.target.value);
@@ -474,7 +316,7 @@ const ProviderSettings = () => {
                       handleAddServiceArea(input.value);
                       input.value = '';
                     }}
-                    style={styles.addTagButton}
+                    className="add-tag-button"
                   >
                     Add
                   </button>
@@ -487,28 +329,30 @@ const ProviderSettings = () => {
       case 'notifications':
         return (
           <div>
-            <div style={styles.contentHeader}>
-              <h2 style={styles.contentTitle}>Notification Settings</h2>
-              <p style={styles.contentDescription}>
+            <div className="content-header">
+              <h2 className="content-title">Notification Settings</h2>
+              <p className="content-description">
                 Choose what notifications you want to receive
               </p>
             </div>
 
-            <div style={styles.formGrid}>
+            <div className="form-grid">
               {Object.entries(notificationSettings).map(([key, value]) => (
-                <div key={key} style={styles.checkboxGroup}>
+                <div key={key} className="checkbox-group">
                   <input
                     type="checkbox"
                     id={key}
                     checked={value}
-                    onChange={(e) => setNotificationSettings({
-                      ...notificationSettings,
-                      [key]: e.target.checked
-                    })}
-                    style={styles.checkbox}
+                    onChange={(e) =>
+                      setNotificationSettings({
+                        ...notificationSettings,
+                        [key]: e.target.checked
+                      })
+                    }
+                    className="checkbox"
                   />
-                  <label htmlFor={key} style={styles.checkboxLabel}>
-                    {key.split(/(?=[A-Z])/).join(' ')}
+                  <label htmlFor={key} className="checkbox-label">
+                    {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                   </label>
                 </div>
               ))}
@@ -519,97 +363,93 @@ const ProviderSettings = () => {
       case 'security':
         return (
           <div>
-            <div style={styles.contentHeader}>
-              <h2 style={styles.contentTitle}>Security Settings</h2>
-              <p style={styles.contentDescription}>
+            <div className="content-header">
+              <h2 className="content-title">Security Settings</h2>
+              <p className="content-description">
                 Manage your password and security preferences
               </p>
             </div>
 
-            <div style={styles.formGrid}>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Current Password</label>
-                <div style={styles.passwordInput}>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Current Password</label>
+                <div className="password-input">
                   <input
                     type={showOldPassword ? 'text' : 'password'}
                     value={securityData.currentPassword}
-                    onChange={(e) => setSecurityData({
-                      ...securityData,
-                      currentPassword: e.target.value
-                    })}
-                    style={styles.formInput}
+                    onChange={(e) =>
+                      setSecurityData({ ...securityData, currentPassword: e.target.value })
+                    }
+                    className="form-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowOldPassword(!showOldPassword)}
-                    style={styles.passwordToggle}
+                    className="password-toggle"
                   >
                     {showOldPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>New Password</label>
-                <div style={styles.passwordInput}>
+              <div className="form-group">
+                <label className="form-label">New Password</label>
+                <div className="password-input">
                   <input
                     type={showNewPassword ? 'text' : 'password'}
                     value={securityData.newPassword}
-                    onChange={(e) => setSecurityData({
-                      ...securityData,
-                      newPassword: e.target.value
-                    })}
-                    style={styles.formInput}
+                    onChange={(e) =>
+                      setSecurityData({ ...securityData, newPassword: e.target.value })
+                    }
+                    className="form-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    style={styles.passwordToggle}
+                    className="password-toggle"
                   >
                     {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Confirm New Password</label>
-                <div style={styles.passwordInput}>
+              <div className="form-group">
+                <label className="form-label">Confirm New Password</label>
+                <div className="password-input">
                   <input
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={securityData.confirmPassword}
-                    onChange={(e) => setSecurityData({
-                      ...securityData,
-                      confirmPassword: e.target.value
-                    })}
-                    style={styles.formInput}
+                    onChange={(e) =>
+                      setSecurityData({ ...securityData, confirmPassword: e.target.value })
+                    }
+                    className="form-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    style={styles.passwordToggle}
+                    className="password-toggle"
                   >
                     {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>
 
-              <div style={{...styles.formGroup, gridColumn: '1 / -1'}}>
-                <div style={styles.checkboxGroup}>
+              <div className="form-group full-width">
+                <div className="checkbox-group">
                   <input
                     type="checkbox"
                     id="twoFactor"
                     checked={securityData.twoFactorEnabled}
-                    onChange={(e) => setSecurityData({
-                      ...securityData,
-                      twoFactorEnabled: e.target.checked
-                    })}
-                    style={styles.checkbox}
+                    onChange={(e) =>
+                      setSecurityData({ ...securityData, twoFactorEnabled: e.target.checked })
+                    }
+                    className="checkbox"
                   />
-                  <label htmlFor="twoFactor" style={styles.checkboxLabel}>
+                  <label htmlFor="twoFactor" className="checkbox-label">
                     Enable Two-Factor Authentication
                   </label>
                 </div>
-                <p style={{fontSize: '0.875rem', color: '#6b7280', marginTop: '0.5rem'}}>
+                <p className="help-text">
                   Add an extra layer of security to your account
                 </p>
               </div>
@@ -620,45 +460,27 @@ const ProviderSettings = () => {
       case 'appearance':
         return (
           <div>
-            <div style={styles.contentHeader}>
-              <h2 style={styles.contentTitle}>Appearance</h2>
-              <p style={styles.contentDescription}>
+            <div className="content-header">
+              <h2 className="content-title">Appearance</h2>
+              <p className="content-description">
                 Customize how RentEasy looks to you
               </p>
             </div>
 
-            <div style={styles.appearanceOptions}>
+            <div className="appearance-options">
               {[
-                {
-                  id: 'light',
-                  name: 'Light Mode',
-                  description: 'Default light theme',
-                  icon: '☀️'
-                },
-                {
-                  id: 'dark',
-                  name: 'Dark Mode',
-                  description: 'Dark theme for low light',
-                  icon: '🌙'
-                },
-                {
-                  id: 'auto',
-                  name: 'Auto',
-                  description: 'Follow system preference',
-                  icon: '⚙️'
-                }
+                { id: 'light', name: 'Light Mode', description: 'Default light theme', icon: '☀️' },
+                { id: 'dark', name: 'Dark Mode', description: 'Dark theme for low light', icon: '🌙' },
+                { id: 'auto', name: 'Auto', description: 'Follow system preference', icon: '⚙️' }
               ].map((theme) => (
                 <div
                   key={theme.id}
-                  style={{
-                    ...styles.themeOption,
-                    ...(theme.id === 'light' ? styles.selectedTheme : {})
-                  }}
-                  onClick={() => alert(`Switched to ${theme.name}`)}
+                  className={`theme-option ${appearance.theme === theme.id ? 'selected' : ''}`}
+                  onClick={() => setAppearance({ ...appearance, theme: theme.id })}
                 >
-                  <div style={styles.themeIcon}>{theme.icon}</div>
-                  <div style={styles.themeName}>{theme.name}</div>
-                  <div style={styles.themeDescription}>{theme.description}</div>
+                  <div className="theme-icon">{theme.icon}</div>
+                  <div className="theme-name">{theme.name}</div>
+                  <div className="theme-description">{theme.description}</div>
                 </div>
               ))}
             </div>
@@ -668,9 +490,11 @@ const ProviderSettings = () => {
       default:
         return (
           <div>
-            <div style={styles.contentHeader}>
-              <h2 style={styles.contentTitle}>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2>
-              <p style={styles.contentDescription}>
+            <div className="content-header">
+              <h2 className="content-title">
+                {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+              </h2>
+              <p className="content-description">
                 Settings for this section will be available soon
               </p>
             </div>
@@ -679,27 +503,28 @@ const ProviderSettings = () => {
     }
   };
 
+  if (loading) {
+    return <div className="loading">Loading settings...</div>;
+  }
+
   return (
-    <div style={styles.container}>
+    <div className="settings-container">
       {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>Settings</h1>
-        <p style={styles.subtitle}>Manage your account preferences and settings</p>
+      <div className="settings-header">
+        <h1 className="settings-title">Settings</h1>
+        <p className="settings-subtitle">Manage your account preferences and settings</p>
       </div>
 
       {/* Layout */}
-      <div style={styles.layout}>
+      <div className="settings-layout">
         {/* Sidebar */}
-        <div style={styles.sidebar}>
-          <div style={styles.tabList}>
+        <div className="settings-sidebar">
+          <div className="tab-list">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                style={{
-                  ...styles.tab,
-                  ...(activeTab === tab.id ? styles.activeTab : {})
-                }}
+                className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
               >
                 {tab.icon}
                 {tab.label}
@@ -709,14 +534,14 @@ const ProviderSettings = () => {
         </div>
 
         {/* Content */}
-        <div style={styles.content}>
+        <div className="settings-content">
           {renderContent()}
 
           {/* Save Button */}
           <button
             onClick={handleSave}
             disabled={saving}
-            style={styles.saveButton}
+            className="save-button"
           >
             <Save size={20} />
             {saving ? 'Saving...' : 'Save Changes'}
@@ -724,31 +549,14 @@ const ProviderSettings = () => {
 
           {/* Danger Zone */}
           {activeTab === 'profile' && (
-            <div style={styles.dangerZone}>
-              <h3 style={styles.dangerTitle}>Danger Zone</h3>
-              <div style={{display: 'flex', gap: '1rem', flexWrap: 'wrap'}}>
-                <button
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-                      alert('Account deletion requested. Our team will contact you shortly.');
-                    }
-                  }}
-                  style={styles.dangerButton}
-                >
+            <div className="danger-zone">
+              <h3 className="danger-title">Danger Zone</h3>
+              <div className="danger-actions">
+                <button onClick={handleDeleteAccount} className="danger-button delete">
                   <Trash2 size={18} />
                   Delete Account
                 </button>
-                <button
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to logout?')) {
-                      alert('Logged out successfully');
-                    }
-                  }}
-                  style={{
-                    ...styles.dangerButton,
-                    background: '#374151'
-                  }}
-                >
+                <button onClick={handleLogout} className="danger-button logout">
                   <LogOut size={18} />
                   Logout
                 </button>

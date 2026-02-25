@@ -1,7 +1,7 @@
 /* src/modules/manager/components/ManagerLayout.css */
 .manager-layout {
     display: flex;
-    min-height: 100vh;
+    min-height: 50vh;
     position: relative;
   }
   
