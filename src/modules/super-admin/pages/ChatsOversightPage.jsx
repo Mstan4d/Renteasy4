@@ -1,82 +1,21 @@
+// src/modules/super-admin/pages/ChatsOversightPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './ChatsOversightPage.css';
 
 const ChatsOversightPage = () => {
-  const [chats, setChats] = useState([
-    {
-      id: 1,
-      participants: ['Tenant: John Doe', 'Landlord: Sarah Smith'],
-      type: 'tenant-landlord',
-      listing: '3-Bedroom Duplex, Lekki',
-      status: 'active',
-      manager: 'Michael Manager',
-      lastMessage: 'When can I come for inspection?',
-      lastActive: '2 mins ago',
-      messages: 45,
-      flagged: false,
-      locked: false
-    },
-    {
-      id: 2,
-      participants: ['Tenant: Jane Wilson', 'Manager: Sarah Manager'],
-      type: 'tenant-manager',
-      listing: '2-Bedroom Apartment, Ikeja',
-      status: 'active',
-      manager: 'Sarah Manager',
-      lastMessage: 'Payment confirmed. Keys will be handed over tomorrow.',
-      lastActive: '5 mins ago',
-      messages: 128,
-      flagged: true,
-      locked: false
-    },
-    {
-      id: 3,
-      participants: ['Tenant: David Brown', 'Landlord: Mike Johnson'],
-      type: 'tenant-landlord',
-      listing: 'Studio Apartment, Yaba',
-      status: 'disputed',
-      manager: 'John Manager',
-      lastMessage: 'The landlord is not responding to maintenance requests.',
-      lastActive: '1 hour ago',
-      messages: 89,
-      flagged: true,
-      locked: true
-    },
-    {
-      id: 4,
-      participants: ['Estate Firm: Prime Properties', 'Tenant: Lisa Taylor'],
-      type: 'estate-firm',
-      listing: 'Office Space, Victoria Island',
-      status: 'completed',
-      manager: 'Not Applicable',
-      lastMessage: 'Lease agreement signed and submitted.',
-      lastActive: '2 days ago',
-      messages: 56,
-      flagged: false,
-      locked: true
-    },
-    {
-      id: 5,
-      participants: ['Tenant: Robert Chen', 'Landlord: Emily Davis'],
-      type: 'tenant-landlord',
-      listing: '4-Bedroom House, GRA',
-      status: 'active',
-      manager: 'David Manager',
-      lastMessage: 'Yes, the house is still available.',
-      lastActive: 'Just now',
-      messages: 12,
-      flagged: false,
-      locked: false
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [auditMode, setAuditMode] = useState(false);
-  const [activeView, setActiveView] = useState('list'); // 'list' or 'live'
+  const [activeView, setActiveView] = useState('list');
+  const [messages, setMessages] = useState([]); // for live view
 
   const chatTypes = {
     'tenant-landlord': 'Tenant ↔ Landlord',
@@ -91,6 +30,84 @@ const ChatsOversightPage = () => {
     '❌ Two managers can NEVER monitor the same chat',
     '⚠️ Super Admin must explicitly force override for special cases'
   ];
+
+  // Fetch chats on mount
+  useEffect(() => {
+    fetchChats();
+  }, []);
+
+  const fetchChats = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('chats')
+        .select(`
+          id,
+          created_at,
+          updated_at,
+          listing_id,
+          participant1_id,
+          participant2_id,
+          monitoring_manager_id,
+          state,
+          chat_type,
+          flagged,
+          locked,
+          listing:listings (id, title, address, state, city),
+          manager:monitoring_manager_id (id, full_name),
+          participant1:participant1_id (id, full_name, role),
+          participant2:participant2_id (id, full_name, role)
+        `)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+
+      // For each chat, get message count and last message
+      const enrichedChats = await Promise.all(
+        data.map(async (chat) => {
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('chat_id', chat.id);
+
+          const { data: lastMsg } = await supabase
+            .from('messages')
+            .select('content, created_at, sender_id')
+            .eq('chat_id', chat.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          // Build participant list
+          const participants = [];
+          if (chat.participant1) participants.push(`${chat.participant1.role}: ${chat.participant1.full_name}`);
+          if (chat.participant2) participants.push(`${chat.participant2.role}: ${chat.participant2.full_name}`);
+
+          return {
+            id: chat.id,
+            participants,
+            type: chat.chat_type,
+            listing: chat.listing?.title || 'Unknown',
+            status: chat.state || 'active',
+            manager: chat.manager?.full_name || 'Not Assigned',
+            lastMessage: lastMsg?.content || '',
+            lastActive: lastMsg ? new Date(lastMsg.created_at).toLocaleString() : new Date(chat.updated_at).toLocaleString(),
+            messages: count || 0,
+            flagged: chat.flagged || false,
+            locked: chat.locked || false,
+            listingId: chat.listing_id,
+            managerId: chat.monitoring_manager_id,
+          };
+        })
+      );
+
+      setChats(enrichedChats);
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusColor = (status) => {
     switch(status) {
@@ -111,40 +128,82 @@ const ChatsOversightPage = () => {
     }
   };
 
-  const handleLockChat = (chatId) => {
-    setChats(chats.map(chat => 
-      chat.id === chatId ? { ...chat, locked: !chat.locked } : chat
-    ));
+  const handleLockChat = async (chatId) => {
+    try {
+      const { error } = await supabase
+        .from('chats')
+        .update({ locked: true })
+        .eq('id', chatId);
+      if (error) throw error;
+      setChats(chats.map(chat => 
+        chat.id === chatId ? { ...chat, locked: true } : chat
+      ));
+    } catch (error) {
+      console.error('Error locking chat:', error);
+      alert('Failed to lock chat.');
+    }
   };
 
-  const handleFlagChat = (chatId) => {
-    setChats(chats.map(chat => 
-      chat.id === chatId ? { ...chat, flagged: !chat.flagged } : chat
-    ));
+  const handleUnlockChat = async (chatId) => {
+    try {
+      const { error } = await supabase
+        .from('chats')
+        .update({ locked: false })
+        .eq('id', chatId);
+      if (error) throw error;
+      setChats(chats.map(chat => 
+        chat.id === chatId ? { ...chat, locked: false } : chat
+      ));
+    } catch (error) {
+      console.error('Error unlocking chat:', error);
+      alert('Failed to unlock chat.');
+    }
   };
 
-  const handleTransferChat = (chatId, newManagerId) => {
-    // In production, this would make an API call
-    alert(`Transferring chat ${chatId} to manager ${newManagerId}`);
-    setShowTransferModal(false);
+  const handleFlagChat = async (chatId, flag) => {
+    try {
+      const { error } = await supabase
+        .from('chats')
+        .update({ flagged: flag })
+        .eq('id', chatId);
+      if (error) throw error;
+      setChats(chats.map(chat => 
+        chat.id === chatId ? { ...chat, flagged: flag } : chat
+      ));
+    } catch (error) {
+      console.error('Error flagging chat:', error);
+      alert('Failed to update flag.');
+    }
   };
 
   const handleJoinChat = (chatId) => {
-    // In production, this would establish WebSocket connection in audit mode
+    // In a real app, you'd open a chat viewer with real-time messages
     setAuditMode(true);
-    setSelectedChat(chats.find(chat => chat.id === chatId));
+    const chat = chats.find(c => c.id === chatId);
+    setSelectedChat(chat);
     setShowJoinModal(false);
-    
-    // Simulate joining chat
-    setTimeout(() => {
-      alert(`Joined chat ${chatId} in audit mode. All messages are being monitored.`);
-    }, 500);
+    // Load messages for that chat
+    fetchMessages(chatId);
+  };
+
+  const fetchMessages = async (chatId) => {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+    if (!error) setMessages(data || []);
   };
 
   const filteredChats = chats.filter(chat => {
     if (filter !== 'all' && chat.status !== filter) return false;
-    if (search && !chat.participants.some(p => p.toLowerCase().includes(search.toLowerCase()))) {
-      if (!chat.listing.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const searchTerm = search.toLowerCase();
+      return (
+        chat.participants.some(p => p.toLowerCase().includes(searchTerm)) ||
+        chat.listing.toLowerCase().includes(searchTerm) ||
+        chat.manager.toLowerCase().includes(searchTerm)
+      );
     }
     return true;
   });
@@ -159,6 +218,8 @@ const ChatsOversightPage = () => {
       locked: chats.filter(c => c.locked).length
     };
   };
+
+  if (loading) return <div className="loading">Loading chats...</div>;
 
   return (
     <div className="chats-oversight">
@@ -323,7 +384,7 @@ const ChatsOversightPage = () => {
                 </td>
                 <td>
                   <span className={`type-badge ${getTypeColor(chat.type)}`}>
-                    {chatTypes[chat.type]}
+                    {chatTypes[chat.type] || chat.type}
                   </span>
                 </td>
                 <td>
@@ -364,14 +425,14 @@ const ChatsOversightPage = () => {
                     </button>
                     <button 
                       className="action-btn lock"
-                      onClick={() => handleLockChat(chat.id)}
+                      onClick={() => chat.locked ? handleUnlockChat(chat.id) : handleLockChat(chat.id)}
                       title={chat.locked ? "Unlock Chat" : "Lock Chat"}
                     >
                       {chat.locked ? '🔓' : '🔒'}
                     </button>
                     <button 
                       className="action-btn flag"
-                      onClick={() => handleFlagChat(chat.id)}
+                      onClick={() => handleFlagChat(chat.id, !chat.flagged)}
                       title={chat.flagged ? "Unflag Chat" : "Flag Chat"}
                     >
                       {chat.flagged ? '🚫' : '🚩'}
@@ -401,7 +462,7 @@ const ChatsOversightPage = () => {
         </table>
       </div>
 
-      {/* Live Monitor View */}
+      {/* Live Monitor View (simplified – you can keep your existing mock UI or fetch messages) */}
       {activeView === 'live' && (
         <div className="live-monitor">
           <div className="monitor-header">
@@ -416,40 +477,38 @@ const ChatsOversightPage = () => {
             <div className="chat-window">
               <div className="chat-header">
                 <div className="chat-info">
-                  <h4>Tenant: Jane Wilson ↔ Manager: Sarah Manager</h4>
-                  <p>Listing: 2-Bedroom Apartment, Ikeja</p>
+                  <h4>{selectedChat ? selectedChat.participants.join(' ↔ ') : 'Select a chat to monitor'}</h4>
+                  <p>{selectedChat?.listing || ''}</p>
                 </div>
                 <div className="chat-status">
                   <span className="status-dot"></span>
-                  <span>LIVE</span>
+                  <span>{selectedChat ? 'LIVE' : 'No chat selected'}</span>
                 </div>
               </div>
               <div className="messages-container">
-                <div className="message incoming">
-                  <div className="message-sender">Tenant</div>
-                  <div className="message-content">
-                    Hello, is the apartment still available?
+                {selectedChat ? (
+                  messages.length > 0 ? (
+                    messages.map((msg, idx) => (
+                      <div key={idx} className={`message ${msg.sender_id === selectedChat.participant1_id ? 'incoming' : 'outgoing'}`}>
+                        <div className="message-sender">{msg.sender_id}</div>
+                        <div className="message-content">{msg.content}</div>
+                        <div className="message-time">{new Date(msg.created_at).toLocaleTimeString()}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <p>No messages yet.</p>
+                  )
+                ) : (
+                  <div className="empty-live">
+                    <p>Click "Join Chat" on any chat to start monitoring.</p>
                   </div>
-                  <div className="message-time">10:30 AM</div>
-                </div>
-                <div className="message outgoing">
-                  <div className="message-sender">Manager</div>
-                  <div className="message-content">
-                    Yes, it's available. When would you like to view it?
+                )}
+                {auditMode && (
+                  <div className="super-admin-note">
+                    <span className="note-icon">👑</span>
+                    <span className="note-text">Super Admin monitoring in audit mode (invisible to participants)</span>
                   </div>
-                  <div className="message-time">10:31 AM</div>
-                </div>
-                <div className="message incoming">
-                  <div className="message-sender">Tenant</div>
-                  <div className="message-content">
-                    Can we schedule for tomorrow afternoon?
-                  </div>
-                  <div className="message-time">10:32 AM</div>
-                </div>
-                <div className="super-admin-note">
-                  <span className="note-icon">👑</span>
-                  <span className="note-text">Super Admin monitoring in audit mode (invisible to participants)</span>
-                </div>
+                )}
               </div>
               <div className="chat-input-container">
                 <input 
@@ -462,44 +521,7 @@ const ChatsOversightPage = () => {
               </div>
             </div>
             <div className="chat-sidebar">
-              <div className="sidebar-section">
-                <h5>Chat Details</h5>
-                <div className="detail-item">
-                  <span>Chat ID:</span>
-                  <span>CHAT-456</span>
-                </div>
-                <div className="detail-item">
-                  <span>Started:</span>
-                  <span>2024-01-15</span>
-                </div>
-                <div className="detail-item">
-                  <span>Messages:</span>
-                  <span>128</span>
-                </div>
-                <div className="detail-item">
-                  <span>Status:</span>
-                  <span className="status-active">Active</span>
-                </div>
-              </div>
-              <div className="sidebar-section">
-                <h5>Quick Actions</h5>
-                <button className="sidebar-btn">
-                  <span className="btn-icon">📁</span>
-                  Export Chat Log
-                </button>
-                <button className="sidebar-btn">
-                  <span className="btn-icon">🔒</span>
-                  Lock This Chat
-                </button>
-                <button className="sidebar-btn">
-                  <span className="btn-icon">🚩</span>
-                  Flag for Review
-                </button>
-                <button className="sidebar-btn">
-                  <span className="btn-icon">📞</span>
-                  Request Call Recording
-                </button>
-              </div>
+              {/* ... keep your existing sidebar or simplify */}
             </div>
           </div>
         </div>
@@ -511,12 +533,7 @@ const ChatsOversightPage = () => {
           <div className="modal">
             <div className="modal-header">
               <h3>Join Chat in Audit Mode</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowJoinModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowJoinModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="join-warning">
@@ -534,34 +551,21 @@ const ChatsOversightPage = () => {
               <div className="audit-options">
                 <label className="checkbox-label">
                   <input type="checkbox" defaultChecked />
-                  <span className="checkmark"></span>
                   <span>Enable message recording</span>
                 </label>
                 <label className="checkbox-label">
                   <input type="checkbox" defaultChecked />
-                  <span className="checkmark"></span>
                   <span>Get notifications for flagged messages</span>
                 </label>
                 <label className="checkbox-label">
                   <input type="checkbox" />
-                  <span className="checkmark"></span>
                   <span>Intervene if rules are violated</span>
                 </label>
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowJoinModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn-primary"
-                onClick={() => handleJoinChat(selectedChat.id)}
-              >
-                Join Invisibly
-              </button>
+              <button className="btn-secondary" onClick={() => setShowJoinModal(false)}>Cancel</button>
+              <button className="btn-primary" onClick={() => handleJoinChat(selectedChat.id)}>Join Invisibly</button>
             </div>
           </div>
         </div>
@@ -573,12 +577,7 @@ const ChatsOversightPage = () => {
           <div className="modal">
             <div className="modal-header">
               <h3>Transfer Chat to Another Manager</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowTransferModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowTransferModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="transfer-warning">
@@ -590,158 +589,19 @@ const ChatsOversightPage = () => {
               </div>
               <div className="form-group">
                 <label>Select New Manager</label>
-                <select className="form-select">
+                <select className="form-select" id="newManager">
                   <option value="">Select a manager...</option>
-                  <option value="1">Michael Manager (Lekki)</option>
-                  <option value="2">Sarah Manager (Ikeja)</option>
-                  <option value="3">John Manager (Victoria Island)</option>
-                  <option value="4">David Manager (Yaba)</option>
+                  {/* You could fetch managers from profiles where role='manager' */}
                 </select>
               </div>
-              <div className="confirmation-check">
-                <label className="checkbox-label">
-                  <input type="checkbox" />
-                  <span className="checkmark"></span>
-                  I confirm this transfer is necessary
-                </label>
-              </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowTransferModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn-primary"
-                onClick={() => handleTransferChat(selectedChat.id, 2)}
-              >
-                Transfer Chat
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Chat Details Modal */}
-      {selectedChat && !showJoinModal && !showTransferModal && (
-        <div className="modal-overlay">
-          <div className="modal large">
-            <div className="modal-header">
-              <h3>Chat Details & Override</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setSelectedChat(null)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="chat-details-grid">
-                <div className="detail-section">
-                  <h4>Chat Information</h4>
-                  <div className="detail-row">
-                    <span className="detail-label">Chat ID:</span>
-                    <span className="detail-value">{selectedChat.id}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Participants:</span>
-                    <span className="detail-value">{selectedChat.participants.join(', ')}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Listing:</span>
-                    <span className="detail-value">{selectedChat.listing}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Manager:</span>
-                    <span className="detail-value">{selectedChat.manager}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Type:</span>
-                    <span className={`type-badge ${getTypeColor(selectedChat.type)}`}>
-                      {chatTypes[selectedChat.type]}
-                    </span>
-                  </div>
-                </div>
-                <div className="detail-section">
-                  <h4>Status & Controls</h4>
-                  <div className="status-controls">
-                    <div className="status-display">
-                      <span className="status-label">Current Status:</span>
-                      <span className={`status-badge ${getStatusColor(selectedChat.status)}`}>
-                        {selectedChat.status}
-                      </span>
-                    </div>
-                    <div className="override-options">
-                      <h5>Override Options:</h5>
-                      <div className="option-buttons">
-                        <button className="option-btn">
-                          Mark as Disputed
-                        </button>
-                        <button className="option-btn">
-                          Mark as Completed
-                        </button>
-                        <button className="option-btn">
-                          Force Unlock
-                        </button>
-                        <button className="option-btn danger">
-                          Delete Chat
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="message-history">
-                <h4>Recent Messages</h4>
-                <div className="messages-list">
-                  <div className="message-item">
-                    <div className="message-header">
-                      <span className="message-sender">Tenant</span>
-                      <span className="message-time">10:30 AM</span>
-                    </div>
-                    <div className="message-content">
-                      Hello, is the apartment still available?
-                    </div>
-                  </div>
-                  <div className="message-item">
-                    <div className="message-header">
-                      <span className="message-sender">Manager</span>
-                      <span className="message-time">10:31 AM</span>
-                    </div>
-                    <div className="message-content">
-                      Yes, it's available. When would you like to view it?
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setSelectedChat(null)}
-              >
-                Close
-              </button>
-              <button 
-                className="btn-primary"
-                onClick={() => {
-                  setSelectedChat(null);
-                  setShowJoinModal(true);
-                }}
-              >
-                Join Chat
-              </button>
-              <button 
-                className="btn-primary danger"
-                onClick={() => {
-                  // Force override action
-                  setSelectedChat(null);
-                }}
-              >
-                Force Override
-              </button>
+              <button className="btn-secondary" onClick={() => setShowTransferModal(false)}>Cancel</button>
+              <button className="btn-primary" onClick={() => {
+                const newManagerId = document.getElementById('newManager').value;
+                alert(`Transfer chat to manager ${newManagerId} – implement via Supabase update`);
+                setShowTransferModal(false);
+              }}>Transfer</button>
             </div>
           </div>
         </div>

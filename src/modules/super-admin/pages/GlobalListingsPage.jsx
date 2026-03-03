@@ -1,85 +1,13 @@
+// src/modules/super-admin/pages/GlobalListingsPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './GlobalListingsPage.css';
 
 const GlobalListingsPage = () => {
-  const [listings, setListings] = useState([
-    {
-      id: 1,
-      title: '3-Bedroom Duplex in Lekki',
-      type: 'landlord',
-      status: 'verified',
-      price: '₦750,000',
-      location: 'Lekki Phase 1, Lagos',
-      postedBy: 'John Doe',
-      postedDate: '2024-01-15',
-      verification: 'verified',
-      manager: 'Michael Manager',
-      commission: 7.5,
-      views: 245,
-      chats: 12
-    },
-    {
-      id: 2,
-      title: '2-Bedroom Apartment',
-      type: 'tenant-outgoing',
-      status: 'unverified',
-      price: '₦350,000',
-      location: 'Ikeja, Lagos',
-      postedBy: 'Jane Smith (Tenant)',
-      postedDate: '2024-01-16',
-      verification: 'pending',
-      manager: 'Not Assigned',
-      commission: 7.5,
-      views: 89,
-      chats: 3
-    },
-    {
-      id: 3,
-      title: 'Office Space in VI',
-      type: 'estate-firm',
-      status: 'suspended',
-      price: '₦1,200,000',
-      location: 'Victoria Island, Lagos',
-      postedBy: 'Prime Estates Ltd',
-      postedDate: '2024-01-10',
-      verification: 'verified',
-      manager: 'Not Applicable',
-      commission: 0,
-      views: 156,
-      chats: 8
-    },
-    {
-      id: 4,
-      title: 'Studio Apartment',
-      type: 'landlord',
-      status: 'rented',
-      price: '₦250,000',
-      location: 'Yaba, Lagos',
-      postedBy: 'David Brown',
-      postedDate: '2024-01-05',
-      verification: 'verified',
-      manager: 'Sarah Manager',
-      commission: 7.5,
-      views: 312,
-      chats: 18
-    },
-    {
-      id: 5,
-      title: '5-Bedroom Mansion',
-      type: 'estate-firm',
-      status: 'live',
-      price: '₦2,500,000',
-      location: 'Banana Island, Lagos',
-      postedBy: 'Elite Properties',
-      postedDate: '2024-01-18',
-      verification: 'verified',
-      manager: 'Not Applicable',
-      commission: 0,
-      views: 189,
-      chats: 5
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedListing, setSelectedListing] = useState(null);
@@ -102,6 +30,164 @@ const GlobalListingsPage = () => {
     { value: 'estate-firm', label: 'Estate Firm' }
   ];
 
+  // Fetch listings on mount
+  useEffect(() => {
+    fetchListings();
+  }, []);
+
+  // Real‑time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('global-listings-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'listings'
+      }, () => {
+        fetchListings();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const fetchListings = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('listings')
+        .select(`
+          *,
+          poster:user_id (id, full_name, email, role),
+          manager:managed_by (id, full_name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform to match component's expected structure
+      const transformed = data.map(item => {
+        // Determine listing type for display
+        let type = 'landlord';
+        if (item.poster_role === 'tenant') type = 'tenant-outgoing';
+        else if (item.poster_role === 'estate-firm') type = 'estate-firm';
+
+        // Status mapping
+        let status = 'unverified';
+        if (item.rejected) status = 'suspended';
+        else if (item.verified && item.status === 'approved') status = 'verified';
+        else if (item.status === 'rented') status = 'rented';
+        else if (item.verified) status = 'verified';
+        else status = 'unverified';
+
+        // For estate firms, commission is 0%
+        const commission = item.poster_role === 'estate-firm' ? 0 : 7.5;
+
+        return {
+          id: item.id,
+          title: item.title,
+          type,
+          status,
+          price: item.price ? `₦${Number(item.price).toLocaleString()}` : 'N/A',
+          location: item.address || `${item.city || ''} ${item.state || ''}`.trim() || 'N/A',
+          postedBy: item.poster?.full_name || 'Unknown',
+          postedDate: new Date(item.created_at).toLocaleDateString(),
+          verification: item.verified ? 'verified' : (item.rejected ? 'rejected' : 'pending'),
+          manager: item.manager?.full_name || (item.poster_role === 'estate-firm' ? 'Not Applicable' : 'Not Assigned'),
+          commission,
+          views: item.views || 0,
+          chats: 0, // We could count from messages table, but keep 0 for now
+          posterRole: item.poster_role,
+          isVerified: item.verified,
+          isRejected: item.rejected,
+          // raw data for details
+          description: item.description,
+          bedrooms: item.bedrooms,
+          bathrooms: item.bathrooms,
+          area: item.area,
+          images: item.images
+        };
+      });
+
+      setListings(transformed);
+    } catch (error) {
+      console.error('Error fetching listings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForceChange = async (listingId, newStatus) => {
+    if (!window.confirm(`Are you sure you want to change status to ${newStatus}?`)) return;
+
+    // Map status to database fields
+    const updates = {};
+    if (newStatus === 'suspended') {
+      updates.rejected = true;
+      updates.verified = false;
+      updates.status = 'rejected';
+    } else if (newStatus === 'verified') {
+      updates.rejected = false;
+      updates.verified = true;
+      updates.status = 'approved';
+    } else if (newStatus === 'live') {
+      updates.rejected = false;
+      updates.verified = true;
+      updates.status = 'approved';
+    } else if (newStatus === 'rented') {
+      updates.status = 'rented';
+      updates.rented_at = new Date().toISOString();
+    } else if (newStatus === 'unverified') {
+      updates.verified = false;
+      updates.rejected = false;
+      updates.status = 'pending';
+    }
+
+    try {
+      const { error } = await supabase
+        .from('listings')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', listingId);
+
+      if (error) throw error;
+      await fetchListings();
+      setShowForceModal(false);
+      alert('Status updated!');
+    } catch (error) {
+      console.error('Error updating status:', error);
+      alert('Failed to update status.');
+    }
+  };
+
+  const handleCommissionFix = async (listingId) => {
+    try {
+      // Commission is not a stored field; it's derived from poster_role.
+      // For estate firms, commission should be 0; for others 7.5.
+      // If we want to enforce, we could update poster_role if wrong, but that's unlikely.
+      // Instead, we'll just update the local state and possibly log.
+      const listing = listings.find(l => l.id === listingId);
+      if (listing.posterRole === 'estate-firm') {
+        // Should be 0%, no action needed
+        alert('Estate firm listings are exempt from commission.');
+        setShowCommissionWarning(false);
+        return;
+      }
+      // For non‑estate firms, we just acknowledge the warning.
+      // In a real scenario, you might adjust a commission column if it existed.
+      alert('Commission set to 7.5% (by rule).');
+      setShowCommissionWarning(false);
+    } catch (error) {
+      console.error('Error fixing commission:', error);
+    }
+  };
+
+  const handleCommissionCheck = (listing) => {
+    if (listing.posterRole !== 'estate-firm' && listing.commission !== 7.5) {
+      setShowCommissionWarning(true);
+      setSelectedListing(listing);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch(status) {
       case 'verified': return 'success';
@@ -122,38 +208,24 @@ const GlobalListingsPage = () => {
     }
   };
 
-  const handleForceChange = (listingId, newStatus) => {
-    if (window.confirm(`Are you sure you want to change status to ${newStatus}?`)) {
-      setListings(listings.map(listing => 
-        listing.id === listingId ? { ...listing, status: newStatus } : listing
-      ));
-      setShowForceModal(false);
-    }
-  };
-
-  const handleCommissionCheck = (listing) => {
-    if (listing.type !== 'estate-firm' && listing.commission !== 7.5) {
-      setShowCommissionWarning(true);
-      setSelectedListing(listing);
-    }
-  };
-
   const filteredListings = listings.filter(listing => {
     if (filter !== 'all' && listing.status !== filter) return false;
     if (search && !listing.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const getStats = () => {
-    return {
-      total: listings.length,
-      live: listings.filter(l => l.status === 'live').length,
-      unverified: listings.filter(l => l.status === 'unverified').length,
-      verified: listings.filter(l => l.status === 'verified').length,
-      rented: listings.filter(l => l.status === 'rented').length,
-      suspended: listings.filter(l => l.status === 'suspended').length
-    };
-  };
+  const getStats = () => ({
+    total: listings.length,
+    live: listings.filter(l => l.status === 'live').length,
+    unverified: listings.filter(l => l.status === 'unverified').length,
+    verified: listings.filter(l => l.status === 'verified').length,
+    rented: listings.filter(l => l.status === 'rented').length,
+    suspended: listings.filter(l => l.status === 'suspended').length
+  });
+
+  if (loading) {
+    return <div className="loading">Loading global listings...</div>;
+  }
 
   return (
     <div className="global-listings">
@@ -164,7 +236,7 @@ const GlobalListingsPage = () => {
           <p className="page-subtitle">Control all listings on RentEasy platform</p>
         </div>
         <div className="header-actions">
-          <button className="export-btn">
+          <button className="export-btn" onClick={() => alert('Export coming soon')}>
             <span className="btn-icon">📊</span>
             Export Data
           </button>
@@ -228,7 +300,7 @@ const GlobalListingsPage = () => {
           </div>
           <div className="filter-group">
             <label>Type Filter</label>
-            <select className="filter-select">
+            <select className="filter-select" onChange={(e) => {}}>
               {typeOptions.map(option => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -265,96 +337,103 @@ const GlobalListingsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredListings.map(listing => (
-                <tr key={listing.id}>
-                  <td>
-                    <div className="listing-details">
-                      <div className="listing-title">{listing.title}</div>
-                      <div className="listing-info">
-                        <span className="info-item">
-                          <span className="info-label">Price:</span> {listing.price}
-                        </span>
-                        <span className="info-item">
-                          <span className="info-label">Location:</span> {listing.location}
-                        </span>
-                        <span className="info-item">
-                          <span className="info-label">Posted by:</span> {listing.postedBy}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`type-badge ${getTypeColor(listing.type)}`}>
-                      {listing.type === 'tenant-outgoing' ? 'Tenant (Outgoing)' : 
-                       listing.type === 'landlord' ? 'Landlord' : 'Estate Firm'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${getStatusColor(listing.status)}`}>
-                      {listing.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="commission-cell" onClick={() => handleCommissionCheck(listing)}>
-                      <span className={`commission-value ${listing.commission !== 7.5 ? 'warning' : ''}`}>
-                        {listing.commission}%
-                      </span>
-                      {listing.type === 'estate-firm' && listing.commission === 0 && (
-                        <span className="commission-note">(exempt)</span>
-                      )}
-                    </div>
-                  </td>
-                  <td>
-                    <span className="manager-name">{listing.manager}</span>
-                  </td>
-                  <td>
-                    <span className={`verification-status ${listing.verification}`}>
-                      {listing.verification}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="action-buttons">
-                      <button 
-                        className="action-btn view"
-                        title="View Details"
-                        onClick={() => setSelectedListing(listing)}
-                      >
-                        👁️
-                      </button>
-                      <button 
-                        className="action-btn edit"
-                        title="Force Change Status"
-                        onClick={() => {
-                          setSelectedListing(listing);
-                          setShowForceModal(true);
-                        }}
-                      >
-                        ⚡
-                      </button>
-                      <button 
-                        className="action-btn chat"
-                        title="Jump into Chat"
-                      >
-                        💬
-                      </button>
-                      <button 
-                        className="action-btn delete"
-                        title="Suspend Listing"
-                        onClick={() => handleForceChange(listing.id, 'suspended')}
-                      >
-                        ⏸️
-                      </button>
-                    </div>
-                  </td>
+              {filteredListings.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="empty-message">No listings found.</td>
                 </tr>
-              ))}
+              ) : (
+                filteredListings.map(listing => (
+                  <tr key={listing.id}>
+                    <td>
+                      <div className="listing-details">
+                        <div className="listing-title">{listing.title}</div>
+                        <div className="listing-info">
+                          <span className="info-item">
+                            <span className="info-label">Price:</span> {listing.price}
+                          </span>
+                          <span className="info-item">
+                            <span className="info-label">Location:</span> {listing.location}
+                          </span>
+                          <span className="info-item">
+                            <span className="info-label">Posted by:</span> {listing.postedBy}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`type-badge ${getTypeColor(listing.type)}`}>
+                        {listing.type === 'tenant-outgoing' ? 'Tenant (Outgoing)' : 
+                         listing.type === 'landlord' ? 'Landlord' : 'Estate Firm'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status-badge ${getStatusColor(listing.status)}`}>
+                        {listing.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="commission-cell" onClick={() => handleCommissionCheck(listing)}>
+                        <span className={`commission-value ${listing.commission !== 7.5 && listing.posterRole !== 'estate-firm' ? 'warning' : ''}`}>
+                          {listing.commission}%
+                        </span>
+                        {listing.type === 'estate-firm' && listing.commission === 0 && (
+                          <span className="commission-note">(exempt)</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="manager-name">{listing.manager}</span>
+                    </td>
+                    <td>
+                      <span className={`verification-status ${listing.verification}`}>
+                        {listing.verification}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="action-buttons">
+                        <button 
+                          className="action-btn view"
+                          title="View Details"
+                          onClick={() => setSelectedListing(listing)}
+                        >
+                          👁️
+                        </button>
+                        <button 
+                          className="action-btn edit"
+                          title="Force Change Status"
+                          onClick={() => {
+                            setSelectedListing(listing);
+                            setShowForceModal(true);
+                          }}
+                        >
+                          ⚡
+                        </button>
+                        <button 
+                          className="action-btn chat"
+                          title="Jump into Chat"
+                          onClick={() => alert('Chat view coming soon')}
+                        >
+                          💬
+                        </button>
+                        <button 
+                          className="action-btn delete"
+                          title="Suspend Listing"
+                          onClick={() => handleForceChange(listing.id, 'suspended')}
+                        >
+                          ⏸️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* Listing Details Modal */}
-      {selectedListing && (
+      {selectedListing && !showForceModal && !showCommissionWarning && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
@@ -424,6 +503,12 @@ const GlobalListingsPage = () => {
                   <label>Active Chats</label>
                   <div>{selectedListing.chats}</div>
                 </div>
+                {selectedListing.description && (
+                  <div className="detail-item full-width">
+                    <label>Description</label>
+                    <div>{selectedListing.description}</div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="modal-footer">
@@ -436,7 +521,7 @@ const GlobalListingsPage = () => {
               <button 
                 className="btn-primary"
                 onClick={() => {
-                  // Jump to chat
+                  alert('Jump to chat – coming soon');
                   setSelectedListing(null);
                 }}
               >
@@ -515,7 +600,7 @@ const GlobalListingsPage = () => {
                   </p>
                   <div className="alert-details">
                     <p>Listing Type: {selectedListing.type}</p>
-                    <p>Expected Commission: 7.5%</p>
+                    <p>Expected Commission: {selectedListing.posterRole === 'estate-firm' ? '0%' : '7.5%'}</p>
                     <p>Current Commission: {selectedListing.commission}%</p>
                   </div>
                 </div>
@@ -530,14 +615,9 @@ const GlobalListingsPage = () => {
               </button>
               <button 
                 className="btn-primary"
-                onClick={() => {
-                  setListings(listings.map(l => 
-                    l.id === selectedListing.id ? { ...l, commission: 7.5 } : l
-                  ));
-                  setShowCommissionWarning(false);
-                }}
+                onClick={() => handleCommissionFix(selectedListing.id)}
               >
-                Force Fix to 7.5%
+                {selectedListing.posterRole === 'estate-firm' ? 'Confirm Exemption' : 'Force Fix to 7.5%'}
               </button>
             </div>
           </div>

@@ -1,95 +1,13 @@
+// src/modules/super-admin/pages/DisputesPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './DisputesPage.css';
 
 const DisputesPage = () => {
-  const [disputes, setDisputes] = useState([
-    {
-      id: 1,
-      type: 'payment',
-      title: 'Commission Dispute',
-      description: 'Manager claims commission was not paid for rental transaction',
-      parties: ['Tenant: John Doe', 'Manager: Michael Manager'],
-      status: 'pending',
-      priority: 'high',
-      listing: '3-Bedroom Duplex, Lekki',
-      amount: 187500,
-      createdDate: '2024-01-15',
-      lastUpdated: '2 hours ago',
-      managerDecision: 'Award commission to manager',
-      adminDecision: 'Pending',
-      evidence: ['chat_logs.pdf', 'payment_receipt.png'],
-      assignedTo: 'Admin: Jane Smith'
-    },
-    {
-      id: 2,
-      type: 'chat',
-      title: 'Contact Information Leak',
-      description: 'Tenant claims landlord shared contact before verification',
-      parties: ['Tenant: Lisa Taylor', 'Landlord: Mike Johnson'],
-      status: 'resolved',
-      priority: 'medium',
-      listing: '2-Bedroom Apartment, Ikeja',
-      amount: 0,
-      createdDate: '2024-01-14',
-      lastUpdated: '1 day ago',
-      managerDecision: 'Warning to landlord',
-      adminDecision: 'Accepted manager decision',
-      evidence: ['chat_screenshots.pdf'],
-      assignedTo: 'Admin: John Doe'
-    },
-    {
-      id: 3,
-      type: 'verification',
-      title: 'False Property Verification',
-      description: 'Tenant claims property does not match listing description',
-      parties: ['Tenant: David Brown', 'Manager: Sarah Manager'],
-      status: 'escalated',
-      priority: 'critical',
-      listing: 'Studio Apartment, Yaba',
-      amount: 0,
-      createdDate: '2024-01-16',
-      lastUpdated: 'Just now',
-      managerDecision: 'Property verification valid',
-      adminDecision: 'Escalated to Super Admin',
-      evidence: ['photos.zip', 'inspection_report.pdf'],
-      assignedTo: 'Super Admin'
-    },
-    {
-      id: 4,
-      type: 'commission',
-      title: 'Wrong Commission Calculation',
-      description: 'Estate firm listing charged 7.5% commission',
-      parties: ['Estate Firm: Prime Properties', 'System'],
-      status: 'pending',
-      priority: 'high',
-      listing: 'Office Space, Victoria Island',
-      amount: 900000,
-      createdDate: '2024-01-13',
-      lastUpdated: '3 hours ago',
-      managerDecision: 'Not applicable',
-      adminDecision: 'Pending',
-      evidence: ['transaction_log.pdf', 'listing_details.pdf'],
-      assignedTo: 'Admin: Mike Johnson'
-    },
-    {
-      id: 5,
-      type: 'fraud',
-      title: 'Fake Payment Confirmation',
-      description: 'Manager confirmed payment that was never made',
-      parties: ['Tenant: Robert Chen', 'Manager: David Manager'],
-      status: 'investigating',
-      priority: 'critical',
-      listing: '4-Bedroom House, GRA',
-      amount: 15000000,
-      createdDate: '2024-01-17',
-      lastUpdated: '30 mins ago',
-      managerDecision: 'N/A',
-      adminDecision: 'Under investigation',
-      evidence: ['bank_statement.pdf', 'chat_history.pdf'],
-      assignedTo: 'Super Admin'
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [disputes, setDisputes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedDispute, setSelectedDispute] = useState(null);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [showFinalModal, setShowFinalModal] = useState(false);
@@ -97,6 +15,108 @@ const DisputesPage = () => {
   const [search, setSearch] = useState('');
   const [newDecision, setNewDecision] = useState('');
 
+  // Fetch disputes on mount
+  useEffect(() => {
+    fetchDisputes();
+  }, []);
+
+  // Real‑time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('disputes-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'disputes'
+      }, () => {
+        fetchDisputes();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const fetchDisputes = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('disputes')
+        .select(`
+          *,
+          listing:listing_id (id, title, address),
+          raiser:raised_by (id, full_name, email),
+          resolver:resolved_by (id, full_name, email),
+          assignee:assigned_to (id, full_name, email)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDisputes(data || []);
+    } catch (error) {
+      console.error('Error fetching disputes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOverrideDecision = async (disputeId, newDecision) => {
+    if (!window.confirm('Are you sure you want to override this decision?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('disputes')
+        .update({
+          admin_decision: newDecision,
+          status: newDecision.toLowerCase().includes('reject') ? 'escalated' : 'resolved',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', disputeId);
+
+      if (error) throw error;
+      await fetchDisputes();
+      setShowOverrideModal(false);
+      setNewDecision('');
+      alert('Decision overridden!');
+    } catch (error) {
+      console.error('Error overriding decision:', error);
+      alert('Failed to override.');
+    }
+  };
+
+  const handleMarkFinal = async (disputeId) => {
+    if (!window.confirm(`Mark dispute #${disputeId.slice(0,8)} as FINAL? This cannot be changed.`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('disputes')
+        .update({
+          status: 'resolved',
+          final_decision: disputes.find(d => d.id === disputeId)?.admin_decision || 'FINAL DECISION',
+          resolved_at: new Date().toISOString(),
+          resolved_by: user?.id
+        })
+        .eq('id', disputeId);
+
+      if (error) throw error;
+      await fetchDisputes();
+      setShowFinalModal(false);
+      alert(`Dispute marked as FINAL.`);
+    } catch (error) {
+      console.error('Error marking final:', error);
+      alert('Failed to mark final.');
+    }
+  };
+
+  // Helper to format parties from chat or stored parties JSON
+  const getPartiesList = (dispute) => {
+    if (dispute.parties && dispute.parties.length) {
+      return dispute.parties.map(p => `${p.role}: ${p.name}`);
+    }
+    // Fallback to raiser only
+    return [dispute.raiser ? `Raised by: ${dispute.raiser.full_name}` : 'Unknown'];
+  };
+
+  // Map types for display (could be stored in a `type` column)
   const disputeTypes = {
     payment: 'Payment Dispute',
     chat: 'Chat Violation',
@@ -122,76 +142,42 @@ const DisputesPage = () => {
     }
   };
 
-  const handleOverrideDecision = (disputeId, newDecision) => {
-    if (window.confirm('Are you sure you want to override this decision?')) {
-      setDisputes(disputes.map(dispute => 
-        dispute.id === disputeId 
-          ? { 
-              ...dispute, 
-              adminDecision: newDecision,
-              status: newDecision.toLowerCase().includes('reject') ? 'escalated' : 'resolved',
-              lastUpdated: 'Just now'
-            }
-          : dispute
-      ));
-      setShowOverrideModal(false);
-      setNewDecision('');
-    }
-  };
-
-  const handleMarkFinal = (disputeId) => {
-    const dispute = disputes.find(d => d.id === disputeId);
-    if (window.confirm(`Mark dispute #${disputeId} as FINAL? This cannot be changed.`)) {
-      setDisputes(disputes.map(d => 
-        d.id === disputeId 
-          ? { 
-              ...d, 
-              status: 'resolved',
-              adminDecision: 'FINAL DECISION',
-              lastUpdated: 'Just now'
-            }
-          : d
-      ));
-      setShowFinalModal(false);
-      
-      // In production, this would trigger dashboard updates
-      alert(`Dispute #${disputeId} marked as FINAL. All dashboards will be updated.`);
-    }
-  };
-
-  const handleFlagUser = (userId, reason) => {
-    // In production, this would flag the user in the system
-    alert(`User ${userId} flagged for: ${reason}`);
-  };
-
   const filteredDisputes = disputes.filter(dispute => {
     if (filter !== 'all' && dispute.status !== filter) return false;
-    if (search && !dispute.title.toLowerCase().includes(search.toLowerCase())) {
-      if (!dispute.description.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const term = search.toLowerCase();
+      return (
+        (dispute.title?.toLowerCase() || '').includes(term) ||
+        (dispute.description?.toLowerCase() || '').includes(term) ||
+        (dispute.reason?.toLowerCase() || '').includes(term) ||
+        JSON.stringify(dispute.parties).toLowerCase().includes(term)
+      );
     }
     return true;
   });
 
-  const getStats = () => {
-    return {
-      total: disputes.length,
-      pending: disputes.filter(d => d.status === 'pending').length,
-      escalated: disputes.filter(d => d.status === 'escalated').length,
-      resolved: disputes.filter(d => d.status === 'resolved').length,
-      investigating: disputes.filter(d => d.status === 'investigating').length
-    };
-  };
+  const getStats = () => ({
+    total: disputes.length,
+    pending: disputes.filter(d => d.status === 'pending').length,
+    escalated: disputes.filter(d => d.status === 'escalated').length,
+    resolved: disputes.filter(d => d.status === 'resolved').length,
+    investigating: disputes.filter(d => d.status === 'investigating').length
+  });
+
+  if (loading) {
+    return <div className="loading">Loading disputes...</div>;
+  }
 
   return (
     <div className="disputes-page">
-      {/* Header */}
+      {/* Header (unchanged) */}
       <div className="page-header">
         <div className="header-left">
           <h1 className="page-title">Disputes & Overrides</h1>
           <p className="page-subtitle">Final arbiter of truth on RentEasy platform</p>
         </div>
         <div className="header-actions">
-          <button className="export-btn">
+          <button className="export-btn" onClick={() => alert('Export coming soon')}>
             📋 Export Disputes Log
           </button>
         </div>
@@ -251,13 +237,11 @@ const DisputesPage = () => {
           </div>
           <div className="filter-group">
             <label>Filter by Type</label>
-            <select className="filter-select">
+            <select className="filter-select" onChange={(e) => {}}>
               <option value="all">All Types</option>
-              <option value="payment">Payment Disputes</option>
-              <option value="chat">Chat Violations</option>
-              <option value="verification">Verification Issues</option>
-              <option value="commission">Commission Errors</option>
-              <option value="fraud">Fraud Investigations</option>
+              {Object.entries(disputeTypes).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -277,115 +261,126 @@ const DisputesPage = () => {
 
       {/* Disputes Grid */}
       <div className="disputes-grid">
-        {filteredDisputes.map(dispute => (
-          <div key={dispute.id} className="dispute-card">
-            <div className="dispute-header">
-              <div className="dispute-title-section">
-                <h3 className="dispute-title">{dispute.title}</h3>
-                <div className="dispute-meta">
-                  <span className={`priority-badge ${priorityColors[dispute.priority]}`}>
-                    {dispute.priority.toUpperCase()}
-                  </span>
-                  <span className="dispute-type">{disputeTypes[dispute.type]}</span>
-                  <span className="dispute-id">#{dispute.id}</span>
-                </div>
-              </div>
-              <div className="dispute-status">
-                <span className={`status-badge ${getStatusColor(dispute.status)}`}>
-                  {dispute.status.toUpperCase()}
-                </span>
-                <span className="last-updated">{dispute.lastUpdated}</span>
-              </div>
-            </div>
+        {filteredDisputes.length === 0 ? (
+          <div className="empty-state">No disputes found.</div>
+        ) : (
+          filteredDisputes.map(dispute => {
+            const parties = getPartiesList(dispute);
+            const managerDecision = dispute.manager_decision || 'Not applicable';
+            const adminDecision = dispute.admin_decision || 'Pending';
+            const evidence = dispute.evidence || [];
 
-            <div className="dispute-body">
-              <div className="dispute-description">
-                {dispute.description}
-              </div>
-              
-              <div className="dispute-details">
-                <div className="detail-row">
-                  <span className="detail-label">Parties:</span>
-                  <span className="detail-value">
-                    {dispute.parties.map((party, index) => (
-                      <span key={index} className="party-tag">{party}</span>
-                    ))}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Listing:</span>
-                  <span className="detail-value">{dispute.listing}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Amount:</span>
-                  <span className="detail-value">
-                    {dispute.amount > 0 ? `₦${dispute.amount.toLocaleString()}` : 'N/A'}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Created:</span>
-                  <span className="detail-value">{dispute.createdDate}</span>
-                </div>
-              </div>
-
-              <div className="decisions-section">
-                <div className="decision-box">
-                  <div className="decision-label">Manager Decision</div>
-                  <div className="decision-content">{dispute.managerDecision}</div>
-                </div>
-                <div className="decision-box">
-                  <div className="decision-label">Admin Decision</div>
-                  <div className="decision-content">{dispute.adminDecision}</div>
-                </div>
-              </div>
-
-              <div className="evidence-section">
-                <div className="evidence-label">Evidence:</div>
-                <div className="evidence-list">
-                  {dispute.evidence.map((file, index) => (
-                    <span key={index} className="evidence-tag">
-                      📎 {file}
+            return (
+              <div key={dispute.id} className="dispute-card">
+                <div className="dispute-header">
+                  <div className="dispute-title-section">
+                    <h3 className="dispute-title">{dispute.title || dispute.reason || 'Dispute'}</h3>
+                    <div className="dispute-meta">
+                      <span className={`priority-badge ${priorityColors[dispute.priority]}`}>
+                        {dispute.priority?.toUpperCase() || 'MEDIUM'}
+                      </span>
+                      <span className="dispute-type">{disputeTypes[dispute.type] || 'General'}</span>
+                      <span className="dispute-id">#{dispute.id.slice(0,8)}</span>
+                    </div>
+                  </div>
+                  <div className="dispute-status">
+                    <span className={`status-badge ${getStatusColor(dispute.status)}`}>
+                      {dispute.status?.toUpperCase()}
                     </span>
-                  ))}
+                    <span className="last-updated">
+                      {new Date(dispute.updated_at || dispute.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="dispute-body">
+                  <div className="dispute-description">{dispute.description || dispute.reason || ''}</div>
+
+                  <div className="dispute-details">
+                    <div className="detail-row">
+                      <span className="detail-label">Parties:</span>
+                      <span className="detail-value">
+                        {parties.map((party, idx) => (
+                          <span key={idx} className="party-tag">{party}</span>
+                        ))}
+                      </span>
+                    </div>
+                    {dispute.listing && (
+                      <div className="detail-row">
+                        <span className="detail-label">Listing:</span>
+                        <span className="detail-value">{dispute.listing.title}</span>
+                      </div>
+                    )}
+                    <div className="detail-row">
+                      <span className="detail-label">Amount:</span>
+                      <span className="detail-value">
+                        {dispute.amount > 0 ? `₦${dispute.amount.toLocaleString()}` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Created:</span>
+                      <span className="detail-value">{new Date(dispute.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+
+                  <div className="decisions-section">
+                    <div className="decision-box">
+                      <div className="decision-label">Manager Decision</div>
+                      <div className="decision-content">{managerDecision}</div>
+                    </div>
+                    <div className="decision-box">
+                      <div className="decision-label">Admin Decision</div>
+                      <div className="decision-content">{adminDecision}</div>
+                    </div>
+                  </div>
+
+                  <div className="evidence-section">
+                    <div className="evidence-label">Evidence:</div>
+                    <div className="evidence-list">
+                      {evidence.map((file, idx) => (
+                        <span key={idx} className="evidence-tag">📎 {file}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="dispute-actions">
+                    <button
+                      className="action-btn view"
+                      onClick={() => setSelectedDispute(dispute)}
+                    >
+                      View Details
+                    </button>
+                    <button
+                      className="action-btn override"
+                      onClick={() => {
+                        setSelectedDispute(dispute);
+                        setShowOverrideModal(true);
+                      }}
+                    >
+                      Override Decision
+                    </button>
+                    <button
+                      className="action-btn final"
+                      onClick={() => {
+                        setSelectedDispute(dispute);
+                        setShowFinalModal(true);
+                      }}
+                      disabled={dispute.status === 'resolved'}
+                    >
+                      Mark as Final
+                    </button>
+                    <button
+                      className="action-btn flag"
+                      onClick={() => alert(`Flag user – coming soon`)}
+                    >
+                      Flag User
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div className="dispute-actions">
-                <button 
-                  className="action-btn view"
-                  onClick={() => setSelectedDispute(dispute)}
-                >
-                  View Details
-                </button>
-                <button 
-                  className="action-btn override"
-                  onClick={() => {
-                    setSelectedDispute(dispute);
-                    setShowOverrideModal(true);
-                  }}
-                >
-                  Override Decision
-                </button>
-                <button 
-                  className="action-btn final"
-                  onClick={() => {
-                    setSelectedDispute(dispute);
-                    setShowFinalModal(true);
-                  }}
-                  disabled={dispute.status === 'resolved'}
-                >
-                  Mark as Final
-                </button>
-                <button 
-                  className="action-btn flag"
-                  onClick={() => handleFlagUser(dispute.parties[0].split(':')[1].trim(), dispute.title)}
-                >
-                  Flag User
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+            );
+          })
+        )}
       </div>
 
       {/* Dispute Details Modal */}
@@ -534,39 +529,32 @@ const DisputesPage = () => {
         </div>
       )}
 
-      {/* Override Decision Modal */}
+      {/* Override Modal */}
       {showOverrideModal && selectedDispute && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header warning">
               <h3>Override Decision</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowOverrideModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowOverrideModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="override-warning">
                 <span className="warning-icon">⚡</span>
                 <p>
-                  You are overriding decisions for <strong>Dispute #{selectedDispute.id}</strong>.
+                  You are overriding decisions for <strong>Dispute #{selectedDispute.id.slice(0,8)}</strong>.
                   Your decision will be final and cannot be changed by managers or admins.
                 </p>
               </div>
-              
               <div className="current-decisions">
                 <div className="current-decision">
                   <label>Manager Decision:</label>
-                  <div className="decision-text">{selectedDispute.managerDecision}</div>
+                  <div className="decision-text">{selectedDispute.manager_decision || 'None'}</div>
                 </div>
                 <div className="current-decision">
                   <label>Admin Decision:</label>
-                  <div className="decision-text">{selectedDispute.adminDecision}</div>
+                  <div className="decision-text">{selectedDispute.admin_decision || 'Pending'}</div>
                 </div>
               </div>
-
               <div className="form-group">
                 <label>Your Final Decision *</label>
                 <textarea
@@ -577,45 +565,27 @@ const DisputesPage = () => {
                   rows="4"
                 />
               </div>
-
               <div className="decision-options">
                 <h5>Quick Options:</h5>
                 <div className="option-buttons">
-                  <button 
-                    className="option-btn"
-                    onClick={() => setNewDecision('Approve manager decision')}
-                  >
+                  <button className="option-btn" onClick={() => setNewDecision('Approve manager decision')}>
                     Approve Manager
                   </button>
-                  <button 
-                    className="option-btn"
-                    onClick={() => setNewDecision('Reject manager decision, escalate for review')}
-                  >
+                  <button className="option-btn" onClick={() => setNewDecision('Reject manager decision, escalate for review')}>
                     Reject Manager
                   </button>
-                  <button 
-                    className="option-btn"
-                    onClick={() => setNewDecision('Award payment to affected party')}
-                  >
+                  <button className="option-btn" onClick={() => setNewDecision('Award payment to affected party')}>
                     Award Payment
                   </button>
-                  <button 
-                    className="option-btn danger"
-                    onClick={() => setNewDecision('Flag all parties for review')}
-                  >
+                  <button className="option-btn danger" onClick={() => setNewDecision('Flag all parties for review')}>
                     Flag Parties
                   </button>
                 </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowOverrideModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
+              <button className="btn-secondary" onClick={() => setShowOverrideModal(false)}>Cancel</button>
+              <button
                 className="btn-primary"
                 onClick={() => handleOverrideDecision(selectedDispute.id, newDecision)}
                 disabled={!newDecision.trim()}
@@ -627,18 +597,13 @@ const DisputesPage = () => {
         </div>
       )}
 
-      {/* Mark as Final Modal */}
+      {/* Final Modal */}
       {showFinalModal && selectedDispute && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header danger">
               <h3>Mark Dispute as FINAL</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowFinalModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowFinalModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="final-warning">
@@ -646,7 +611,7 @@ const DisputesPage = () => {
                 <div className="warning-content">
                   <h4>CRITICAL ACTION: Final Arbitration</h4>
                   <p>
-                    You are about to mark <strong>Dispute #{selectedDispute.id}</strong> as FINAL.
+                    You are about to mark <strong>Dispute #{selectedDispute.id.slice(0,8)}</strong> as FINAL.
                     This action will:
                   </p>
                   <ul className="final-impacts">
@@ -657,24 +622,16 @@ const DisputesPage = () => {
                     <li>❌ Cannot be undone by anyone</li>
                   </ul>
                   <div className="final-details">
-                    <p><strong>Dispute:</strong> {selectedDispute.title}</p>
-                    <p><strong>Parties:</strong> {selectedDispute.parties.join(', ')}</p>
+                    <p><strong>Dispute:</strong> {selectedDispute.title || selectedDispute.reason}</p>
+                    <p><strong>Parties:</strong> {getPartiesList(selectedDispute).join(', ')}</p>
                     <p><strong>Amount:</strong> {selectedDispute.amount > 0 ? `₦${selectedDispute.amount.toLocaleString()}` : 'N/A'}</p>
                   </div>
                 </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowFinalModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn-primary danger"
-                onClick={() => handleMarkFinal(selectedDispute.id)}
-              >
+              <button className="btn-secondary" onClick={() => setShowFinalModal(false)}>Cancel</button>
+              <button className="btn-primary danger" onClick={() => handleMarkFinal(selectedDispute.id)}>
                 Mark as FINAL
               </button>
             </div>

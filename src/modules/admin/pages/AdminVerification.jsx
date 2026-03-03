@@ -115,9 +115,12 @@ const AdminVerification = () => {
       calculateUserStats(data || []);
     } catch (error) {
       console.error('Error fetching user KYC:', error);
+      // Inside fetchUserKyc, after setting data:
+console.log('User KYC data:', data);
     } finally {
       setLoading(prev => ({ ...prev, user: false }));
     }
+    
   };
 
   // 2. Manager KYC
@@ -174,6 +177,7 @@ const AdminVerification = () => {
 
   // Initial load
   useEffect(() => {
+    console.log('AdminVerification mounted');
     fetchUserKyc();
     fetchManagerKyc();
     fetchEstateFirmKyc();
@@ -485,7 +489,11 @@ const AdminVerification = () => {
       default: return null;
     }
   };
-
+ // In render, before returning JSX:
+console.log('Active tab:', activeTab);
+console.log('User loading:', loading.user);
+console.log('User verifications count:', filteredUserVerifications.length);
+console.log('Filtered user verifications:', filteredUserVerifications);
   const renderDocuments = (profileId) => {
     const docs = documentsMap[profileId] || [];
     if (docs.length === 0) return <p>No documents uploaded.</p>;
@@ -506,6 +514,7 @@ const AdminVerification = () => {
     );
   };
 
+ 
   // ---------- RENDER ----------
   return (
     <div className="admin-verification">

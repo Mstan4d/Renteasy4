@@ -1,24 +1,24 @@
 // src/modules/admin/components/AdminLayout.jsx
-import React, { useState, useEffect } from 'react'; // ADD useEffect
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'; // ADD useLocation
+import React, { useState, useEffect } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { 
   LayoutDashboard, Users, Home, Building, ShieldCheck, 
   BarChart3, Settings, LogOut, Menu, X, Bell, Search,
-  FileText, AlertCircle, DollarSign, CreditCard, Plus, ToolCase, ToolBox
+  FileText, AlertCircle, DollarSign, CreditCard, Plus, Wrench, Package
 } from 'lucide-react';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation(); // ADD to track current location
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [notifications, setNotifications] = useState([]);
-  const [notificationsOpen, setNotificationsOpen] = useState(false); // ADD state for dropdown
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  // FIX: Initialize sidebar state based on screen size
+  // Initialize sidebar based on screen size
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 768) {
@@ -28,18 +28,18 @@ const AdminLayout = () => {
       }
     };
     
-    handleResize(); // Set initial state
+    handleResize();
     window.addEventListener('resize', handleResize);
     
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // FIX: Load notifications on mount
+  // Load notifications on mount
   useEffect(() => {
     loadNotifications();
   }, []);
 
-  // FIX: Close sidebar on mobile when clicking a link
+  // Close sidebar on mobile when navigating
   useEffect(() => {
     if (window.innerWidth < 768) {
       setSidebarOpen(false);
@@ -51,15 +51,15 @@ const AdminLayout = () => {
     { path: '/admin/users', label: 'Users', icon: <Users size={20} /> },
     { path: '/admin/listings', label: 'Listings', icon: <Home size={20} /> },
     { path: '/admin/services', label: 'Services', icon: <Building size={20} /> },
-    { path: '/admin/verifications', label: 'Verifications', icon: <ShieldCheck size={20} /> },
+    { path: '/admin/verification', label: 'Verifications', icon: <ShieldCheck size={20} /> },
     { path: '/admin/reports', label: 'Reports', icon: <FileText size={20} /> },
     { path: '/admin/issues', label: 'Issues', icon: <AlertCircle size={20} /> },
     { path: '/admin/transactions', label: 'Transactions', icon: <CreditCard size={20} /> },
     { path: '/admin/revenue', label: 'Revenue', icon: <DollarSign size={20} /> },
     { path: '/admin/analytics', label: 'Analytics', icon: <BarChart3 size={20} /> },
     { path: '/admin/settings', label: 'Settings', icon: <Settings size={20} /> },
-    { path: '/admin/provider-overview', label: 'Providers', icon: <ToolCase size={20} /> },
-    { path: '/admin/service-categories', label: 'Services', icon: <ToolBox size={20} /> },
+    { path: '/admin/provider-overview', label: 'Providers', icon: <Wrench size={20} /> },
+    { path: '/admin/service-categories', label: 'Service Category', icon: <Package size={20} /> },
   ];
 
   const handleLogout = () => {
@@ -71,7 +71,6 @@ const AdminLayout = () => {
     e.preventDefault();
     if (!searchTerm.trim()) return;
     
-    // Search across different entities
     const allListings = JSON.parse(localStorage.getItem('listings') || '[]');
     const allUsers = JSON.parse(localStorage.getItem('rentEasyUsers') || '[]');
     
@@ -109,13 +108,11 @@ const AdminLayout = () => {
     loadNotifications();
   };
 
-  // FIX: Add proper handlers for verify and add buttons
   const handleVerifyClick = () => {
     navigate('/admin/verifications');
   };
 
   const handleAddClick = () => {
-    // Check if user can add listings or need to choose type
     navigate('/admin/listings/new');
   };
 
@@ -191,7 +188,7 @@ const AdminLayout = () => {
                 `nav-link ${isActive ? 'active' : ''}`
               }
               end={item.path === '/admin'}
-              onClick={() => window.innerWidth < 768 && setSidebarOpen(false)} // Close on mobile click
+              onClick={() => window.innerWidth < 768 && setSidebarOpen(false)}
             >
               {item.icon}
               <span>{item.label}</span>
@@ -311,7 +308,7 @@ const AdminLayout = () => {
               </div>
             </div>
 
-            {/* Quick Actions Menu - FIXED buttons */}
+            {/* Quick Actions Menu */}
             <div className="quick-actions">
               <button 
                 className="btn-quick-action verify-btn"
@@ -367,7 +364,7 @@ const AdminLayout = () => {
         </footer>
       </main>
 
-      {/* Mobile Overlay - FIX: Added to close sidebar on mobile */}
+      {/* Mobile Overlay */}
       {sidebarOpen && window.innerWidth < 768 && (
         <div 
           className="sidebar-overlay"

@@ -458,7 +458,7 @@ const AdminDashboard = () => {
         <div className="header-left">
           <h1>Admin Dashboard</h1>
           <div className="admin-info">
-            <span className="admin-badge">👑 Super Admin</span>
+            <span className="admin-badge">👑 Admin</span>
             <span>{user?.name || 'Administrator'}</span>
             <small>Last login: {new Date().toLocaleTimeString()}</small>
           </div>

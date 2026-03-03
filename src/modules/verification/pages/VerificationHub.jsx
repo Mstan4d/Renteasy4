@@ -1,164 +1,138 @@
-// src/modules/verification/pages/VerificationHub.jsx - MODERN DESIGN
-import React, { useState, useEffect } from 'react'
-import { useAuth } from '../../../shared/context/AuthContext'
-import { useNavigate } from 'react-router-dom'
-import './VerificationHub.css'
+// src/modules/verification/pages/VerificationHub.jsx
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './VerificationHub.css';
 
 const VerificationHub = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [verificationStatus, setVerificationStatus] = useState({
-    status: 'not_started', // not_started, pending, verified, rejected
+    status: 'not_started',
     submittedDate: null,
     verifiedDate: null,
-    trustScore: 45,
+    trustScore: 0,
     level: 'basic'
-  })
-  
-  const [requirements, setRequirements] = useState([])
+  });
+  const [requirements, setRequirements] = useState([]);
   const [stats, setStats] = useState({
     responseRate: '0%',
     listingViews: '0x',
     approvalSpeed: '0%'
-  })
-  
-  const [loading, setLoading] = useState(true)
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadVerificationData()
-  }, [user])
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    loadVerificationData();
+  }, [user]);
 
-  const loadVerificationData = () => {
-    setLoading(true)
-    
-    // Simulate API call
-    setTimeout(() => {
-      // Check localStorage for existing verification
-      const verifications = JSON.parse(localStorage.getItem('kycVerifications') || '[]')
-      const userVerification = verifications.find(v => v.userId === user?.id)
-      
-      if (userVerification) {
-        setVerificationStatus({
-          status: userVerification.status || 'not_started',
-          submittedDate: userVerification.submittedAt,
-          verifiedDate: userVerification.verifiedAt,
-          trustScore: userVerification.trustScore || 45,
-          level: userVerification.level || 'basic'
-        })
+  const getTargetTable = () => {
+    switch (user?.role) {
+      case 'tenant':
+      case 'landlord':
+      case 'manager':
+        return 'profiles';
+      case 'service-provider':
+      case 'provider':
+        return 'service_providers';
+      case 'estate-firm':
+      case 'estate_firm':
+        return 'estate_firm_profiles';
+      default:
+        return 'profiles';
+    }
+  };
+
+  const loadVerificationData = async () => {
+    setLoading(true);
+    try {
+      const table = getTargetTable();
+      let data = null;
+
+      if (table === 'profiles') {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('kyc_status, kyc_submitted_at, kyc_verified_at, trust_score, verification_level')
+          .eq('id', user.id)
+          .single();
+        data = profile;
+      } else if (table === 'service_providers') {
+        const { data: provider } = await supabase
+          .from('service_providers')
+          .select('kyc_status, kyc_submitted_at, kyc_verified_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        data = provider;
+      } else if (table === 'estate_firm_profiles') {
+        const { data: firm } = await supabase
+          .from('estate_firm_profiles')
+          .select('verification_status, verification_submitted_at, verification_verified_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        data = firm ? {
+          kyc_status: firm.verification_status,
+          kyc_submitted_at: firm.verification_submitted_at,
+          kyc_verified_at: firm.verification_verified_at
+        } : null;
       }
-      
-      // Load role-specific requirements
-      loadRoleRequirements()
-      
-      // Calculate stats based on verification status
-      calculateStats(userVerification?.status)
-      
-      setLoading(false)
-    }, 500)
-  }
+
+      if (data) {
+        setVerificationStatus({
+          status: data.kyc_status || 'not_started',
+          submittedDate: data.kyc_submitted_at,
+          verifiedDate: data.kyc_verified_at,
+          trustScore: data.trust_score || 0,
+          level: data.verification_level || 'basic'
+        });
+      }
+
+      loadRoleRequirements();
+      calculateStats(data?.kyc_status);
+    } catch (error) {
+      console.error('Error loading verification data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadRoleRequirements = () => {
-    const role = user?.role || 'tenant'
-    
+    const role = user?.role || 'tenant';
     if (role === 'tenant') {
       setRequirements([
-        { 
-          id: 1, 
-          title: 'Identity Verification', 
-          description: 'Upload government-issued ID card', 
-          completed: false, 
-          icon: '🆔',
-          required: true
-        },
-        { 
-          id: 2, 
-          title: 'Proof of Address', 
-          description: 'Recent utility bill or bank statement', 
-          completed: false, 
-          icon: '📍',
-          required: true
-        },
-        { 
-          id: 3, 
-          title: 'Selfie with ID', 
-          description: 'Photo holding your ID card', 
-          completed: false, 
-          icon: '📸',
-          required: true
-        },
-        { 
-          id: 4, 
-          title: 'Employment Details', 
-          description: 'Proof of income or employment letter', 
-          completed: false, 
-          icon: '💼',
-          required: false
-        }
-      ])
+        { id: 1, title: 'Identity Verification', description: 'Upload government-issued ID card', completed: false, icon: '🆔', required: true },
+        { id: 2, title: 'Proof of Address', description: 'Recent utility bill or bank statement', completed: false, icon: '📍', required: true },
+        { id: 3, title: 'Selfie with ID', description: 'Photo holding your ID card', completed: false, icon: '📸', required: true },
+        { id: 4, title: 'Employment Details', description: 'Proof of income or employment letter', completed: false, icon: '💼', required: false }
+      ]);
     } else if (role === 'landlord') {
       setRequirements([
-        { 
-          id: 1, 
-          title: 'Identity Verification', 
-          description: 'Government-issued ID card', 
-          completed: false, 
-          icon: '🆔',
-          required: true
-        },
-        { 
-          id: 2, 
-          title: 'Proof of Ownership', 
-          description: 'Property documents or title deed', 
-          completed: false, 
-          icon: '🏠',
-          required: true
-        },
-        { 
-          id: 3, 
-          title: 'Bank Verification', 
-          description: 'Bank statement or account details', 
-          completed: false, 
-          icon: '🏦',
-          required: true
-        },
-        { 
-          id: 4, 
-          title: 'Tax Information', 
-          description: 'Tax identification number (TIN)', 
-          completed: false, 
-          icon: '💰',
-          required: false
-        }
-      ])
+        { id: 1, title: 'Identity Verification', description: 'Government-issued ID card', completed: false, icon: '🆔', required: true },
+        { id: 2, title: 'Proof of Ownership', description: 'Property documents or title deed', completed: false, icon: '🏠', required: true },
+        { id: 3, title: 'Bank Verification', description: 'Bank statement or account details', completed: false, icon: '🏦', required: true },
+        { id: 4, title: 'Tax Information', description: 'Tax identification number (TIN)', completed: false, icon: '💰', required: false }
+      ]);
     }
-  }
+  };
 
   const calculateStats = (status) => {
     if (status === 'verified') {
-      setStats({
-        responseRate: '65%',
-        listingViews: '3x',
-        approvalSpeed: '50%'
-      })
+      setStats({ responseRate: '65%', listingViews: '3x', approvalSpeed: '50%' });
     } else if (status === 'pending') {
-      setStats({
-        responseRate: '25%',
-        listingViews: '1.5x',
-        approvalSpeed: '25%'
-      })
+      setStats({ responseRate: '25%', listingViews: '1.5x', approvalSpeed: '25%' });
     } else {
-      setStats({
-        responseRate: '0%',
-        listingViews: '1x',
-        approvalSpeed: '0%'
-      })
+      setStats({ responseRate: '0%', listingViews: '1x', approvalSpeed: '0%' });
     }
-  }
+  };
 
   const getStatusConfig = (status) => {
     const configs = {
-      'verified': {
+      verified: {
         title: 'Verified Account',
         subtitle: 'Your account is fully verified',
         icon: '✅',
@@ -168,7 +142,7 @@ const VerificationHub = () => {
         buttonAction: () => navigate('/profile'),
         badgeText: 'VERIFIED'
       },
-      'pending': {
+      pending: {
         title: 'Under Review',
         subtitle: 'Your verification is being processed',
         icon: '⏳',
@@ -178,7 +152,7 @@ const VerificationHub = () => {
         buttonAction: () => navigate('/verify/status'),
         badgeText: 'PENDING'
       },
-      'rejected': {
+      rejected: {
         title: 'Verification Required',
         subtitle: 'Please update and resubmit your documents',
         icon: '❌',
@@ -188,7 +162,7 @@ const VerificationHub = () => {
         buttonAction: () => navigate('/verify/submit'),
         badgeText: 'ACTION REQUIRED'
       },
-      'not_started': {
+      not_started: {
         title: 'Get Verified',
         subtitle: 'Complete verification to unlock benefits',
         icon: '📝',
@@ -198,10 +172,9 @@ const VerificationHub = () => {
         buttonAction: () => navigate('/verify/submit'),
         badgeText: 'NOT VERIFIED'
       }
-    }
-    
-    return configs[status] || configs.not_started
-  }
+    };
+    return configs[status] || configs.not_started;
+  };
 
   const getRoleBenefits = () => {
     if (user?.role === 'tenant') {
@@ -212,7 +185,7 @@ const VerificationHub = () => {
         'Verified badge on your profile',
         'Access to premium listings',
         'Lower security deposits'
-      ]
+      ];
     } else if (user?.role === 'landlord') {
       return [
         'Verified badge on all listings',
@@ -221,14 +194,12 @@ const VerificationHub = () => {
         'Access to premium tenants',
         'Faster rental process',
         'Enhanced credibility'
-      ]
+      ];
     }
-    return []
-  }
+    return [];
+  };
 
-  const startVerification = () => {
-    navigate('/verify/form')
-  }
+  const startVerification = () => navigate('/verify/submit');
 
   if (loading) {
     return (
@@ -236,13 +207,13 @@ const VerificationHub = () => {
         <div className="loading-spinner"></div>
         <p>Loading verification details...</p>
       </div>
-    )
+    );
   }
 
-  const statusConfig = getStatusConfig(verificationStatus.status)
-  const roleBenefits = getRoleBenefits()
+  const statusConfig = getStatusConfig(verificationStatus.status);
+  const roleBenefits = getRoleBenefits();
 
-  return (
+ return (
     <div className="verification-hub">
       {/* Hero Section */}
       <div className="verification-hero">

@@ -113,7 +113,7 @@ const roleLabel = {
         {/* Price Section */}
         <div className="listing-price">
           <div className="original-price">
-            <span className="price-label">Monthly Rent:</span>
+            <span className="price-label">Anual Rent:</span>
             <span className="price-amount">{formatPrice(listing.price)}</span>
           </div>
           <div className="commission-price">

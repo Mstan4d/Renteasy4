@@ -1,18 +1,56 @@
-import React, { useState } from 'react';
+// src/components/post-property/steps/LocationStep.jsx
+import React, { useState, useEffect } from 'react';
 import { MapPin, Navigation, AlertCircle, CheckCircle } from 'lucide-react';
+import { supabase } from '../../../../shared/lib/supabaseClient';
 import './LocationStep.css';
 
 const LocationStep = ({ formData, updateFormData, onNext }) => {
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [locationCaptured, setLocationCaptured] = useState(!!formData.coordinates?.lat);
+  const [states, setStates] = useState([]);
+  const [lgas, setLgas] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // States & LGAs logic remains same as your foundation document
-  const nigerianStates = [
-    { value: 'abuja', label: 'Abuja (FCT)' },
-    { value: 'lagos', label: 'Lagos' },
-    { value: 'rivers', label: 'Rivers' },
-    // ... add others
-  ];
+  // Fetch all active states on mount
+  useEffect(() => {
+    fetchStates();
+  }, []);
+
+  // Fetch LGAs when selected state changes
+  useEffect(() => {
+    if (formData.state) {
+      fetchLgas(formData.state);
+    } else {
+      setLgas([]);
+    }
+  }, [formData.state]);
+
+  const fetchStates = async () => {
+    const { data, error } = await supabase
+      .from('states')
+      .select('id, name')
+      .eq('active', true)
+      .order('name');
+    if (!error) setStates(data || []);
+  };
+
+  const fetchLgas = async (stateName) => {
+    // First get state id
+    const { data: stateData } = await supabase
+      .from('states')
+      .select('id')
+      .eq('name', stateName)
+      .single();
+    if (!stateData) return;
+
+    const { data, error } = await supabase
+      .from('lgas')
+      .select('name')
+      .eq('state_id', stateData.id)
+      .eq('active', true)
+      .order('name');
+    if (!error) setLgas(data || []);
+  };
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -22,24 +60,28 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
 
     setIsGeolocating(true);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
-        
-        // Save coordinates silently for the PostGIS POINT logic
+
+        // Save coordinates
         updateFormData({
           coordinates: { lat: latitude, lng: longitude }
         });
 
-        // Use Google Reverse Geocoding to fill the address if available
-        if (window.google && window.google.maps) {
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
-            if (status === 'OK' && results[0]) {
-              updateFormData({ address: results[0].formatted_address });
-            }
-          });
+        // Optionally reverse geocode using a free service (e.g., OpenStreetMap Nominatim)
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+          );
+          const data = await response.json();
+          if (data && data.display_name) {
+            updateFormData({ address: data.display_name });
+          }
+        } catch (error) {
+          console.error('Reverse geocoding failed:', error);
+          // Keep existing address or leave empty
         }
-        
+
         setIsGeolocating(false);
         setLocationCaptured(true);
       },
@@ -49,6 +91,11 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
       },
       { enableHighAccuracy: true, timeout: 5000 }
     );
+  };
+
+  const handleStateChange = (e) => {
+    const selectedState = e.target.value;
+    updateFormData({ state: selectedState, lga: '' }); // reset LGA
   };
 
   return (
@@ -66,11 +113,11 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
           <Navigation size={28} className="geo-icon" />
           <div className="geo-text">
             <h4>{locationCaptured ? "GPS Coordinates Locked" : "Click to Pin Location"}</h4>
-            <p>{locationCaptured ? "Manager will be notified of this exact spot." : "Required for 1.5% commission eligibility."}</p>
+            <p>{locationCaptured ? "Manager will be notified of this exact spot." : "Required for 2.5% commission eligibility."}</p>
           </div>
         </div>
-        <button 
-          type="button" 
+        <button
+          type="button"
           className="btn-capture"
           onClick={getCurrentLocation}
           disabled={isGeolocating}
@@ -85,7 +132,7 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
           <input
             type="text"
             id="address"
-            value={formData.address}
+            value={formData.address || ''}
             onChange={(e) => updateFormData({ address: e.target.value })}
             placeholder="No 1. RentEasy Street, Lekki, Lagos"
             required
@@ -96,12 +143,14 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
           <label htmlFor="state">State *</label>
           <select
             id="state"
-            value={formData.state}
-            onChange={(e) => updateFormData({ state: e.target.value, lga: '' })}
+            value={formData.state || ''}
+            onChange={handleStateChange}
             required
           >
             <option value="">Select State</option>
-            {nigerianStates.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {states.map(s => (
+              <option key={s.id} value={s.name}>{s.name}</option>
+            ))}
           </select>
         </div>
 
@@ -109,13 +158,15 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
           <label htmlFor="lga">LGA *</label>
           <select
             id="lga"
-            value={formData.lga}
+            value={formData.lga || ''}
             onChange={(e) => updateFormData({ lga: e.target.value })}
-            disabled={!formData.state}
+            disabled={!formData.state || lgas.length === 0}
             required
           >
             <option value="">Select LGA</option>
-            {/* Populate based on state as per your helper function */}
+            {lgas.map(lga => (
+              <option key={lga.name} value={lga.name}>{lga.name}</option>
+            ))}
           </select>
         </div>
 
@@ -123,7 +174,8 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
           <label htmlFor="city">City/Town *</label>
           <input
             type="text"
-            value={formData.city}
+            id="city"
+            value={formData.city || ''}
             onChange={(e) => updateFormData({ city: e.target.value })}
             placeholder="e.g., Victoria Island"
             required
@@ -134,7 +186,8 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
           <label htmlFor="landmark">Landmark</label>
           <input
             type="text"
-            value={formData.landmark}
+            id="landmark"
+            value={formData.landmark || ''}
             onChange={(e) => updateFormData({ landmark: e.target.value })}
             placeholder="e.g., Near Eko Hotel"
           />

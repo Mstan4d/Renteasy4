@@ -1,20 +1,43 @@
+// src/modules/super-admin/pages/SuperAdminLogin.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { setupSuperAdmin } from '../../../utils/authHelper';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 
 const SuperAdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (email === 'superadmin@renteasy.com' && password === 'admin123') {
-      setupSuperAdmin(); // Use the helper
-      navigate('/super-admin/command-center');
-    } else {
-      alert('Invalid credentials. Use: superadmin@renteasy.com / admin123');
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await login(email, password);
+      if (!result.success) {
+        throw new Error(result.error || 'Login failed');
+      }
+
+      // After login, check if the user has super-admin role
+      const user = result.user;
+      const normalizedRole = user.role?.replace('_', '-');
+      if (normalizedRole !== 'super-admin') {
+        await supabase.auth.signOut();
+        setError('Access denied. You do not have super-admin privileges.');
+        setLoading(false);
+        return;
+      }
+
+      // Redirect to super admin dashboard
+      navigate('/super-admin');
+    } catch (err) {
+      setError(err.message || 'Invalid credentials');
+      setLoading(false);
     }
   };
 
@@ -37,17 +60,28 @@ const SuperAdminLogin = () => {
         <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#333' }}>
           🔒 RentEasy Super Admin
         </h2>
+        {error && (
+          <div style={{
+            background: '#fee',
+            color: '#c00',
+            padding: '10px',
+            borderRadius: '5px',
+            marginBottom: '20px',
+            textAlign: 'center'
+          }}>
+            {error}
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-              Email
-            </label>
-            <input 
-              type="email" 
-              value={email} 
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Email</label>
+            <input
+              type="email"
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="superadmin@renteasy.com"
               required
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '10px',
@@ -58,15 +92,14 @@ const SuperAdminLogin = () => {
             />
           </div>
           <div style={{ marginBottom: '30px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-              Password
-            </label>
-            <input 
-              type="password" 
-              value={password} 
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Password</label>
+            <input
+              type="password"
+              value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="admin123"
+              placeholder="••••••••"
               required
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '10px',
@@ -76,27 +109,28 @@ const SuperAdminLogin = () => {
               }}
             />
           </div>
-          <button 
+          <button
             type="submit"
+            disabled={loading}
             style={{
               width: '100%',
               padding: '12px',
-              background: '#4CAF50',
+              background: loading ? '#ccc' : '#4CAF50',
               color: 'white',
               border: 'none',
               borderRadius: '5px',
               fontSize: '16px',
               fontWeight: '600',
-              cursor: 'pointer'
+              cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
-            Login as Super Admin
+            {loading ? 'Logging in...' : 'Login as Super Admin'}
           </button>
         </form>
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '15px', 
-          background: '#f8f9fa', 
+        <div style={{
+          marginTop: '20px',
+          padding: '15px',
+          background: '#f8f9fa',
           borderRadius: '5px',
           fontSize: '14px',
           textAlign: 'center'

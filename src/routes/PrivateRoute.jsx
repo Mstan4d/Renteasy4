@@ -34,7 +34,8 @@ const PrivateRoute = ({
     'manager': '/dashboard/manager',
     'service-provider': '/dashboard/provider',  // ✅ single source of truth
     'estate-firm': '/dashboard/estate-firm',
-    'admin': '/admin'
+    'admin': '/admin',
+    'super-admin': '/super-admin'
   };
 
   // Show loading while auth initializes
@@ -102,6 +103,7 @@ const PrivateRoute = ({
   if (userRole) {
     const userTargetPath = rolePathMap[userRole];
     const currentPath = location.pathname;
+    
 
     // 1. Redirect from generic /dashboard
     if (currentPath === '/dashboard' && userTargetPath) {

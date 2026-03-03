@@ -79,7 +79,8 @@ const Login = () => {
     'manager': '/dashboard/manager',
     'service-provider': '/dashboard/provider',
     'estate-firm': '/dashboard/estate-firm',
-    'admin': '/admin'
+    'admin': '/admin',
+    'super-admin': '/super-admin'
   };
   const target = rolePathMap[role] || '/dashboard';
   navigate(target);

@@ -1,0 +1,602 @@
+/* src/modules/admin/pages/AdminAnalytics.css */
+
+.admin-analytics {
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Overview Stats Cards */
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.overview-stats .stat-card {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.overview-stats .stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+}
+
+.overview-stats .stat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.overview-stats .stat-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.overview-stats .stat-icon.users { background: #3b82f6; }
+.overview-stats .stat-icon.listings { background: #10b981; }
+.overview-stats .stat-icon.providers { background: #8b5cf6; }
+.overview-stats .stat-icon.revenue { background: #f59e0b; }
+
+.growth-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: #f3f4f6;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.growth-badge.text-green-600 { color: #059669; background: #d1fae5; }
+.growth-badge.text-red-600 { color: #dc2626; background: #fee2e2; }
+
+.overview-stats .stat-content h3 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 0.25rem 0;
+}
+
+.overview-stats .stat-content p {
+  color: #6b7280;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.overview-stats .stat-content small {
+  color: #9ca3af;
+  font-size: 0.75rem;
+  display: block;
+  margin-top: 0.5rem;
+}
+
+/* Analytics Grid */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+/* Cards */
+.chart-card,
+.distribution-card,
+.health-card,
+.revenue-card,
+.activity-card,
+.insights-card {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.chart-card:hover,
+.distribution-card:hover,
+.health-card:hover,
+.revenue-card:hover,
+.activity-card:hover,
+.insights-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Grid spans – adjust as needed */
+.chart-card { grid-column: span 3; }
+.distribution-card { grid-column: span 2; }
+.health-card { grid-column: span 1; }
+.revenue-card { grid-column: span 2; }
+.activity-card { grid-column: span 2; }
+.insights-card { grid-column: span 2; }
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.chart-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.chart-header select {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  background: white;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.chart-container {
+  height: 250px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+/* Mock chart */
+.mock-chart {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 200px;
+  margin-bottom: 0.5rem;
+}
+
+.chart-bar {
+  flex: 1;
+  background: #3b82f6;
+  border-radius: 0.375rem 0.375rem 0 0;
+  min-width: 20px;
+  transition: height 0.3s ease;
+}
+
+.chart-labels {
+  display: flex;
+  justify-content: space-around;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.chart-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 1rem;
+}
+
+/* Distribution */
+.distribution-chart {
+  margin: 1rem 0;
+}
+
+.distribution-item {
+  margin-bottom: 1rem;
+}
+
+.role-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.role-name {
+  color: #374151;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.role-count {
+  color: #6b7280;
+}
+
+.role-bar {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.role-fill {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.distribution-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.distribution-stats .stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.distribution-stats .stat-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.distribution-stats .stat-value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Health card */
+.health-score {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.score-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  border: 3px solid #3b82f6;
+}
+
+.score-value {
+  font-size: 1.75rem;
+  color: #1f2937;
+  line-height: 1;
+}
+
+.score-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.health-details {
+  flex: 1;
+}
+
+.health-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.health-icon {
+  width: 24px;
+  text-align: center;
+}
+
+/* Revenue card */
+.revenue-details {
+  margin: 1rem 0;
+}
+
+.revenue-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.revenue-item:last-child {
+  border-bottom: none;
+}
+
+.revenue-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.revenue-value {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.revenue-chart {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.legend-color.commission { background: #10b981; }
+.legend-color.value { background: #3b82f6; }
+
+/* Activity card */
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+}
+
+.metric-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4b5563;
+}
+
+.metric-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.2;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.activity-summary {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+.activity-summary strong {
+  font-weight: 600;
+}
+
+/* Insights card */
+.insights-list {
+  margin-top: 1rem;
+}
+
+.insight-item {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.insight-item.positive {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.insight-item.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.insight-item.info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.insight-item.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.insight-item strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.insight-item p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* Data Summary */
+.data-summary {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border: 1px solid #e5e7eb;
+  margin-top: 2rem;
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.summary-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.btn-export-small {
+  padding: 0.375rem 1rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.btn-export-small:hover {
+  background: #2563eb;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.summary-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.summary-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Loading */
+.analytics-loading {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255,255,255,0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.analytics-loading .loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .analytics-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .chart-card { grid-column: span 4; }
+  .distribution-card { grid-column: span 2; }
+  .health-card { grid-column: span 2; }
+  .revenue-card { grid-column: span 2; }
+  .activity-card { grid-column: span 2; }
+  .insights-card { grid-column: span 2; }
+}
+
+@media (max-width: 768px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .chart-card,
+  .distribution-card,
+  .health-card,
+  .revenue-card,
+  .activity-card,
+  .insights-card {
+    grid-column: span 1;
+  }
+  .overview-stats {
+    grid-template-columns: 1fr;
+  }
+  .health-score {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .activity-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

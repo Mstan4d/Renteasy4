@@ -275,7 +275,7 @@
 
   .manager-tabs {
     position: fixed;
-    bottom: 0;
+    bottom: 100px;
     top: auto;
     width: 100%;
     margin-bottom: 0;

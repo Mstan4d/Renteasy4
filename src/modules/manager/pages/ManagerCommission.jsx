@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ManagerCommission.css'; // optional, you can keep inline styles
 
 const ManagerCommission = () => {
   const { user } = useAuth();
@@ -12,82 +14,113 @@ const ManagerCommission = () => {
     withdrawn: 0,
     transactions: []
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.role !== 'manager') {
+    if (!user || user.role !== 'manager') {
       navigate('/dashboard');
       return;
     }
-
-    // Load commission data from localStorage
-    const managerCommissions = JSON.parse(localStorage.getItem('managerCommissions') || '[]');
-    const userCommissions = managerCommissions.filter(c => c.managerId === user?.id);
-    
-    const totalEarned = userCommissions.reduce((sum, c) => sum + (c.amount || 0), 0);
-    const pending = userCommissions.filter(c => c.status === 'pending').reduce((sum, c) => sum + (c.amount || 0), 0);
-    const withdrawn = userCommissions.filter(c => c.status === 'withdrawn').reduce((sum, c) => sum + (c.amount || 0), 0);
-
-    setCommissionData({
-      totalEarned,
-      pending,
-      withdrawn,
-      transactions: userCommissions.slice(0, 10) // Last 10 transactions
-    });
+    fetchCommissionData();
   }, [user, navigate]);
 
+  const fetchCommissionData = async () => {
+    setLoading(true);
+    try {
+      // Fetch all commissions for this manager, joined with listing title
+      const { data, error } = await supabase
+        .from('commissions')
+        .select(`
+          id,
+          rental_amount,
+          manager_share,
+          status,
+          created_at,
+          listing:listings!listing_id (title)
+        `)
+        .eq('manager_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const transactions = data || [];
+      const totalEarned = transactions
+        .filter(t => t.status === 'paid' || t.status === 'withdrawn')
+        .reduce((sum, t) => sum + (t.manager_share || 0), 0);
+      const pending = transactions
+        .filter(t => t.status === 'pending')
+        .reduce((sum, t) => sum + (t.manager_share || 0), 0);
+      const withdrawn = transactions
+        .filter(t => t.status === 'withdrawn')
+        .reduce((sum, t) => sum + (t.manager_share || 0), 0);
+
+      setCommissionData({
+        totalEarned,
+        pending,
+        withdrawn,
+        transactions: transactions.slice(0, 10) // last 10
+      });
+    } catch (error) {
+      console.error('Error fetching commission data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Loading commission data...</div>;
+  }
+
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+    <div className="commission-container">
+      <div className="commission-header">
         <h1>Commission Report</h1>
-        <button onClick={() => navigate('/dashboard/manager')} style={{ padding: '8px 16px', background: '#4a6fa5', color: 'white', border: 'none', borderRadius: '4px' }}>
+        <button
+          onClick={() => navigate('/dashboard/manager')}
+          className="btn-back"
+        >
           Back to Dashboard
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ color: '#388e3c' }}>₦{commissionData.totalEarned.toLocaleString()}</h3>
+      <div className="stats-grid">
+        <div className="stat-card total">
+          <h3>₦{commissionData.totalEarned.toLocaleString()}</h3>
           <p>Total Commission Earned</p>
         </div>
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ color: '#f57c00' }}>₦{commissionData.pending.toLocaleString()}</h3>
+        <div className="stat-card pending">
+          <h3>₦{commissionData.pending.toLocaleString()}</h3>
           <p>Pending Commission</p>
         </div>
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ color: '#1976d2' }}>₦{commissionData.withdrawn.toLocaleString()}</h3>
+        <div className="stat-card withdrawn">
+          <h3>₦{commissionData.withdrawn.toLocaleString()}</h3>
           <p>Withdrawn</p>
         </div>
       </div>
 
-      <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+      <div className="transactions-card">
         <h3>Recent Commission Transactions</h3>
         {commissionData.transactions.length === 0 ? (
-          <p style={{ color: '#666', textAlign: 'center', padding: '20px' }}>No commission transactions yet</p>
+          <p className="empty-state">No commission transactions yet</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="transactions-table">
             <thead>
-              <tr style={{ borderBottom: '2px solid #ddd' }}>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Property</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Amount</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Status</th>
+              <tr>
+                <th>Date</th>
+                <th>Property</th>
+                <th>Amount</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {commissionData.transactions.map((transaction, index) => (
-                <tr key={index} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '12px' }}>{new Date(transaction.date).toLocaleDateString()}</td>
-                  <td style={{ padding: '12px' }}>{transaction.property || 'N/A'}</td>
-                  <td style={{ padding: '12px' }}>₦{transaction.amount?.toLocaleString()}</td>
-                  <td style={{ padding: '12px' }}>
-                    <span style={{ 
-                      padding: '4px 8px', 
-                      borderRadius: '12px', 
-                      fontSize: '12px',
-                      background: transaction.status === 'withdrawn' ? '#e8f5e9' : '#fff3e0',
-                      color: transaction.status === 'withdrawn' ? '#388e3c' : '#f57c00'
-                    }}>
-                      {transaction.status}
+              {commissionData.transactions.map((tx) => (
+                <tr key={tx.id}>
+                  <td>{new Date(tx.created_at).toLocaleDateString()}</td>
+                  <td>{tx.listing?.title || 'N/A'}</td>
+                  <td>₦{tx.manager_share?.toLocaleString()}</td>
+                  <td>
+                    <span className={`status-badge ${tx.status}`}>
+                      {tx.status}
                     </span>
                   </td>
                 </tr>

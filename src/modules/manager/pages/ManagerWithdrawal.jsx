@@ -1,36 +1,37 @@
 // src/modules/manager/pages/ManagerWithdrawal.jsx
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../../shared/context/AuthContext'
-import './ManagerWithdrawal.css'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ManagerWithdrawal.css';
 
 const ManagerWithdrawal = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     availableBalance: 0,
     minimumWithdrawal: 5000,
     processingFeePercent: 1,
     processingTime: '24-48 hours'
-  })
-  
+  });
+
   const [withdrawalData, setWithdrawalData] = useState({
     amount: '',
     bankCode: '',
     accountNumber: '',
     accountName: '',
     narration: ''
-  })
-  
-  const [banks, setBanks] = useState([])
-  const [verifyingAccount, setVerifyingAccount] = useState(false)
-  const [accountDetails, setAccountDetails] = useState(null)
-  const [errors, setErrors] = useState({})
-  const [savedAccounts, setSavedAccounts] = useState([])
+  });
 
-  // Nigerian banks data (can be moved to separate file or API later)
+  const [banks, setBanks] = useState([]);
+  const [verifyingAccount, setVerifyingAccount] = useState(false);
+  const [accountDetails, setAccountDetails] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [savedAccounts, setSavedAccounts] = useState([]);
+
+  // Nigerian banks data (can be moved to a separate file)
   const nigerianBanks = [
     { code: "044", name: "Access Bank" },
     { code: "063", name: "Access Bank (Diamond)" },
@@ -72,190 +73,130 @@ const ManagerWithdrawal = () => {
     { code: "566", name: "VFD Microfinance Bank" },
     { code: "035", name: "Wema Bank" },
     { code: "057", name: "Zenith Bank" }
-  ]
+  ].sort((a, b) => a.name.localeCompare(b.name));
 
   useEffect(() => {
-    loadUserData()
-  }, [])
+    if (!user) return;
+    loadUserData();
+  }, [user]);
 
-  const loadUserData = () => {
-    // Load payments data
-    const allPayments = JSON.parse(localStorage.getItem('payments') || '[]')
-    const managerPayments = allPayments.filter(p => p.managerId === user.id)
-    
-    const totalEarned = managerPayments.reduce((sum, p) => sum + (p.managerCommission || 0), 0)
-    const withdrawn = managerPayments.filter(p => p.paidToManager).reduce((sum, p) => sum + (p.managerCommission || 0), 0)
-    const availableBalance = totalEarned - withdrawn
+  const loadUserData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch total earnings from commissions (manager_share where status = 'paid')
+      const { data: commissions, error: commError } = await supabase
+        .from('commissions')
+        .select('manager_share')
+        .eq('manager_id', user.id)
+        .eq('status', 'paid');
 
-    setStats(prev => ({
-      ...prev,
-      availableBalance
-    }))
+      if (commError) throw commError;
+      const totalEarned = commissions?.reduce((sum, c) => sum + (c.manager_share || 0), 0) || 0;
 
-    // Load saved bank accounts from user profile
-    const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}')
-    if (userProfile.bankAccounts) {
-      setSavedAccounts(userProfile.bankAccounts)
+      // 2. Fetch sum of already withdrawn amounts (completed withdrawals)
+      const { data: withdrawals, error: wdError } = await supabase
+        .from('withdrawals')
+        .select('amount')
+        .eq('manager_id', user.id)
+        .eq('status', 'completed');
+
+      if (wdError) throw wdError;
+      const withdrawn = withdrawals?.reduce((sum, w) => sum + w.amount, 0) || 0;
+
+      const availableBalance = totalEarned - withdrawn;
+
+      setStats(prev => ({ ...prev, availableBalance }));
+
+      // 3. Fetch saved bank accounts from profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('saved_bank_accounts')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') throw profileError;
+      if (profile?.saved_bank_accounts) {
+        setSavedAccounts(profile.saved_bank_accounts);
+      }
+
+      setBanks(nigerianBanks);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
     }
-
-    setBanks(nigerianBanks.sort((a, b) => a.name.localeCompare(b.name)))
-    setLoading(false)
-  }
+  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
       style: 'currency',
       currency: 'NGN',
       minimumFractionDigits: 0
-    }).format(amount)
-  }
+    }).format(amount);
+  };
 
   const handleInputChange = (field, value) => {
-    setWithdrawalData(prev => ({
-      ...prev,
-      [field]: value
-    }))
-    
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: null
-      }))
-    }
+    setWithdrawalData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
 
-    // Auto-verify account number when 10 digits are entered
     if (field === 'accountNumber' && value.length === 10 && withdrawalData.bankCode) {
-      verifyAccountNumber(value, withdrawalData.bankCode)
+      verifyAccountNumber(value, withdrawalData.bankCode);
     }
-  }
+  };
 
   const handleBankChange = (bankCode) => {
-    setWithdrawalData(prev => ({
-      ...prev,
-      bankCode,
-      accountName: '' // Reset account name when bank changes
-    }))
-    
-    // If account number already exists, verify again
+    setWithdrawalData(prev => ({ ...prev, bankCode, accountName: '' }));
     if (withdrawalData.accountNumber.length === 10) {
-      verifyAccountNumber(withdrawalData.accountNumber, bankCode)
+      verifyAccountNumber(withdrawalData.accountNumber, bankCode);
     }
-  }
+  };
 
   const verifyAccountNumber = async (accountNumber, bankCode) => {
-    if (!accountNumber || !bankCode) return
-    
-    setVerifyingAccount(true)
-    
-    // Simulate API call to verify account (replace with real API later)
+    if (!accountNumber || !bankCode) return;
+    setVerifyingAccount(true);
+    // Simulate API call – replace with actual bank verification API
     setTimeout(() => {
-      const selectedBank = banks.find(bank => bank.code === bankCode)
+      const selectedBank = banks.find(b => b.code === bankCode);
       const mockAccountNames = [
         `${user?.name || 'Manager'} Account`,
         `${user?.name?.split(' ')[0] || 'User'} ${Math.floor(Math.random() * 100)}`,
         'Verified Account Holder',
         user?.name || 'Account Holder'
-      ]
-      
+      ];
       const accountDetails = {
         accountNumber,
         accountName: mockAccountNames[Math.floor(Math.random() * mockAccountNames.length)],
         bankCode,
         bankName: selectedBank?.name || 'Unknown Bank',
         verified: true
-      }
-      
-      setAccountDetails(accountDetails)
-      setWithdrawalData(prev => ({
-        ...prev,
-        accountName: accountDetails.accountName
-      }))
-      setVerifyingAccount(false)
-    }, 1500)
-  }
+      };
+      setAccountDetails(accountDetails);
+      setWithdrawalData(prev => ({ ...prev, accountName: accountDetails.accountName }));
+      setVerifyingAccount(false);
+    }, 1500);
+  };
 
   const validateForm = () => {
-    const newErrors = {}
-    
-    // Amount validation
-    const amount = parseFloat(withdrawalData.amount)
+    const newErrors = {};
+    const amount = parseFloat(withdrawalData.amount);
     if (!amount || amount < stats.minimumWithdrawal) {
-      newErrors.amount = `Minimum withdrawal is ₦${stats.minimumWithdrawal.toLocaleString()}`
+      newErrors.amount = `Minimum withdrawal is ₦${stats.minimumWithdrawal.toLocaleString()}`;
     }
     if (amount > stats.availableBalance) {
-      newErrors.amount = `Insufficient balance. Available: ${formatCurrency(stats.availableBalance)}`
+      newErrors.amount = `Insufficient balance. Available: ${formatCurrency(stats.availableBalance)}`;
     }
-    
-    // Bank validation
-    if (!withdrawalData.bankCode) {
-      newErrors.bankCode = 'Please select a bank'
-    }
-    
-    // Account number validation
+    if (!withdrawalData.bankCode) newErrors.bankCode = 'Please select a bank';
     if (!withdrawalData.accountNumber || withdrawalData.accountNumber.length !== 10) {
-      newErrors.accountNumber = 'Account number must be 10 digits'
+      newErrors.accountNumber = 'Account number must be 10 digits';
     }
-    
-    // Account name validation
     if (!withdrawalData.accountName || withdrawalData.accountName.trim().length < 2) {
-      newErrors.accountName = 'Please enter a valid account name'
+      newErrors.accountName = 'Please enter a valid account name';
     }
-    
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    
-    if (!validateForm()) {
-      return
-    }
-    
-    // Create withdrawal request
-    const withdrawalRequest = {
-      id: `withdraw_${Date.now()}`,
-      managerId: user.id,
-      managerName: user.name,
-      amount: parseFloat(withdrawalData.amount),
-      bankDetails: {
-        bankCode: withdrawalData.bankCode,
-        bankName: banks.find(b => b.code === withdrawalData.bankCode)?.name || 'Unknown Bank',
-        accountNumber: withdrawalData.accountNumber,
-        accountName: withdrawalData.accountName
-      },
-      status: 'pending',
-      requestDate: new Date().toISOString(),
-      processingFee: parseFloat(withdrawalData.amount) * (stats.processingFeePercent / 100),
-      netAmount: parseFloat(withdrawalData.amount) * (1 - stats.processingFeePercent / 100),
-      expectedDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-      narration: withdrawalData.narration || `Withdrawal by ${user.name}`
-    }
-    
-    // Save withdrawal request
-    const withdrawals = JSON.parse(localStorage.getItem('withdrawals') || '[]')
-    withdrawals.push(withdrawalRequest)
-    localStorage.setItem('withdrawals', JSON.stringify(withdrawals))
-    
-    // Save bank account to user profile for future use
-    saveBankAccountToProfile()
-    
-    // Show success message
-    alert(`✅ Withdrawal request submitted successfully!\n\n` +
-          `Amount: ${formatCurrency(withdrawalRequest.amount)}\n` +
-          `Net Amount: ${formatCurrency(withdrawalRequest.netAmount)}\n` +
-          `Processing Fee (${stats.processingFeePercent}%): ${formatCurrency(withdrawalRequest.processingFee)}\n` +
-          `Expected by: ${new Date(withdrawalRequest.expectedDate).toLocaleDateString()}\n\n` +
-          `Your withdrawal is being processed and will be completed within ${stats.processingTime}.`)
-    
-    // Redirect to payments page
-    navigate('/dashboard/manager/payments')
-  }
-
-  const saveBankAccountToProfile = () => {
-    const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}')
-    
+  const saveBankAccountToProfile = async () => {
     const newAccount = {
       bankCode: withdrawalData.bankCode,
       bankName: banks.find(b => b.code === withdrawalData.bankCode)?.name || 'Unknown Bank',
@@ -263,21 +204,72 @@ const ManagerWithdrawal = () => {
       accountName: withdrawalData.accountName,
       verified: true,
       lastUsed: new Date().toISOString()
+    };
+
+    // Check if account already exists
+    const exists = savedAccounts.some(acc =>
+      acc.bankCode === newAccount.bankCode && acc.accountNumber === newAccount.accountNumber
+    );
+    if (!exists) {
+      const updatedAccounts = [...savedAccounts, newAccount];
+      const { error } = await supabase
+        .from('profiles')
+        .update({ saved_bank_accounts: updatedAccounts })
+        .eq('id', user.id);
+      if (!error) {
+        setSavedAccounts(updatedAccounts);
+      }
     }
-    
-    // Add to saved accounts if not already exists
-    const existingIndex = savedAccounts.findIndex(acc => 
-      acc.bankCode === newAccount.bankCode && 
-      acc.accountNumber === newAccount.accountNumber
-    )
-    
-    if (existingIndex === -1) {
-      const updatedAccounts = [...savedAccounts, newAccount]
-      setSavedAccounts(updatedAccounts)
-      userProfile.bankAccounts = updatedAccounts
-      localStorage.setItem('userProfile', JSON.stringify(userProfile))
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    const amount = parseFloat(withdrawalData.amount);
+    const processingFee = amount * (stats.processingFeePercent / 100);
+    const netAmount = amount - processingFee;
+    const expectedDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    const bankDetails = {
+      bankCode: withdrawalData.bankCode,
+      bankName: banks.find(b => b.code === withdrawalData.bankCode)?.name || 'Unknown Bank',
+      accountNumber: withdrawalData.accountNumber,
+      accountName: withdrawalData.accountName
+    };
+
+    try {
+      const { error } = await supabase
+        .from('withdrawals')
+        .insert([{
+          manager_id: user.id,
+          amount,
+          bank_details: bankDetails,
+          processing_fee: processingFee,
+          net_amount: netAmount,
+          narration: withdrawalData.narration || `Withdrawal by ${user.name}`,
+          expected_date: expectedDate,
+          status: 'pending'
+        }]);
+
+      if (error) throw error;
+
+      // Save bank account if new
+      await saveBankAccountToProfile();
+
+      alert(`✅ Withdrawal request submitted successfully!\n\n` +
+            `Amount: ${formatCurrency(amount)}\n` +
+            `Net Amount: ${formatCurrency(netAmount)}\n` +
+            `Processing Fee (${stats.processingFeePercent}%): ${formatCurrency(processingFee)}\n` +
+            `Expected by: ${new Date(expectedDate).toLocaleDateString()}\n\n` +
+            `Your withdrawal is being processed.`);
+
+      navigate('/dashboard/manager/payments');
+    } catch (error) {
+      console.error('Error submitting withdrawal:', error);
+      alert('Failed to submit withdrawal. Please try again.');
     }
-  }
+  };
 
   const selectSavedAccount = (account) => {
     setWithdrawalData({
@@ -286,27 +278,22 @@ const ManagerWithdrawal = () => {
       accountNumber: account.accountNumber,
       accountName: account.accountName,
       narration: ''
-    })
+    });
     setAccountDetails({
       accountNumber: account.accountNumber,
       accountName: account.accountName,
       bankCode: account.bankCode,
       bankName: account.bankName,
       verified: true
-    })
-  }
+    });
+  };
 
   const getFeeBreakdown = () => {
-    const amount = parseFloat(withdrawalData.amount) || 0
-    const processingFee = amount * (stats.processingFeePercent / 100)
-    const netAmount = amount - processingFee
-    
-    return {
-      amount,
-      processingFee,
-      netAmount
-    }
-  }
+    const amount = parseFloat(withdrawalData.amount) || 0;
+    const processingFee = amount * (stats.processingFeePercent / 100);
+    const netAmount = amount - processingFee;
+    return { amount, processingFee, netAmount };
+  };
 
   if (loading) {
     return (
@@ -314,14 +301,14 @@ const ManagerWithdrawal = () => {
         <div className="loading-spinner"></div>
         <p>Loading withdrawal information...</p>
       </div>
-    )
+    );
   }
 
   return (
     <div className="manager-withdrawal">
       {/* HEADER */}
       <div className="withdrawal-header">
-        <button 
+        <button
           className="btn-back"
           onClick={() => navigate('/dashboard/manager/payments')}
         >
@@ -365,10 +352,10 @@ const ManagerWithdrawal = () => {
               <h3>💳 Saved Bank Accounts</h3>
               <div className="accounts-list">
                 {savedAccounts.map((account, index) => (
-                  <div 
+                  <div
                     key={index}
                     className={`account-item ${
-                      account.bankCode === withdrawalData.bankCode && 
+                      account.bankCode === withdrawalData.bankCode &&
                       account.accountNumber === withdrawalData.accountNumber ? 'selected' : ''
                     }`}
                     onClick={() => selectSavedAccount(account)}
@@ -392,7 +379,7 @@ const ManagerWithdrawal = () => {
 
           {/* WITHDRAWAL HISTORY LINK */}
           <div className="history-link">
-            <button 
+            <button
               className="btn btn-outline"
               onClick={() => navigate('/dashboard/manager/payments?tab=withdrawals')}
             >
@@ -449,7 +436,7 @@ const ManagerWithdrawal = () => {
             {/* BANK DETAILS */}
             <div className="form-section">
               <h3>2. Bank Details</h3>
-              
+
               {/* BANK SELECTION */}
               <div className="form-group">
                 <label>Select Bank</label>
@@ -569,7 +556,6 @@ const ManagerWithdrawal = () => {
             <p>Most withdrawals completed within 24 hours</p>
           </div>
         </div>
-        
         <div className="info-card">
           <div className="info-icon">🔒</div>
           <div className="info-content">
@@ -577,7 +563,6 @@ const ManagerWithdrawal = () => {
             <p>Bank-level security for all transactions</p>
           </div>
         </div>
-        
         <div className="info-card">
           <div className="info-icon">💳</div>
           <div className="info-content">
@@ -585,7 +570,6 @@ const ManagerWithdrawal = () => {
             <p>Support for 40+ banks nationwide</p>
           </div>
         </div>
-        
         <div className="info-card">
           <div className="info-icon">📧</div>
           <div className="info-content">
@@ -595,7 +579,7 @@ const ManagerWithdrawal = () => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ManagerWithdrawal
+export default ManagerWithdrawal;

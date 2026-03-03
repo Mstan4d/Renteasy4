@@ -1,21 +1,19 @@
-// src/modules/verification/pages/VerificationForm.jsx - UPDATED
+// src/modules/verification/pages/VerificationForm.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import { nigerianStates, getLGAsForState } from '../../../shared/data/nigerianLocations';
 import './VerificationForm.css';
 
 const VerificationForm = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  // REMOVE the local nigerianStates array since we're importing it
-  
+
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
-  const [uploadProgress, setUploadProgress] = useState({});
+  const [uploading, setUploading] = useState({});
   const [formData, setFormData] = useState({
-    // Step 1: Personal Information
     fullName: user?.name || '',
     email: user?.email || '',
     phone: user?.phone || '',
@@ -24,34 +22,41 @@ const VerificationForm = () => {
     state: '',
     lga: '',
     address: '',
-    
-    // Step 2: Identity Verification
     idType: 'national_id',
     idNumber: '',
-    idFront: null,
-    idBack: null,
-    selfie: null,
-    proofOfAddress: null,
-    
-    // Step 3: Role-Specific Details
+    idFrontFile: null,
+    idBackFile: null,
+    selfieFile: null,
+    proofOfAddressFile: null,
     employmentStatus: '',
     monthlyIncome: '',
-    
-    // For Landlords
-    propertyDocument: null,
-    
-    // Terms
+    propertyDocumentFile: null,
     acceptTerms: false
   });
 
-  // Get LGAs for selected state
-  const getLGAsForState = () => {
-    if (!formData.state) return [];
-    const stateData = nigerianStates.find(s => s.state === formData.state);
+  const getTargetTable = () => {
+    switch (user?.role) {
+      case 'tenant':
+      case 'landlord':
+      case 'manager':
+        return 'profiles';
+      case 'service-provider':
+      case 'provider':
+        return 'service_providers';
+      case 'estate-firm':
+      case 'estate_firm':
+        return 'estate_firm_profiles';
+      default:
+        return 'profiles';
+    }
+  };
+
+  const getLGAsForState = (state) => {
+    if (!state) return [];
+    const stateData = nigerianStates.find(s => s.value === state);
     return stateData ? stateData.lgas : [];
   };
 
-  // Set role-specific steps
   const steps = user?.role === 'landlord' ? [
     { number: 1, title: 'Personal Info', icon: '👤' },
     { number: 2, title: 'ID Verification', icon: '🆔' },
@@ -67,83 +72,66 @@ const VerificationForm = () => {
   const handleFileUpload = (e, field) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('File size too large. Maximum size is 5MB.');
       return;
     }
-
-    // Validate file type
     const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
     if (!validTypes.includes(file.type)) {
       alert('Invalid file type. Please upload JPG, PNG, or PDF files.');
       return;
     }
 
-    // Simulate upload progress
-    setUploadProgress(prev => ({ ...prev, [field]: 0 }));
-    
+    setUploading(prev => ({ ...prev, [field]: 0 }));
     const interval = setInterval(() => {
-      setUploadProgress(prev => {
+      setUploading(prev => {
         const newProgress = prev[field] + 20;
         if (newProgress >= 100) {
           clearInterval(interval);
-          
-          // Create a preview URL for images
-          let previewUrl = '';
-          if (file.type.startsWith('image/')) {
-            previewUrl = URL.createObjectURL(file);
-          } else {
-            previewUrl = '📄'; // PDF icon
-          }
-          
-          setFormData(prev => ({
-            ...prev,
-            [field]: previewUrl,
-            [`${field}File`]: file
-          }));
-          
           return { ...prev, [field]: 100 };
         }
         return { ...prev, [field]: newProgress };
       });
     }, 100);
+
+    setFormData(prev => ({
+      ...prev,
+      [field]: file,
+      [`${field}Preview`]: file.type.startsWith('image/') ? URL.createObjectURL(file) : '📄'
+    }));
   };
 
   const removeFile = (field) => {
     setFormData(prev => ({
       ...prev,
       [field]: null,
-      [`${field}File`]: null
+      [`${field}Preview`]: null
     }));
+    setUploading(prev => ({ ...prev, [field]: 0 }));
   };
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: type === 'checkbox' ? checked : value
     }));
   };
 
   const validateStep = (stepNumber) => {
     switch(stepNumber) {
       case 1:
-        return formData.fullName && formData.phone && formData.dateOfBirth && 
+        return formData.fullName && formData.phone && formData.dateOfBirth &&
                formData.nationality && formData.state && formData.lga && formData.address;
-      
       case 2:
-        return formData.idType && formData.idNumber && formData.idFront && 
-               formData.selfie && formData.proofOfAddress;
-      
+        return formData.idType && formData.idNumber && formData.idFrontFile &&
+               formData.selfieFile && formData.proofOfAddressFile;
       case 3:
         if (user?.role === 'landlord') {
-          return formData.propertyDocument;
+          return formData.propertyDocumentFile;
         } else {
           return formData.employmentStatus && formData.monthlyIncome;
         }
-      
       default:
         return true;
     }
@@ -154,7 +142,6 @@ const VerificationForm = () => {
       alert('Please complete all required fields before proceeding.');
       return;
     }
-    
     if (step < 4) {
       setStep(step + 1);
     } else {
@@ -162,75 +149,86 @@ const VerificationForm = () => {
     }
   };
 
+  const uploadFile = async (file, path) => {
+    const { error } = await supabase.storage
+      .from('verification-docs')
+      .upload(path, file);
+    if (error) throw error;
+    const { data: urlData } = supabase.storage
+      .from('verification-docs')
+      .getPublicUrl(path);
+    return urlData.publicUrl;
+  };
+
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
-    
     setLoading(true);
+
     try {
-      // Get existing verifications
-      const existingVerifications = JSON.parse(localStorage.getItem('verifications') || '[]');
-      
-      const newVerification = {
-        id: `verif_${Date.now()}`,
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        userRole: user.role,
-        submittedAt: new Date().toISOString(),
-        status: 'pending',
-        formData: formData,
-        reviewedBy: null,
-        reviewedAt: null,
-        feedback: null
+      const table = getTargetTable();
+      const userId = user.id;
+
+      const fileFields = ['idFrontFile', 'idBackFile', 'selfieFile', 'proofOfAddressFile', 'propertyDocumentFile'];
+      const uploadedUrls = {};
+
+      for (const field of fileFields) {
+        const file = formData[field];
+        if (file) {
+          const fileExt = file.name.split('.').pop();
+          const path = `${userId}/${field}_${Date.now()}.${fileExt}`;
+          uploadedUrls[field] = await uploadFile(file, path);
+        }
+      }
+
+      const kycData = {
+        fullName: formData.fullName,
+        phone: formData.phone,
+        dateOfBirth: formData.dateOfBirth,
+        nationality: formData.nationality,
+        state: formData.state,
+        lga: formData.lga,
+        address: formData.address,
+        idType: formData.idType,
+        idNumber: formData.idNumber,
+        employmentStatus: formData.employmentStatus,
+        monthlyIncome: formData.monthlyIncome,
+        documents: uploadedUrls
       };
 
-      // Save to localStorage
-      existingVerifications.push(newVerification);
-      localStorage.setItem('verifications', JSON.stringify(existingVerifications));
+      const updateData = {
+        kyc_status: 'pending',
+        kyc_submitted_at: new Date().toISOString(),
+        kyc_data: kycData,
+        trust_score: 50,
+        verification_level: 'basic'
+      };
 
-      // Update user verification status
-      const users = JSON.parse(localStorage.getItem('users') || '[]');
-      const updatedUsers = users.map(u => 
-        u.id === user.id ? { ...u, verificationStatus: 'pending' } : u
-      );
-      localStorage.setItem('users', JSON.stringify(updatedUsers));
-
-      // Update kycVerifications for consistency
-      const kycVerifications = JSON.parse(localStorage.getItem('kycVerifications') || '[]');
-      const userKYCIndex = kycVerifications.findIndex(k => k.userId === user.id);
-      
-      if (userKYCIndex !== -1) {
-        kycVerifications[userKYCIndex] = {
-          ...kycVerifications[userKYCIndex],
-          status: 'pending',
-          level: 'basic',
-          submittedAt: new Date().toISOString(),
-          trustScore: 50
-        };
-      } else {
-        kycVerifications.push({
-          userId: user.id,
-          status: 'pending',
-          level: 'basic',
-          submittedAt: new Date().toISOString(),
-          trustScore: 50
-        });
+      if (table === 'estate_firm_profiles') {
+        updateData.verification_status = 'pending';
+        updateData.verification_submitted_at = new Date().toISOString();
+        updateData.verification_data = kycData;
+        delete updateData.kyc_status;
+        delete updateData.kyc_submitted_at;
+        delete updateData.kyc_data;
       }
-      localStorage.setItem('kycVerifications', JSON.stringify(kycVerifications));
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const { error } = await supabase
+        .from(table)
+        .update(updateData)
+        .eq(table === 'profiles' ? 'id' : 'user_id', userId);
 
-      setLoading(false);
+      if (error) throw error;
+
       navigate('/verify/status');
     } catch (error) {
       console.error('Error submitting verification:', error);
+      alert('Failed to submit verification. Please try again.');
+    } finally {
       setLoading(false);
-      alert('Error submitting verification. Please try again.');
     }
   };
 
-  const renderStep = () => {
+ const renderStep = () => {
     switch(step) {
       case 1:
         return (

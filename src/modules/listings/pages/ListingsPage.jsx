@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import { listingsService } from '../../../shared/services/listingsService';
 import { messagesService } from '../../../shared/services/messagesService';
 import Header from '../../../shared/components/Header';
@@ -355,32 +356,69 @@ const ListingsPage = () => {
     }
   };
 
-  // BUSINESS RULE: Handle verify user (admin only)
-  const handleVerifyUser = async (listingId) => {
-    if (!user || user.role !== 'admin') {
-      alert('Only admins can verify users.');
-      return;
-    }
+ // BUSINESS RULE: Handle verify user (admin only)
+const handleVerifyUser = async (listingId) => {
+  if (!user || user.role !== 'admin') {
+    alert('Only admins can verify users.');
+    return;
+  }
 
-    const listing = listings.find(l => l.id === listingId);
-    if (!listing) return;
+  const listing = listings.find(l => l.id === listingId);
+  if (!listing) {
+    alert('Listing not found.');
+    return;
+  }
 
-    try {
-      // You'll need to create this function in profilesService
-      // await profilesService.verifyUser(listing.posterId, user.id);
-      alert('User verification functionality coming soon');
-      loadListings();
-    } catch (error) {
-      alert(error.message || 'Failed to verify user');
-    }
-  };
+  // The user ID is stored in posterId (from the service transformation)
+  const userId = listing.posterId;
+  if (!userId) {
+    alert('User ID not found for this listing.');
+    console.error('Missing posterId in listing:', listing);
+    return;
+  }
 
+  if (!window.confirm(`Are you sure you want to verify the user "${listing.posterName}"?`)) return;
+
+  try {
+    // Update the user's profile
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        kyc_status: 'approved',
+        verified: true,
+        is_kyc_verified: true,
+        kyc_verified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    // Log admin activity
+    await supabase.from('admin_activities').insert({
+      admin_id: user.id,
+      action: `Verified user: ${listing.posterName}`,
+      entity_id: userId,
+      details: { admin_name: user.name, listing_id: listing.id },
+      created_at: new Date().toISOString()
+    });
+
+    alert('User verified successfully!');
+    loadListings(); // refresh to update the badge
+  } catch (error) {
+    console.error('Error verifying user:', error);
+    alert('Failed to verify user: ' + error.message);
+  }
+};
   // BUSINESS RULE: Handle reject listing with API call
   const handleReject = async (listingId, reason = 'Does not meet guidelines') => {
     if (!user || user.role !== 'admin') {
       alert('Only admins can reject listings.');
       return;
     }
+    console.log('Listing object:', listing);
+console.log('User ID from profile:', listing.profile?.id);
+console.log('User ID from user_id:', listing.user_id);
 
     if (!window.confirm('Are you sure you want to reject this listing?')) return;
     

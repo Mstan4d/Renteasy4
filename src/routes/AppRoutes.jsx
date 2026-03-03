@@ -143,6 +143,7 @@ const EmergencyControlsPage = lazy(() => import('../modules/super-admin/pages/Em
 const SuperAdminLogin = lazy(() => import('../modules/super-admin/pages/SuperAdminLogin'));
 const TestPage = lazy(() => import('../modules/super-admin/pages/TestPage'));
 const AdminProviderFreeBookings = lazy(() => import('../modules/super-admin//pages/AdminProviderFreeBookings'));
+const AdminStates = lazy(() => import('../modules/super-admin/pages/AdminStates'));
 
 // ========== PROVIDER IMPORTS ==========
 const ProviderDashboard = lazy(() => import('../modules/providers/pages/ProviderDashboard'));
@@ -240,6 +241,7 @@ const AppRoutes = () => {
         <Route path="emergency-controls" element={<EmergencyControlsPage />} />
         <Route path="provider-free-bookings" element={<AdminProviderFreeBookings />} />
         <Route path="test" element={<TestPage />} />
+        <Route path="admin-states" element={<AdminStates />} />
       </Route>
 
       {/* =================== ADMIN ROUTES =================== */}
@@ -265,7 +267,7 @@ const AppRoutes = () => {
         <Route path="revenue" element={<AdminRevenue />} />
         <Route path="settings" element={<AdminSettings />} />
         <Route path="provider-overview" element={<AdminProviderOverview />} />
-        <Route path="categories" element={<AdminServiceCategories />} />
+        <Route path="service-categories" element={<AdminServiceCategories />} />
         <Route path="referrals" element={<AdminReferrals />} />
       </Route>
 

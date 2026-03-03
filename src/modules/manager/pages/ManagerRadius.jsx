@@ -1,21 +1,22 @@
 // src/modules/manager/pages/ManagerRadius.jsx
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../../shared/context/AuthContext'
-import './ManagerRadius.css'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import './ManagerRadius.css';
 
 const ManagerRadius = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth();
+  const navigate = useNavigate();
   
-  const [radius, setRadius] = useState(1) // Default 1km
-  const [selectedAreas, setSelectedAreas] = useState([])
-  const [availableStates, setAvailableStates] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [mapLocation, setMapLocation] = useState(null)
+  const [radius, setRadius] = useState(1);
+  const [selectedAreas, setSelectedAreas] = useState([]);
+  const [availableStates, setAvailableStates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [mapLocation, setMapLocation] = useState(null);
 
-  // Nigerian states and LGAs
+  // Nigerian states and LGAs (static data – could be moved to DB later)
   const nigerianStates = [
     {
       name: 'Lagos',
@@ -37,70 +38,101 @@ const ManagerRadius = () => {
       name: 'Kano',
       lgas: ['Dala', 'Fagge', 'Gabasawa', 'Gaya', 'Gwale', 'Kano Municipal', 'Kumbotso', 'Kura', 'Madobi', 'Minjibir', 'Nasarawa', 'Rano', 'Rimin Gado', 'Tarauni', 'Tofa', 'Tsanyawa', 'Ungogo', 'Warawa', 'Wudil']
     }
-  ]
+  ];
 
   useEffect(() => {
-    loadManagerSettings()
-  }, [])
+    if (!user) return;
+    loadManagerSettings();
+  }, [user]);
 
-  const loadManagerSettings = () => {
-    // Load manager settings from localStorage
-    const managers = JSON.parse(localStorage.getItem('managers') || '[]')
-    const managerSettings = managers.find(m => m.userId === user.id)
-    
-    if (managerSettings) {
-      setRadius(managerSettings.radius || 1)
-      setSelectedAreas(managerSettings.areas || [])
-      setMapLocation(managerSettings.location || null)
+  const loadManagerSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('notification_radius_km, preferred_lgas, lat, lng')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setRadius(data.notification_radius_km || 1);
+        // Convert stored LGA names to area objects
+        if (data.preferred_lgas && data.preferred_lgas.length) {
+          const areas = [];
+          data.preferred_lgas.forEach(lgaName => {
+            // Find state containing this LGA
+            for (const state of nigerianStates) {
+              if (state.lgas.includes(lgaName)) {
+                areas.push({
+                  id: `${state.name}-${lgaName}`,
+                  state: state.name,
+                  lga: lgaName
+                });
+                break;
+              }
+            }
+          });
+          setSelectedAreas(areas);
+        }
+        if (data.lat && data.lng) {
+          setMapLocation({ lat: data.lat, lng: data.lng });
+        }
+      }
+
+      setAvailableStates(nigerianStates);
+    } catch (error) {
+      console.error('Error loading manager settings:', error);
+    } finally {
+      setLoading(false);
     }
-    
-    // Set available states
-    setAvailableStates(nigerianStates)
-    setLoading(false)
-  }
+  };
 
   const handleRadiusChange = (value) => {
-    setRadius(parseInt(value))
-  }
+    setRadius(parseInt(value));
+  };
 
   const toggleArea = (state, lga) => {
-    const areaId = `${state}-${lga}`
+    const areaId = `${state}-${lga}`;
     setSelectedAreas(prev => {
       if (prev.some(a => a.id === areaId)) {
-        return prev.filter(a => a.id !== areaId)
+        return prev.filter(a => a.id !== areaId);
       } else {
-        return [...prev, { id: areaId, state, lga }]
+        return [...prev, { id: areaId, state, lga }];
       }
-    })
-  }
+    });
+  };
 
   const isAreaSelected = (state, lga) => {
-    const areaId = `${state}-${lga}`
-    return selectedAreas.some(a => a.id === areaId)
-  }
+    const areaId = `${state}-${lga}`;
+    return selectedAreas.some(a => a.id === areaId);
+  };
 
   const handleSaveSettings = async () => {
-  setSaving(true);
+    setSaving(true);
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({
+    // Extract just the LGA names for database storage
+    const lgaNames = selectedAreas.map(a => a.lga);
+
+    const updates = {
       notification_radius_km: radius,
-      preferred_lgas: selectedAreas.map(a => a.lga),
-      // Update location if mapLocation exists
-      last_location: mapLocation 
-        ? `POINT(${mapLocation.lng} ${mapLocation.lat})` 
-        : null
-    })
-    .eq('id', user.id);
+      preferred_lgas: lgaNames,
+      ...(mapLocation && { lat: mapLocation.lat, lng: mapLocation.lng }),
+      updated_at: new Date().toISOString()
+    };
 
-  if (error) {
-    alert("Error saving settings: " + error.message);
-  } else {
-    alert("✅ Settings synced to RentEasy Cloud!");
-  }
-  setSaving(false);
-};
+    const { error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id);
+
+    if (error) {
+      alert("❌ Error saving settings: " + error.message);
+    } else {
+      alert("✅ Settings synced to RentEasy Cloud!");
+    }
+    setSaving(false);
+  };
 
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
@@ -110,33 +142,30 @@ const ManagerRadius = () => {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
             timestamp: new Date().toISOString()
-          }
-          setMapLocation(location)
-          alert('📍 Location detected successfully!')
+          };
+          setMapLocation(location);
+          alert('📍 Location detected successfully!');
         },
         (error) => {
-          alert('Unable to get location. Please enable location services.')
+          alert('Unable to get location. Please enable location services.');
         }
-      )
+      );
     } else {
-      alert('Geolocation is not supported by your browser.')
+      alert('Geolocation is not supported by your browser.');
     }
-  }
+  };
 
-  const calculateCoverage = () => {
-    // Each LGA counts as coverage
-    return selectedAreas.length
-  }
+  const calculateCoverage = () => selectedAreas.length;
 
   const getNotificationEstimate = () => {
     // Rough estimate: 5-20 listings per LGA per month
-    const baseEstimate = selectedAreas.length * 10
-    const radiusMultiplier = radius * 1.5
-    return Math.floor(baseEstimate * radiusMultiplier)
-  }
+    const baseEstimate = selectedAreas.length * 10;
+    const radiusMultiplier = radius * 1.5;
+    return Math.floor(baseEstimate * radiusMultiplier);
+  };
 
   if (loading) {
-    return <div className="loading">Loading settings...</div>
+    return <div className="loading">Loading settings...</div>;
   }
 
   return (
@@ -269,24 +298,24 @@ const ManagerRadius = () => {
                       onClick={() => {
                         const allSelected = state.lgas.every(lga => 
                           isAreaSelected(state.name, lga)
-                        )
+                        );
                         
                         if (allSelected) {
                           // Deselect all
                           setSelectedAreas(prev => 
                             prev.filter(area => area.state !== state.name)
-                          )
+                          );
                         } else {
                           // Select all
                           const newAreas = state.lgas.map(lga => ({
                             id: `${state.name}-${lga}`,
                             state: state.name,
                             lga
-                          }))
+                          }));
                           setSelectedAreas(prev => [
                             ...prev.filter(area => area.state !== state.name),
                             ...newAreas
-                          ])
+                          ]);
                         }
                       }}
                     >
@@ -382,11 +411,11 @@ const ManagerRadius = () => {
               <button 
                 className="btn btn-outline"
                 onClick={() => {
-                  const lat = parseFloat(prompt('Enter latitude:'))
-                  const lng = parseFloat(prompt('Enter longitude:'))
+                  const lat = parseFloat(prompt('Enter latitude:'));
+                  const lng = parseFloat(prompt('Enter longitude:'));
                   if (!isNaN(lat) && !isNaN(lng)) {
-                    setMapLocation({ lat, lng })
-                    alert('Location set manually')
+                    setMapLocation({ lat, lng, timestamp: new Date().toISOString() });
+                    alert('Location set manually');
                   }
                 }}
               >
@@ -408,7 +437,7 @@ const ManagerRadius = () => {
                   <div className="info-item">
                     <span className="label">Last Updated:</span>
                     <span className="value">
-                      {new Date(mapLocation.timestamp).toLocaleString()}
+                      {mapLocation.timestamp ? new Date(mapLocation.timestamp).toLocaleString() : 'Not set'}
                     </span>
                   </div>
                 </div>
@@ -484,7 +513,7 @@ const ManagerRadius = () => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ManagerRadius
+export default ManagerRadius;

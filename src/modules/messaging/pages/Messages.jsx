@@ -62,6 +62,11 @@ const Messages = () => {
     if (!timestamp) return '';
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+   const isValidUUID = (uuid) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuid && typeof uuid === 'string' && uuidRegex.test(uuid);
+};
+
 
   // Fetch listing by ID
   const fetchListing = async (id) => {
@@ -76,44 +81,51 @@ const Messages = () => {
 
   // Load existing chat by ID
   const loadExistingChat = async (id) => {
-    try {
-      setLoading(true);
-      const { data: chatData, error: chatError } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', id)
-        .single();
+  try {
+    setLoading(true);
+    const { data: chatData, error: chatError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-      if (chatError || !chatData) {
-        alert('Chat not found');
-        navigate('/listings');
-        return;
-      }
-
-      // Check access permission
-      if (!hasChatAccess(chatData)) {
-        alert('You do not have permission to access this chat');
-        navigate('/listings');
-        return;
-      }
-
-      // Fetch associated listing
-      const listingData = await fetchListing(chatData.listing_id);
-      setListing(listingData);
-      setChat(chatData);
-
-      // Fetch participant names/profiles
-      await fetchParticipantProfiles(chatData);
-
-      // Fetch messages
-      await fetchMessages(id);
-    } catch (error) {
-      console.error('Error loading chat:', error);
-    } finally {
-      setLoading(false);
+    if (chatError || !chatData) {
+      alert('Chat not found');
+      navigate('/listings');
+      return;
     }
-  };
 
+    // ✅ Validate listing_id
+    if (!isValidUUID(chatData.listing_id)) {
+      console.error('Invalid listing_id in chat:', chatData.listing_id);
+      alert('This chat has an invalid reference to a listing. Please contact support.');
+      navigate('/listings');
+      return;
+    }
+
+    // Check access permission
+    if (!hasChatAccess(chatData)) {
+      alert('You do not have permission to access this chat');
+      navigate('/listings');
+      return;
+    }
+
+    // Fetch associated listing
+    const listingData = await fetchListing(chatData.listing_id);
+    setListing(listingData);
+    setChat(chatData);
+
+    // Fetch participant names/profiles
+    await fetchParticipantProfiles(chatData);
+
+    // Fetch messages
+    await fetchMessages(id);
+  } catch (error) {
+    console.error('Error loading chat:', error);
+  } finally {
+    setLoading(false);
+  }
+};
   // Check if current user has access to chat (business rules)
   const hasChatAccess = (chat) => {
     if (!user) return false;
@@ -203,8 +215,15 @@ const Messages = () => {
 
   // Load or create a chat for a listing
   const loadOrCreateChat = async (listingId) => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
+
+    // ✅ Validate the listing ID from URL
+    if (!isValidUUID(listingId)) {
+      alert('Invalid listing ID');
+      navigate('/listings');
+      return;
+    }
 
       // Fetch listing details
       const listingData = await fetchListing(listingId);

@@ -1,125 +1,13 @@
+// src/modules/super-admin/pages/PaymentsCommissionPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './PaymentsCommissionPage.css';
 
 const PaymentsCommissionPage = () => {
-  const [transactions, setTransactions] = useState([
-    {
-      id: 1,
-      rentalId: 'RENT-001',
-      tenant: 'John Doe',
-      landlord: 'Sarah Smith',
-      listing: '3-Bedroom Duplex, Lekki',
-      amount: 7500000,
-      commission: 7.5,
-      breakdown: {
-        manager: 2.5,
-        referrer: 1.0,
-        rentEasy: 4.0
-      },
-      status: 'completed',
-      date: '2024-01-15',
-      manager: 'Michael Manager',
-      referrer: 'Jane Referrer',
-      commissionAmounts: {
-        manager: 187500,
-        referrer: 75000,
-        rentEasy: 300000
-      }
-    },
-    {
-      id: 2,
-      rentalId: 'RENT-002',
-      tenant: 'David Brown',
-      landlord: 'Prime Estates Ltd',
-      listing: 'Office Space, VI',
-      amount: 12000000,
-      commission: 0,
-      breakdown: {
-        manager: 0,
-        referrer: 0,
-        rentEasy: 0
-      },
-      status: 'completed',
-      date: '2024-01-14',
-      manager: 'Not Applicable',
-      referrer: 'None',
-      commissionAmounts: {
-        manager: 0,
-        referrer: 0,
-        rentEasy: 0
-      }
-    },
-    {
-      id: 3,
-      rentalId: 'RENT-003',
-      tenant: 'Lisa Taylor',
-      landlord: 'Mike Johnson',
-      listing: '2-Bedroom Apartment, Ikeja',
-      amount: 3500000,
-      commission: 7.5,
-      breakdown: {
-        manager: 2.5,
-        referrer: 1.0,
-        rentEasy: 4.0
-      },
-      status: 'pending',
-      date: '2024-01-16',
-      manager: 'Sarah Manager',
-      referrer: 'None',
-      commissionAmounts: {
-        manager: 87500,
-        referrer: 0,
-        rentEasy: 140000
-      }
-    },
-    {
-      id: 4,
-      rentalId: 'RENT-004',
-      tenant: 'Robert Chen',
-      landlord: 'Emily Davis',
-      listing: 'Studio Apartment, Yaba',
-      amount: 2500000,
-      commission: 7.5,
-      breakdown: {
-        manager: 2.5,
-        referrer: 1.0,
-        rentEasy: 4.0
-      },
-      status: 'fraudulent',
-      date: '2024-01-13',
-      manager: 'David Manager',
-      referrer: 'John Referrer',
-      commissionAmounts: {
-        manager: 62500,
-        referrer: 25000,
-        rentEasy: 100000
-      }
-    },
-    {
-      id: 5,
-      rentalId: 'RENT-005',
-      tenant: 'Jane Wilson',
-      landlord: 'Elite Properties',
-      listing: '4-Bedroom House, GRA',
-      amount: 15000000,
-      commission: 0,
-      breakdown: {
-        manager: 0,
-        referrer: 0,
-        rentEasy: 0
-      },
-      status: 'completed',
-      date: '2024-01-12',
-      manager: 'Not Applicable',
-      referrer: 'None',
-      commissionAmounts: {
-        manager: 0,
-        referrer: 0,
-        rentEasy: 0
-      }
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [showReverseModal, setShowReverseModal] = useState(false);
@@ -134,43 +22,14 @@ const PaymentsCommissionPage = () => {
     fraudulentTransactions: 0
   });
 
-  useEffect(() => {
-    // Calculate stats
-    const calculatedStats = {
-      totalRevenue: 0,
-      totalCommission: 0,
-      managerCommission: 0,
-      referrerCommission: 0,
-      rentEasyCommission: 0,
-      fraudulentTransactions: 0
-    };
-
-    transactions.forEach(transaction => {
-      calculatedStats.totalRevenue += transaction.amount;
-      
-      if (transaction.commission > 0) {
-        const commissionAmount = transaction.amount * (transaction.commission / 100);
-        calculatedStats.totalCommission += commissionAmount;
-        calculatedStats.managerCommission += transaction.commissionAmounts.manager;
-        calculatedStats.referrerCommission += transaction.commissionAmounts.referrer;
-        calculatedStats.rentEasyCommission += transaction.commissionAmounts.rentEasy;
-      }
-
-      if (transaction.status === 'fraudulent') {
-        calculatedStats.fraudulentTransactions++;
-      }
-    });
-
-    setStats(calculatedStats);
-  }, [transactions]);
-
+  // Commission rules (can be moved to context later)
   const commissionRules = {
     tenantLandlordListings: {
       mandatory: 7.5,
       breakdown: {
         manager: 2.5,
-        referrer: 1.0,
-        rentEasy: 4.0
+        referrer: 1.5,
+        rentEasy: 3.5
       },
       cannotBeReduced: true
     },
@@ -187,6 +46,213 @@ const PaymentsCommissionPage = () => {
     ]
   };
 
+  // Fetch commissions on mount
+  useEffect(() => {
+    fetchCommissions();
+  }, []);
+
+  // Real‑time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('commissions-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'commissions'
+      }, () => {
+        fetchCommissions();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const fetchCommissions = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('commissions')
+        .select(`
+          *,
+          listing:listings!listing_id (
+            id,
+            title,
+            address,
+            poster_role,
+            landlord:user_id (id, full_name),
+            tenant:rented_to (id, full_name)
+          ),
+          manager:profiles!manager_id (id, full_name),
+          referrer:profiles!referrer_id (id, full_name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform to component structure
+      const transformed = data.map(item => {
+        const isEstateFirm = item.listing?.poster_role === 'estate-firm';
+        const totalCommission = (item.manager_share || 0) + (item.referrer_share || 0) + (item.platform_share || 0);
+        const commissionPercent = isEstateFirm ? 0 : (totalCommission / item.rental_amount) * 100;
+
+        return {
+          id: item.id,
+          rentalId: `RENT-${item.id.slice(0, 8)}`,
+          tenant: item.listing?.tenant?.full_name || 'Unknown Tenant',
+          landlord: item.listing?.landlord?.full_name || 'Unknown Landlord',
+          listing: item.listing?.title || 'Unknown Listing',
+          amount: item.rental_amount,
+          commission: Math.round(commissionPercent * 10) / 10, // round to 1 decimal
+          breakdown: {
+            manager: (item.manager_share / item.rental_amount * 100) || 0,
+            referrer: (item.referrer_share / item.rental_amount * 100) || 0,
+            rentEasy: (item.platform_share / item.rental_amount * 100) || 0
+          },
+          status: item.status || 'pending',
+          date: new Date(item.created_at).toLocaleDateString(),
+          manager: item.manager?.full_name || 'Not Applicable',
+          referrer: item.referrer?.full_name || 'None',
+          commissionAmounts: {
+            manager: item.manager_share || 0,
+            referrer: item.referrer_share || 0,
+            rentEasy: item.platform_share || 0
+          },
+          posterRole: item.listing?.poster_role,
+          raw: item // keep for updates
+        };
+      });
+
+      setTransactions(transformed);
+      calculateStats(transformed);
+    } catch (error) {
+      console.error('Error fetching commissions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateStats = (txs) => {
+    const stats = {
+      totalRevenue: 0,
+      totalCommission: 0,
+      managerCommission: 0,
+      referrerCommission: 0,
+      rentEasyCommission: 0,
+      fraudulentTransactions: 0
+    };
+
+    txs.forEach(tx => {
+      stats.totalRevenue += tx.amount;
+      stats.managerCommission += tx.commissionAmounts.manager;
+      stats.referrerCommission += tx.commissionAmounts.referrer;
+      stats.rentEasyCommission += tx.commissionAmounts.rentEasy;
+      if (tx.status === 'fraudulent') stats.fraudulentTransactions++;
+    });
+
+    stats.totalCommission = stats.managerCommission + stats.referrerCommission + stats.rentEasyCommission;
+    setStats(stats);
+  };
+
+  const handleOverrideCommission = async (transactionId, newBreakdown) => {
+    const transaction = transactions.find(t => t.id === transactionId);
+    if (!transaction) return;
+
+    const newTotalPercent = newBreakdown.manager + newBreakdown.referrer + newBreakdown.rentEasy;
+    const newAmounts = {
+      manager: transaction.amount * (newBreakdown.manager / 100),
+      referrer: transaction.amount * (newBreakdown.referrer / 100),
+      platform: transaction.amount * (newBreakdown.rentEasy / 100)
+    };
+
+    try {
+      const { error } = await supabase
+        .from('commissions')
+        .update({
+          manager_share: newAmounts.manager,
+          referrer_share: newAmounts.referrer,
+          platform_share: newAmounts.platform,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', transactionId);
+
+      if (error) throw error;
+
+      // Log admin activity
+      await supabase.from('admin_activities').insert({
+        admin_id: user?.id,
+        action: `Overrode commission for transaction ${transaction.rentalId}`,
+        type: 'commission_override',
+        entity_id: transactionId,
+        details: { old: transaction.raw, new: newAmounts }
+      });
+
+      await fetchCommissions();
+      setShowOverrideModal(false);
+      alert('Commission updated!');
+    } catch (error) {
+      console.error('Error overriding commission:', error);
+      alert('Failed to override commission.');
+    }
+  };
+
+  const handleReverseTransaction = async (transactionId) => {
+    if (!window.confirm('Are you sure you want to reverse this transaction? This cannot be undone.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('commissions')
+        .update({
+          status: 'reversed',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', transactionId);
+
+      if (error) throw error;
+
+      await supabase.from('admin_activities').insert({
+        admin_id: user?.id,
+        action: `Reversed transaction ${transactionId}`,
+        type: 'commission_reversal',
+        entity_id: transactionId
+      });
+
+      await fetchCommissions();
+      setShowReverseModal(false);
+      alert('Transaction reversed.');
+    } catch (error) {
+      console.error('Error reversing transaction:', error);
+      alert('Failed to reverse transaction.');
+    }
+  };
+
+  const handleFreezeConfirmation = async (transactionId) => {
+    try {
+      const { error } = await supabase
+        .from('commissions')
+        .update({
+          status: 'frozen',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', transactionId);
+
+      if (error) throw error;
+
+      await supabase.from('admin_activities').insert({
+        admin_id: user?.id,
+        action: `Froze transaction ${transactionId}`,
+        type: 'commission_freeze',
+        entity_id: transactionId
+      });
+
+      await fetchCommissions();
+      setShowFreezeModal(false);
+      alert('Transaction frozen.');
+    } catch (error) {
+      console.error('Error freezing transaction:', error);
+      alert('Failed to freeze transaction.');
+    }
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-NG', {
       style: 'currency',
@@ -195,50 +261,9 @@ const PaymentsCommissionPage = () => {
     }).format(amount);
   };
 
-  const handleOverrideCommission = (transactionId, newBreakdown) => {
-    // In production, this would make an API call
-    const transaction = transactions.find(t => t.id === transactionId);
-    const newCommissionAmounts = {
-      manager: transaction.amount * (newBreakdown.manager / 100),
-      referrer: transaction.amount * (newBreakdown.referrer / 100),
-      rentEasy: transaction.amount * (newBreakdown.rentEasy / 100)
-    };
-
-    setTransactions(transactions.map(t =>
-      t.id === transactionId
-        ? {
-            ...t,
-            commission: newBreakdown.manager + newBreakdown.referrer + newBreakdown.rentEasy,
-            breakdown: newBreakdown,
-            commissionAmounts: newCommissionAmounts
-          }
-        : t
-    ));
-    setShowOverrideModal(false);
-  };
-
-  const handleReverseTransaction = (transactionId) => {
-    if (window.confirm('Are you sure you want to reverse this transaction? This cannot be undone.')) {
-      setTransactions(transactions.map(t =>
-        t.id === transactionId
-          ? { ...t, status: 'reversed' }
-          : t
-      ));
-      setShowReverseModal(false);
-    }
-  };
-
-  const handleFreezeConfirmation = (transactionId) => {
-    setTransactions(transactions.map(t =>
-      t.id === transactionId
-        ? { ...t, status: 'frozen' }
-        : t
-    ));
-    setShowFreezeModal(false);
-  };
-
   const getStatusColor = (status) => {
     switch(status) {
+      case 'paid':
       case 'completed': return 'success';
       case 'pending': return 'warning';
       case 'fraudulent': return 'danger';
@@ -248,10 +273,14 @@ const PaymentsCommissionPage = () => {
     }
   };
 
-  const filteredTransactions = transactions.filter(transaction => {
-    if (filter !== 'all' && transaction.status !== filter) return false;
-    return true;
+  const filteredTransactions = transactions.filter(tx => {
+    if (filter === 'all') return true;
+    return tx.status === filter;
   });
+
+  if (loading) {
+    return <div className="loading">Loading commission data...</div>;
+  }
 
   return (
     <div className="payments-commission">
@@ -262,7 +291,7 @@ const PaymentsCommissionPage = () => {
           <p className="page-subtitle">Financial controls and commission overrides</p>
         </div>
         <div className="header-actions">
-          <button className="export-btn">
+          <button className="export-btn" onClick={() => alert('Export coming soon')}>
             📊 Export Financial Report
           </button>
         </div>
@@ -295,11 +324,11 @@ const PaymentsCommissionPage = () => {
               </div>
               <div className="breakdown-item">
                 <span className="breakdown-label">Referrer:</span>
-                <span className="breakdown-value">1.0%</span>
+                <span className="breakdown-value">1.5%</span>
               </div>
               <div className="breakdown-item">
                 <span className="breakdown-label">RentEasy:</span>
-                <span className="breakdown-value">4.0%</span>
+                <span className="breakdown-value">3.5%</span>
               </div>
             </div>
             <div className="rule-note">Cannot be reduced by anyone except Super Admin</div>
@@ -343,12 +372,12 @@ const PaymentsCommissionPage = () => {
           <div className="stat-card referrer">
             <div className="stat-icon">👥</div>
             <div className="stat-value">{formatCurrency(stats.referrerCommission)}</div>
-            <div className="stat-label">Referrer Share (1%)</div>
+            <div className="stat-label">Referrer Share (1.5%)</div>
           </div>
           <div className="stat-card renteasy">
             <div className="stat-icon">🏢</div>
             <div className="stat-value">{formatCurrency(stats.rentEasyCommission)}</div>
-            <div className="stat-label">RentEasy Share (4%)</div>
+            <div className="stat-label">RentEasy Share (3.5%)</div>
           </div>
           <div className="stat-card fraudulent">
             <div className="stat-icon">🚨</div>
@@ -363,7 +392,7 @@ const PaymentsCommissionPage = () => {
         <div className="section-header">
           <h3>All Rental Transactions</h3>
           <div className="filter-controls">
-            <select 
+            <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               className="filter-select"
@@ -415,7 +444,7 @@ const PaymentsCommissionPage = () => {
                     <div className="commission-breakdown">
                       <div className="breakdown-row">
                         <span className="breakdown-label">Total Commission:</span>
-                        <span className={`breakdown-value ${transaction.commission !== 7.5 ? 'warning' : ''}`}>
+                        <span className={`breakdown-value ${transaction.commission !== 7.5 && transaction.posterRole !== 'estate-firm' ? 'warning' : ''}`}>
                           {transaction.commission}%
                         </span>
                       </div>
@@ -428,13 +457,13 @@ const PaymentsCommissionPage = () => {
                             </span>
                           </div>
                           <div className="breakdown-row">
-                            <span className="breakdown-label">Referrer (1%):</span>
+                            <span className="breakdown-label">Referrer (1.5%):</span>
                             <span className="breakdown-value">
                               {formatCurrency(transaction.commissionAmounts.referrer)}
                             </span>
                           </div>
                           <div className="breakdown-row">
-                            <span className="breakdown-label">RentEasy (4%):</span>
+                            <span className="breakdown-label">RentEasy (3.5%):</span>
                             <span className="breakdown-value">
                               {formatCurrency(transaction.commissionAmounts.rentEasy)}
                             </span>
@@ -465,14 +494,14 @@ const PaymentsCommissionPage = () => {
                   </td>
                   <td>
                     <div className="action-buttons">
-                      <button 
+                      <button
                         className="action-btn view"
                         onClick={() => setSelectedTransaction(transaction)}
                         title="View Details"
                       >
                         👁️
                       </button>
-                      <button 
+                      <button
                         className="action-btn override"
                         onClick={() => {
                           setSelectedTransaction(transaction);
@@ -483,7 +512,7 @@ const PaymentsCommissionPage = () => {
                       >
                         ⚡
                       </button>
-                      <button 
+                      <button
                         className="action-btn freeze"
                         onClick={() => {
                           setSelectedTransaction(transaction);
@@ -493,7 +522,7 @@ const PaymentsCommissionPage = () => {
                       >
                         ❄️
                       </button>
-                      <button 
+                      <button
                         className="action-btn reverse"
                         onClick={() => {
                           setSelectedTransaction(transaction);
@@ -518,12 +547,7 @@ const PaymentsCommissionPage = () => {
           <div className="modal">
             <div className="modal-header warning">
               <h3>Override Commission Distribution</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowOverrideModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowOverrideModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="override-warning">
@@ -608,18 +632,13 @@ const PaymentsCommissionPage = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowOverrideModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
+              <button className="btn-secondary" onClick={() => setShowOverrideModal(false)}>Cancel</button>
+              <button
                 className="btn-primary"
                 onClick={() => handleOverrideCommission(selectedTransaction.id, {
-                  manager: 2.5,
-                  referrer: 1.0,
-                  rentEasy: 4.0
+                  manager: parseFloat(document.querySelector('.breakdown-group:nth-child(1) input').value) || 2.5,
+                  referrer: parseFloat(document.querySelector('.breakdown-group:nth-child(2) input').value) || 1.5,
+                  rentEasy: parseFloat(document.querySelector('.breakdown-group:nth-child(3) input').value) || 3.5
                 })}
               >
                 Apply Override
@@ -635,12 +654,7 @@ const PaymentsCommissionPage = () => {
           <div className="modal">
             <div className="modal-header danger">
               <h3>Freeze Payment Confirmation</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowFreezeModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowFreezeModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="freeze-warning">
@@ -655,7 +669,7 @@ const PaymentsCommissionPage = () => {
                     <p><strong>Amount:</strong> {formatCurrency(selectedTransaction.amount)}</p>
                     <p><strong>Parties:</strong> {selectedTransaction.tenant} ↔ {selectedTransaction.landlord}</p>
                     <p><strong>Reason for freezing:</strong></p>
-                    <textarea 
+                    <textarea
                       className="freeze-reason"
                       placeholder="Enter reason for freezing this payment..."
                       rows="3"
@@ -665,16 +679,8 @@ const PaymentsCommissionPage = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowFreezeModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn-primary danger"
-                onClick={() => handleFreezeConfirmation(selectedTransaction.id)}
-              >
+              <button className="btn-secondary" onClick={() => setShowFreezeModal(false)}>Cancel</button>
+              <button className="btn-primary danger" onClick={() => handleFreezeConfirmation(selectedTransaction.id)}>
                 Freeze Payment
               </button>
             </div>
@@ -688,12 +694,7 @@ const PaymentsCommissionPage = () => {
           <div className="modal">
             <div className="modal-header danger">
               <h3>Reverse Transaction</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowReverseModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowReverseModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="reverse-warning">
@@ -714,7 +715,7 @@ const PaymentsCommissionPage = () => {
                   <div className="reversal-details">
                     <p><strong>Transaction Amount:</strong> {formatCurrency(selectedTransaction.amount)}</p>
                     <p><strong>Commission to be reversed:</strong> {formatCurrency(selectedTransaction.amount * (selectedTransaction.commission / 100))}</p>
-                    <textarea 
+                    <textarea
                       className="reversal-reason"
                       placeholder="Detailed reason for reversal (required for audit)..."
                       rows="4"
@@ -725,16 +726,8 @@ const PaymentsCommissionPage = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowReverseModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn-primary danger"
-                onClick={() => handleReverseTransaction(selectedTransaction.id)}
-              >
+              <button className="btn-secondary" onClick={() => setShowReverseModal(false)}>Cancel</button>
+              <button className="btn-primary danger" onClick={() => handleReverseTransaction(selectedTransaction.id)}>
                 Confirm Reversal
               </button>
             </div>
@@ -748,12 +741,7 @@ const PaymentsCommissionPage = () => {
           <div className="modal large">
             <div className="modal-header">
               <h3>Transaction Details</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setSelectedTransaction(null)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setSelectedTransaction(null)}>×</button>
             </div>
             <div className="modal-body">
               <div className="transaction-details-modal">
@@ -847,13 +835,8 @@ const PaymentsCommissionPage = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setSelectedTransaction(null)}
-              >
-                Close
-              </button>
-              <button 
+              <button className="btn-secondary" onClick={() => setSelectedTransaction(null)}>Close</button>
+              <button
                 className="btn-primary"
                 onClick={() => {
                   setSelectedTransaction(null);

@@ -1,8 +1,9 @@
+// src/modules/super-admin/components/SuperAdminSideBar.jsx
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import './SuperAdminSidebar.css';
+import './SuperAdminSideBar.css';
 
-const SuperAdminSidebar = () => {
+const SuperAdminSideBar = ({ isOpen, onClose }) => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
 
@@ -15,7 +16,7 @@ const SuperAdminSidebar = () => {
     },
     {
       title: 'ADMIN MANAGEMENT',
-      path: '/super-admin/pages/admin-management',
+      path: '/super-admin/admin-management',
       icon: '👥',
       color: '#4CAF50'
     },
@@ -50,6 +51,12 @@ const SuperAdminSidebar = () => {
       color: '#F44336'
     },
     {
+      title: 'MANAGE STATES',
+      path: '/super-admin/states',
+      icon: '⚖️',
+      color: '#042127'
+    },
+    {
       title: 'VERIFICATION AUTHORITY',
       path: '/super-admin/verification-authority',
       icon: '✅',
@@ -76,14 +83,21 @@ const SuperAdminSidebar = () => {
   ];
 
   const handleLogout = () => {
-    // Clear super admin session
+    // Clear session – adjust to your auth method
     localStorage.removeItem('superAdminToken');
     localStorage.removeItem('userRole');
     navigate('/login');
   };
 
+  const handleLinkClick = () => {
+    // Close sidebar on mobile after clicking a link
+    if (window.innerWidth <= 768) {
+      onClose();
+    }
+  };
+
   return (
-    <div className={`super-admin-sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <div className={`super-admin-sidebar ${collapsed ? 'collapsed' : ''} ${isOpen ? 'mobile-open' : ''}`}>
       {/* Header */}
       <div className="sidebar-header">
         {!collapsed && (
@@ -114,6 +128,7 @@ const SuperAdminSidebar = () => {
               `nav-item ${isActive ? 'active' : ''}`
             }
             title={collapsed ? item.title : ''}
+            onClick={handleLinkClick}
           >
             <span className="nav-icon" style={{ color: item.color }}>
               {item.icon}
@@ -153,4 +168,4 @@ const SuperAdminSidebar = () => {
   );
 };
 
-export default SuperAdminSidebar;
+export default SuperAdminSideBar;

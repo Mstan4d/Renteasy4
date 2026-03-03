@@ -2,6 +2,14 @@
    Admin Verification Dashboard
    A clean, modern KYC verification interface
 ============================================== */
+.no-verification {
+  display: block !important;
+  padding: 2rem;
+  text-align: center;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 2rem;
+}
 
 .admin-verification {
   padding: 30px;

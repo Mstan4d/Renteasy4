@@ -1,36 +1,189 @@
+// src/modules/super-admin/pages/CommandCenterPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './CommandCenterPage.css';
 
 const CommandCenterPage = () => {
+  const { user } = useAuth();
   const [metrics, setMetrics] = useState({
-    totalListings: { live: 145, unverified: 23, verified: 89, rented: 33, suspended: 5 },
-    activeChats: { tenantLandlord: 45, tenantManager: 67, total: 112 },
-    managerStatus: { online: 28, offline: 12, total: 40 },
-    disputes: { pending: 8, resolved: 24, escalated: 3 },
-    revenue: { today: 125000, thisMonth: 1850000, lifetime: 45200000 },
-    commissionSummary: { manager: 1250000, referrer: 500000, rentEasy: 2000000 }
+    totalListings: { live: 0, unverified: 0, verified: 0, rented: 0, suspended: 0 },
+    activeChats: { tenantLandlord: 0, tenantManager: 0, total: 0 },
+    managerStatus: { online: 0, offline: 0, total: 0 },
+    disputes: { pending: 0, resolved: 0, escalated: 0 },
+    revenue: { today: 0, thisMonth: 0, lifetime: 0 },
+    commissionSummary: { manager: 0, referrer: 0, rentEasy: 0 }
   });
 
-  const [liveUpdates, setLiveUpdates] = useState([
-    { id: 1, type: 'listing', action: 'New listing posted', location: 'Lekki Phase 1', time: '2 mins ago' },
-    { id: 2, type: 'payment', action: 'Payment confirmed', amount: '₦750,000', time: '5 mins ago' },
-    { id: 3, type: 'chat', action: 'New chat started', parties: 'Tenant ↔ Landlord', time: '10 mins ago' },
-    { id: 4, type: 'verification', action: 'Property verified', manager: 'John Manager', time: '15 mins ago' },
-    { id: 5, type: 'dispute', action: 'Dispute escalated', listing: '3-bedroom duplex', time: '25 mins ago' },
-  ]);
-
+  const [liveUpdates, setLiveUpdates] = useState([]);
   const [isLive, setIsLive] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch all metrics
+  const fetchMetrics = async () => {
+    try {
+      // 1. Listings stats
+      const { data: listings, error: listingsError } = await supabase
+        .from('listings')
+        .select('verified, status, rejected');
+      if (listingsError) throw listingsError;
+
+      const live = listings.filter(l => l.status === 'active' && !l.rejected).length;
+      const unverified = listings.filter(l => !l.verified && !l.rejected).length;
+      const verified = listings.filter(l => l.verified && !l.rejected).length;
+      const rented = listings.filter(l => l.status === 'rented').length;
+      const suspended = listings.filter(l => l.rejected).length;
+
+      // 2. Chats stats
+      const { data: chats, error: chatsError } = await supabase
+        .from('chats')
+        .select('chat_type, state');
+      if (chatsError) throw chatsError;
+
+      const tenantLandlord = chats.filter(c => c.chat_type === 'tenant-landlord' && c.state === 'active').length;
+      const tenantManager = chats.filter(c => c.chat_type === 'tenant-manager' && c.state === 'active').length;
+      const totalActiveChats = chats.filter(c => c.state === 'active').length;
+
+      // 3. Manager status (online = last_active < 5 minutes ago)
+      const { data: managers, error: managersError } = await supabase
+        .from('profiles')
+        .select('last_active')
+        .eq('role', 'manager');
+      if (managersError) throw managersError;
+
+      const now = new Date();
+      const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+      const online = managers.filter(m => m.last_active && new Date(m.last_active) > fiveMinutesAgo).length;
+      const offline = managers.length - online;
+
+      // 4. Disputes
+      const { data: disputes, error: disputesError } = await supabase
+        .from('disputes')
+        .select('status');
+      if (disputesError) throw disputesError;
+
+      const pendingDisputes = disputes.filter(d => d.status === 'pending').length;
+      const resolvedDisputes = disputes.filter(d => d.status === 'resolved').length;
+      const escalatedDisputes = disputes.filter(d => d.status === 'escalated').length;
+
+      // 5. Revenue from commissions
+      const { data: commissions, error: commError } = await supabase
+        .from('commissions')
+        .select('created_at, platform_share, manager_share, referrer_share');
+      if (commError) throw commError;
+
+      const today = new Date();
+      const startOfDay = new Date(today.setHours(0,0,0,0));
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      const revenueToday = commissions
+        .filter(c => new Date(c.created_at) >= startOfDay)
+        .reduce((sum, c) => sum + (c.platform_share || 0), 0);
+
+      const revenueThisMonth = commissions
+        .filter(c => new Date(c.created_at) >= startOfMonth)
+        .reduce((sum, c) => sum + (c.platform_share || 0), 0);
+
+      const revenueLifetime = commissions.reduce((sum, c) => sum + (c.platform_share || 0), 0);
+
+      // 6. Commission summary
+      const managerTotal = commissions.reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      const referrerTotal = commissions.reduce((sum, c) => sum + (c.referrer_share || 0), 0);
+      const platformTotal = commissions.reduce((sum, c) => sum + (c.platform_share || 0), 0);
+
+      setMetrics({
+        totalListings: { live, unverified, verified, rented, suspended },
+        activeChats: { tenantLandlord, tenantManager, total: totalActiveChats },
+        managerStatus: { online, offline, total: managers.length },
+        disputes: { pending: pendingDisputes, resolved: resolvedDisputes, escalated: escalatedDisputes },
+        revenue: { today: revenueToday, thisMonth: revenueThisMonth, lifetime: revenueLifetime },
+        commissionSummary: { manager: managerTotal, referrer: referrerTotal, rentEasy: platformTotal }
+      });
+    } catch (error) {
+      console.error('Error fetching metrics:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch live updates (admin activities)
+  const fetchLiveUpdates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('admin_activities')
+        .select(`
+          *,
+          admin:admin_id (id, full_name, email)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      const updates = data.map(item => ({
+        id: item.id,
+        type: item.type || 'activity',
+        action: item.action,
+        details: item.details,
+        admin: item.admin?.full_name || 'System',
+        time: formatRelativeTime(item.created_at)
+      }));
+      setLiveUpdates(updates);
+    } catch (error) {
+      console.error('Error fetching live updates:', error);
+    }
+  };
+
+  const formatRelativeTime = (timestamp) => {
+    const now = new Date();
+    const date = new Date(timestamp);
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hr ago`;
+    return date.toLocaleDateString();
+  };
 
   useEffect(() => {
-    // Simulate live updates
-    const interval = setInterval(() => {
-      if (isLive) {
-        // In production, this would fetch real data
-        console.log('Fetching live data...');
-      }
-    }, 30000); // Every 30 seconds
+    fetchMetrics();
+    fetchLiveUpdates();
 
-    return () => clearInterval(interval);
+    // Set up real-time subscription for admin_activities
+    const channel = supabase
+      .channel('admin-activities')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'admin_activities'
+      }, (payload) => {
+        // Add new activity to the top
+        const newUpdate = {
+          id: payload.new.id,
+          type: payload.new.type,
+          action: payload.new.action,
+          details: payload.new.details,
+          admin: payload.new.admin_name || 'System',
+          time: formatRelativeTime(payload.new.created_at)
+        };
+        setLiveUpdates(prev => [newUpdate, ...prev].slice(0, 10));
+      })
+      .subscribe();
+
+    // Auto-refresh metrics every 30 seconds if live
+    let interval;
+    if (isLive) {
+      interval = setInterval(() => {
+        fetchMetrics();
+        fetchLiveUpdates();
+      }, 30000);
+    }
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (interval) clearInterval(interval);
+    };
   }, [isLive]);
 
   const formatCurrency = (amount) => {
@@ -47,12 +200,7 @@ const CommandCenterPage = () => {
     return 'danger';
   };
 
-  // In src/modules/super-admin/components/CommandCenter.jsx
-//useEffect(() => {
-   // console.log('CommandCenter mounted');
-   // console.log('platformData:', platformData);
-  //  console.log('recentActivities:', recentActivities);
- // }, [platformData, recentActivities]);
+  if (loading) return <div className="loading">Loading command center...</div>;
 
   return (
     <div className="command-center">
@@ -74,7 +222,7 @@ const CommandCenterPage = () => {
             </button>
           </div>
           <div className="last-update">
-            Last update: Just now
+            Last update: just now
           </div>
         </div>
       </div>
@@ -150,14 +298,14 @@ const CommandCenterPage = () => {
                   <div 
                     className="meter-fill" 
                     style={{ 
-                      width: `${(metrics.managerStatus.online / metrics.managerStatus.total) * 100}%`,
-                      backgroundColor: getStatusColor((metrics.managerStatus.online / metrics.managerStatus.total) * 100) === 'success' ? '#38a169' : 
-                                     getStatusColor((metrics.managerStatus.online / metrics.managerStatus.total) * 100) === 'warning' ? '#dd6b20' : '#e53e3e'
+                      width: `${(metrics.managerStatus.online / metrics.managerStatus.total) * 100 || 0}%`,
+                      backgroundColor: getStatusColor((metrics.managerStatus.online / metrics.managerStatus.total) * 100 || 0) === 'success' ? '#38a169' : 
+                                     getStatusColor((metrics.managerStatus.online / metrics.managerStatus.total) * 100 || 0) === 'warning' ? '#dd6b20' : '#e53e3e'
                     }}
                   ></div>
                 </div>
                 <span className="meter-label">
-                  {Math.round((metrics.managerStatus.online / metrics.managerStatus.total) * 100)}% Online
+                  {Math.round((metrics.managerStatus.online / metrics.managerStatus.total) * 100 || 0)}% Online
                 </span>
               </div>
               <div className="total-managers">
@@ -232,11 +380,11 @@ const CommandCenterPage = () => {
                 <span className="commission-value">{formatCurrency(metrics.commissionSummary.manager)}</span>
               </div>
               <div className="commission-item referrer">
-                <span className="commission-label">Referrer (1%)</span>
+                <span className="commission-label">Referrer (1.5%)</span>
                 <span className="commission-value">{formatCurrency(metrics.commissionSummary.referrer)}</span>
               </div>
               <div className="commission-item renteasy">
-                <span className="commission-label">RentEasy (4%)</span>
+                <span className="commission-label">RentEasy (3.5%)</span>
                 <span className="commission-value">{formatCurrency(metrics.commissionSummary.rentEasy)}</span>
               </div>
             </div>
@@ -267,19 +415,19 @@ const CommandCenterPage = () => {
                 {update.type === 'chat' && '💬'}
                 {update.type === 'verification' && '✅'}
                 {update.type === 'dispute' && '⚖️'}
+                {update.type === 'user' && '👤'}
+                {update.type === 'activity' && '📝'}
               </div>
               <div className="update-content">
-                <div className="update-action">{update.action}</div>
+                <div className="update-action">
+                  <strong>{update.admin}</strong> {update.action}
+                </div>
                 <div className="update-details">
-                  {update.location && <span className="detail location">{update.location}</span>}
-                  {update.amount && <span className="detail amount">{update.amount}</span>}
-                  {update.parties && <span className="detail parties">{update.parties}</span>}
-                  {update.manager && <span className="detail manager">{update.manager}</span>}
-                  {update.listing && <span className="detail listing">{update.listing}</span>}
+                  {update.details && JSON.stringify(update.details).slice(0, 60)}
                 </div>
               </div>
               <div className="update-time">{update.time}</div>
-              <button className="jump-in-btn" title="Jump into this activity">
+              <button className="jump-in-btn" title="View details">
                 →
               </button>
             </div>

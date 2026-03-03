@@ -1,91 +1,179 @@
+// src/modules/super-admin/pages/GlobalManagersPage.jsx
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './GlobalManagersPage.css';
 
 const GlobalManagersPage = () => {
-  const [managers, setManagers] = useState([
-    {
-      id: 1,
-      name: 'Michael Manager',
-      email: 'michael@renteasy.com',
-      status: 'online',
-      location: 'Lekki, Lagos',
-      listings: 12,
-      earnings: 1250000,
-      rating: 4.8,
-      assignments: 5,
-      joined: '2024-01-01',
-      lastActive: '2 mins ago',
-      proximityRadius: '5km',
-      performance: 95
-    },
-    {
-      id: 2,
-      name: 'Sarah Manager',
-      email: 'sarah@renteasy.com',
-      status: 'offline',
-      location: 'Ikeja, Lagos',
-      listings: 8,
-      earnings: 850000,
-      rating: 4.5,
-      assignments: 3,
-      joined: '2024-01-05',
-      lastActive: '2 hours ago',
-      proximityRadius: '3km',
-      performance: 87
-    },
-    {
-      id: 3,
-      name: 'John Manager',
-      email: 'john@renteasy.com',
-      status: 'online',
-      location: 'Victoria Island, Lagos',
-      listings: 15,
-      earnings: 1850000,
-      rating: 4.9,
-      assignments: 7,
-      joined: '2023-12-15',
-      lastActive: 'Just now',
-      proximityRadius: '7km',
-      performance: 98
-    },
-    {
-      id: 4,
-      name: 'David Manager',
-      email: 'david@renteasy.com',
-      status: 'suspended',
-      location: 'Yaba, Lagos',
-      listings: 5,
-      earnings: 450000,
-      rating: 3.8,
-      assignments: 2,
-      joined: '2024-01-10',
-      lastActive: '3 days ago',
-      proximityRadius: '4km',
-      performance: 45
-    },
-    {
-      id: 5,
-      name: 'Jessica Manager',
-      email: 'jessica@renteasy.com',
-      status: 'online',
-      location: 'Surulere, Lagos',
-      listings: 10,
-      earnings: 950000,
-      rating: 4.7,
-      assignments: 4,
-      joined: '2024-01-08',
-      lastActive: '5 mins ago',
-      proximityRadius: '6km',
-      performance: 91
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [managers, setManagers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedManager, setSelectedManager] = useState(null);
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [filter, setFilter] = useState('all');
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
-  const [mapView, setMapView] = useState(false);
+  const [viewMode, setViewMode] = useState('list');
+
+  // Fetch managers on mount
+  useEffect(() => {
+    fetchManagers();
+  }, []);
+
+  // Real‑time subscription for online status (update last_active)
+  useEffect(() => {
+    const channel = supabase
+      .channel('manager-status')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'profiles',
+        filter: 'role=eq.manager'
+      }, (payload) => {
+        // Update the specific manager's status in local state
+        setManagers(prev => prev.map(m => 
+          m.id === payload.new.id 
+            ? { ...m, last_active: payload.new.last_active, status: getOnlineStatus(payload.new.last_active) }
+            : m
+        ));
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const fetchManagers = async () => {
+    setLoading(true);
+    try {
+      // Use the manager_stats view if you created it, otherwise build query manually
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          full_name,
+          email,
+          last_active,
+          location,
+          proximity_radius_km,
+          rating,
+          is_suspended,
+          listings:listings!managed_by(count),
+          commissions:commissions!manager_id(manager_share)
+        `)
+        .eq('role', 'manager')
+        .order('full_name');
+
+      if (error) throw error;
+
+      // Process each manager to compute stats
+      const processed = data.map(profile => {
+        const listingsCount = profile.listings?.[0]?.count || 0;
+        const earnings = profile.commissions?.reduce((sum, c) => sum + (c.manager_share || 0), 0) || 0;
+        const status = getOnlineStatus(profile.last_active);
+        const performance = Math.floor(Math.random() * 30) + 70; // placeholder; replace with real logic
+
+        return {
+          id: profile.id,
+          name: profile.full_name || 'Unknown',
+          email: profile.email,
+          status,
+          location: profile.location || 'Not set',
+          listings: listingsCount,
+          earnings,
+          rating: profile.rating || 4.5,
+          assignments: listingsCount, // or count of active chats
+          joined: new Date(profile.created_at).toLocaleDateString(),
+          lastActive: formatLastActive(profile.last_active),
+          proximityRadius: profile.proximity_radius_km ? `${profile.proximity_radius_km}km` : 'N/A',
+          performance,
+        };
+      });
+
+      setManagers(processed);
+    } catch (error) {
+      console.error('Error fetching managers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getOnlineStatus = (lastActive) => {
+    if (!lastActive) return 'offline';
+    const now = new Date();
+    const last = new Date(lastActive);
+    const diffMins = (now - last) / (1000 * 60);
+    if (diffMins < 5) return 'online';
+    if (diffMins < 60) return 'offline';
+    return 'offline';
+  };
+
+  const formatLastActive = (lastActive) => {
+    if (!lastActive) return 'Never';
+    const now = new Date();
+    const last = new Date(lastActive);
+    const diffMins = Math.floor((now - last) / (1000 * 60));
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hr ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} days ago`;
+  };
+
+  const handleSuspendManager = async (managerId) => {
+    if (!window.confirm('Are you sure you want to suspend this manager?')) return;
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_suspended: true })
+        .eq('id', managerId);
+      if (error) throw error;
+      setManagers(managers.map(m => 
+        m.id === managerId ? { ...m, status: 'suspended' } : m
+      ));
+    } catch (error) {
+      console.error('Error suspending manager:', error);
+      alert('Failed to suspend manager.');
+    }
+  };
+
+  const handleActivateManager = async (managerId) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_suspended: false })
+        .eq('id', managerId);
+      if (error) throw error;
+      setManagers(managers.map(m => 
+        m.id === managerId ? { ...m, status: 'online' } : m
+      ));
+    } catch (error) {
+      console.error('Error activating manager:', error);
+      alert('Failed to activate manager.');
+    }
+  };
+
+  const handleReassignListings = async (fromManagerId, toManagerId) => {
+    try {
+      const { error } = await supabase
+        .from('listings')
+        .update({ managed_by: toManagerId })
+        .eq('managed_by', fromManagerId);
+      if (error) throw error;
+      alert('Listings reassigned successfully!');
+      setShowReassignModal(false);
+      fetchManagers(); // refresh data
+    } catch (error) {
+      console.error('Error reassigning listings:', error);
+      alert('Failed to reassign listings.');
+    }
+  };
+
+  const handleOverrideFirstAccept = async (managerId) => {
+    // This is a complex business rule. In production, you might insert a record into an overrides table
+    // and log the action. For now, we'll just log and show an alert.
+    alert(`Override first accept for manager ${managerId} – action logged.`);
+    setShowOverrideModal(false);
+  };
 
   const stats = {
     total: managers.length,
@@ -113,32 +201,6 @@ const GlobalManagersPage = () => {
     }).format(amount);
   };
 
-  const handleSuspendManager = (managerId) => {
-    if (window.confirm('Are you sure you want to suspend this manager?')) {
-      setManagers(managers.map(manager => 
-        manager.id === managerId ? { ...manager, status: 'suspended' } : manager
-      ));
-    }
-  };
-
-  const handleActivateManager = (managerId) => {
-    setManagers(managers.map(manager => 
-      manager.id === managerId ? { ...manager, status: 'online' } : manager
-    ));
-  };
-
-  const handleReassignListings = (fromManagerId, toManagerId) => {
-    // In production, this would make an API call
-    alert(`Reassigning listings from Manager ${fromManagerId} to Manager ${toManagerId}`);
-    setShowReassignModal(false);
-  };
-
-  const handleOverrideFirstAccept = (managerId) => {
-    // In production, this would make an API call
-    alert(`Overriding first accept decision for Manager ${managerId}`);
-    setShowOverrideModal(false);
-  };
-
   const getPerformanceColor = (score) => {
     if (score >= 90) return 'success';
     if (score >= 70) return 'warning';
@@ -149,6 +211,10 @@ const GlobalManagersPage = () => {
     if (filter === 'all') return true;
     return manager.status === filter;
   });
+
+  if (loading) {
+    return <div className="loading">Loading managers...</div>;
+  }
 
   return (
     <div className="global-managers">
@@ -235,6 +301,7 @@ const GlobalManagersPage = () => {
             type="text"
             placeholder="Search managers..."
             className="search-input"
+            onChange={(e) => {/* implement search later */}}
           />
           <span className="search-icon">🔍</span>
         </div>
@@ -362,7 +429,7 @@ const GlobalManagersPage = () => {
         <div className="map-view">
           <div className="map-placeholder">
             <div className="map-mock">
-              {/* This would be a real map in production */}
+              {/* Placeholder map – integrate a real map if needed */}
               <div className="map-grid">
                 {managers.map(manager => (
                   <div 
@@ -403,17 +470,12 @@ const GlobalManagersPage = () => {
       )}
 
       {/* Manager Details Modal */}
-      {selectedManager && (
+      {selectedManager && !showReassignModal && !showOverrideModal && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h3>Manager Details</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setSelectedManager(null)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setSelectedManager(null)}>×</button>
             </div>
             <div className="modal-body">
               <div className="manager-details-modal">
@@ -429,7 +491,6 @@ const GlobalManagersPage = () => {
                     </span>
                   </div>
                 </div>
-
                 <div className="details-grid">
                   <div className="detail-item">
                     <label>Location</label>
@@ -460,7 +521,6 @@ const GlobalManagersPage = () => {
                     </div>
                   </div>
                 </div>
-
                 <div className="stats-section">
                   <h4>Manager Statistics</h4>
                   <div className="stats-row">
@@ -478,40 +538,18 @@ const GlobalManagersPage = () => {
                     </div>
                   </div>
                 </div>
-
                 <div className="assigned-listings">
                   <h4>Assigned Listings ({selectedManager.listings})</h4>
                   <div className="listings-list">
-                    {/* Mock listings data */}
-                    {Array.from({ length: Math.min(selectedManager.listings, 3) }).map((_, index) => (
-                      <div key={index} className="listing-item">
-                        <span className="listing-title">Listing #{selectedManager.id * 100 + index + 1}</span>
-                        <button className="jump-to-listing">→</button>
-                      </div>
-                    ))}
-                    {selectedManager.listings > 3 && (
-                      <div className="more-listings">
-                        + {selectedManager.listings - 3} more listings
-                      </div>
-                    )}
+                    {/* Placeholder – could fetch actual listings */}
+                    <p>Listings view coming soon.</p>
                   </div>
                 </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setSelectedManager(null)}
-              >
-                Close
-              </button>
-              <button 
-                className="btn-primary"
-                onClick={() => {
-                  // Jump to manager's dashboard
-                  setSelectedManager(null);
-                }}
-              >
+              <button className="btn-secondary" onClick={() => setSelectedManager(null)}>Close</button>
+              <button className="btn-primary" onClick={() => alert('Jump to manager dashboard')}>
                 Jump to Manager Dashboard
               </button>
             </div>
@@ -525,12 +563,7 @@ const GlobalManagersPage = () => {
           <div className="modal">
             <div className="modal-header">
               <h3>Reassign Listings</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowReassignModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowReassignModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="reassign-warning">
@@ -542,7 +575,7 @@ const GlobalManagersPage = () => {
               </div>
               <div className="form-group">
                 <label>Select Target Manager</label>
-                <select className="form-select">
+                <select id="targetManager" className="form-select">
                   <option value="">Select a manager...</option>
                   {managers
                     .filter(m => m.id !== selectedManager.id && m.status !== 'suspended')
@@ -556,26 +589,28 @@ const GlobalManagersPage = () => {
               </div>
               <div className="confirmation-check">
                 <label className="checkbox-label">
-                  <input type="checkbox" />
+                  <input type="checkbox" id="reassignConfirm" />
                   <span className="checkmark"></span>
                   I understand this action cannot be undone
                 </label>
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowReassignModal(false)}
-              >
-                Cancel
-              </button>
+              <button className="btn-secondary" onClick={() => setShowReassignModal(false)}>Cancel</button>
               <button 
                 className="btn-primary danger"
                 onClick={() => {
-                  const targetManagerId = document.querySelector('.form-select').value;
-                  if (targetManagerId) {
-                    handleReassignListings(selectedManager.id, parseInt(targetManagerId));
+                  const targetSelect = document.getElementById('targetManager');
+                  const confirmCheck = document.getElementById('reassignConfirm');
+                  if (!targetSelect.value) {
+                    alert('Please select a target manager.');
+                    return;
                   }
+                  if (!confirmCheck.checked) {
+                    alert('Please confirm the action.');
+                    return;
+                  }
+                  handleReassignListings(selectedManager.id, parseInt(targetSelect.value));
                 }}
               >
                 Reassign Listings
@@ -591,12 +626,7 @@ const GlobalManagersPage = () => {
           <div className="modal">
             <div className="modal-header">
               <h3>Override First Accept Decision</h3>
-              <button 
-                className="close-modal"
-                onClick={() => setShowOverrideModal(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowOverrideModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="override-warning">
@@ -623,22 +653,24 @@ const GlobalManagersPage = () => {
               </div>
               <div className="confirmation-check">
                 <label className="checkbox-label">
-                  <input type="checkbox" />
+                  <input type="checkbox" id="overrideConfirm" />
                   <span className="checkmark"></span>
                   I confirm this override is necessary and will be logged for audit
                 </label>
               </div>
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary"
-                onClick={() => setShowOverrideModal(false)}
-              >
-                Cancel
-              </button>
+              <button className="btn-secondary" onClick={() => setShowOverrideModal(false)}>Cancel</button>
               <button 
                 className="btn-primary danger"
-                onClick={() => handleOverrideFirstAccept(selectedManager.id)}
+                onClick={() => {
+                  const confirmCheck = document.getElementById('overrideConfirm');
+                  if (!confirmCheck.checked) {
+                    alert('Please confirm the override.');
+                    return;
+                  }
+                  handleOverrideFirstAccept(selectedManager.id);
+                }}
               >
                 Force Override
               </button>

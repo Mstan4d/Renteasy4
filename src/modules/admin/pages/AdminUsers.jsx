@@ -1,13 +1,11 @@
-// src/modules/admin/pages/AdminUsers.jsx
+// src/modules/admin/pages/AdminUsers.jsx (final version with correct column mappings)
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { 
   Users, UserCheck, UserX, Shield, Mail, Phone, 
-  Filter, Search, MoreVertical, Edit, Trash2, Ban,
-  Download, Eye, CheckCircle, XCircle, Calendar,
-  MapPin, Building, Home, AlertCircle, RefreshCw,
-  ExternalLink, MessageSquare, Settings, Key
+  Filter, Search, Download, Eye, CheckCircle, XCircle, Calendar,
+  MapPin, RefreshCw, Ban, Trash2
 } from 'lucide-react';
 import './AdminUsers.css';
 
@@ -25,92 +23,122 @@ const AdminUsers = () => {
     search: ''
   });
 
-  // Load users from Supabase
+  // ---------- Load all users ----------
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // Fetch all profiles (regular users)
+      console.log('Loading users...');
+
+      // 1. Fetch all profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (profilesError) throw profilesError;
 
-      // Fetch service providers (includes managers, estate properties, service providers)
+      // 2. Fetch service providers
       const { data: serviceProviders, error: providersError } = await supabase
         .from('service_providers')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (providersError) throw providersError;
 
-      // Transform profiles to unified format
-      const transformedProfiles = profiles.map(profile => ({
-        id: profile.id,
-        auth_id: profile.auth_id,
-        name: profile.name || profile.full_name || 'Unnamed User',
-        email: profile.email,
-        phone: profile.phone,
-        role: profile.role,
+      // 3. Fetch estate firm profiles
+      const { data: estateFirms, error: estateError } = await supabase
+        .from('estate_firm_profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (estateError) throw estateError;
+
+      // Transform profiles
+      const transformedProfiles = profiles.map(p => ({
+        id: p.id,
+        user_id: p.id,
+        name: p.full_name || p.name || 'Unnamed',
+        email: p.email,
+        phone: p.phone,
+        role: p.role,
         type: 'user',
-        userType: profile.role,
-        verified: profile.verified,
-        needs_verification: profile.needs_verification,
-        is_active: profile.is_active,
-        is_suspended: profile.is_suspended,
-        is_banned: profile.is_banned,
-        avatar_url: profile.avatar_url,
-        state: profile.state,
-        lga: profile.lga,
-        address: profile.address,
-        createdAt: profile.created_at,
-        updatedAt: profile.updated_at,
-        last_login: profile.last_login,
-        metadata: profile.metadata,
-        // Additional fields from Supabase
-        ...profile
+        userType: p.role,
+        // verification: use kyc_status (values: 'approved', 'pending', 'rejected', 'not_started')
+        verified: p.kyc_status === 'approved',
+        needs_verification: p.kyc_status === 'pending',
+        verification_status: p.kyc_status || 'not_started',
+        // status columns
+        is_active: p.is_active ?? true,
+        is_suspended: p.is_suspended || false,
+        is_banned: p.is_banned || false, // note: column is 'is_banned' (underscore), not 'is-banned'
+        avatar_url: p.avatar_url,
+        state: p.state,
+        lga: p.lga,
+        address: p.address,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        last_login: p.last_login,
+        table: 'profiles'
       }));
 
-      // Transform service providers to unified format
-      const transformedProviders = serviceProviders.map(provider => ({
-        id: provider.id,
-        auth_id: provider.user_id,
-        name: provider.business_name || provider.owner_name || provider.estate_name || provider.company_name || 'Unnamed Provider',
-        email: provider.email,
-        phone: provider.phone,
-        role: provider.service_type === 'manager' ? 'manager' : 
-              provider.service_type === 'estate_property' ? 'estate-firm' : 'provider',
+      // Transform service providers
+      const transformedProviders = serviceProviders.map(p => ({
+        id: p.id,
+        user_id: p.user_id,
+        name: p.business_name || p.company_name || 'Unnamed Provider',
+        email: p.email,
+        phone: p.phone,
+        role: 'provider',
         type: 'provider',
-        userType: provider.service_type === 'manager' ? 'manager' : 
-                 provider.service_type === 'estate_property' ? 'estate-firm' : 'provider',
-        verified: provider.verified,
-        needs_verification: provider.needs_verification,
-        is_active: provider.is_active,
-        is_suspended: provider.is_suspended,
-        is_banned: provider.is_banned,
-        service_type: provider.service_type,
-        business_name: provider.business_name,
-        owner_name: provider.owner_name,
-        estate_name: provider.estate_name,
-        company_name: provider.company_name,
-        state: provider.state,
-        lga: provider.lga || provider.city,
-        address: provider.address,
-        services: provider.services ? JSON.parse(provider.services) : [],
-        createdAt: provider.created_at,
-        updatedAt: provider.updated_at,
-        verification_data: provider.verification_data,
-        // Additional fields
-        ...provider
+        userType: 'provider',
+        // verification: can use verified (boolean) or kyc_status (text)
+        verified: p.verified === true || p.kyc_status === 'approved',
+        needs_verification: p.kyc_status === 'pending' || p.verification_status === 'pending',
+        verification_status: p.kyc_status || p.verification_status || 'not_started',
+        // status columns
+        is_active: p.is_active ?? true,
+        is_suspended: p.is_suspended || false,
+        is_banned: p.is_banned || false,
+        avatar_url: p.avatar_url,
+        state: p.state,
+        lga: p.lga,
+        address: p.address,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        last_login: null,
+        business_name: p.business_name,
+        table: 'service_providers'
       }));
 
-      // Combine all users
-      const allUsers = [...transformedProfiles, ...transformedProviders];
+      // Transform estate firms
+      const transformedEstate = estateFirms.map(e => ({
+        id: e.id,
+        user_id: e.user_id,
+        name: e.firm_name || 'Unnamed Estate Firm',
+        email: e.business_email || e.contact_email,
+        phone: e.business_phone || e.contact_phone,
+        role: 'estate-firm',
+        type: 'estate-firm',
+        userType: 'estate-firm',
+        // verification: verification_status (text)
+        verified: e.verification_status === 'verified',
+        needs_verification: e.verification_status === 'pending',
+        verification_status: e.verification_status || 'not_started',
+        // status columns – these may not exist in estate_firm_profiles, but we'll assume they do (if not, we'll handle in actions)
+        is_active: e.is_active ?? true,
+        is_suspended: e.is_suspended || false,
+        is_banned: e.is_banned || false,
+        avatar_url: null,
+        state: e.state,
+        lga: e.lga,
+        address: e.address,
+        createdAt: e.created_at,
+        updatedAt: e.updated_at,
+        last_login: null,
+        business_name: e.firm_name,
+        table: 'estate_firm_profiles'
+      }));
+
+      const allUsers = [...transformedProfiles, ...transformedProviders, ...transformedEstate];
       setUsers(allUsers);
       setFilteredUsers(allUsers);
-
     } catch (error) {
       console.error('Error loading users:', error);
     } finally {
@@ -120,301 +148,141 @@ const AdminUsers = () => {
 
   useEffect(() => {
     if (user?.role !== 'admin') return;
-    
     loadUsers();
-    
-    // Set up real-time subscriptions
-    const profilesChannel = supabase
-      .channel('admin-profiles-changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'profiles'
-      }, () => {
-        loadUsers();
-      })
-      .subscribe();
-
-    const providersChannel = supabase
-      .channel('admin-providers-changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'service_providers'
-      }, () => {
-        loadUsers();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(profilesChannel);
-      supabase.removeChannel(providersChannel);
-    };
   }, [user, loadUsers]);
 
-  // Apply filters
+  // ---------- Real-time subscriptions ----------
+  useEffect(() => {
+    const channels = [
+      supabase.channel('profiles-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadUsers),
+      supabase.channel('providers-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'service_providers' }, loadUsers),
+      supabase.channel('estate-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'estate_firm_profiles' }, loadUsers),
+    ].map(ch => ch.subscribe());
+    return () => channels.forEach(ch => supabase.removeChannel(ch));
+  }, [loadUsers]);
+
+  // ---------- Filtering ----------
   useEffect(() => {
     let filtered = [...users];
-
-    // Role filter
-    if (filters.role !== 'all') {
-      filtered = filtered.filter(u => u.userType === filters.role);
-    }
-
-    // Status filter
+    if (filters.role !== 'all') filtered = filtered.filter(u => u.userType === filters.role);
     if (filters.status !== 'all') {
-      if (filters.status === 'active') {
-        filtered = filtered.filter(u => u.is_active && !u.is_suspended && !u.is_banned);
-      } else if (filters.status === 'suspended') {
-        filtered = filtered.filter(u => u.is_suspended);
-      } else if (filters.status === 'banned') {
-        filtered = filtered.filter(u => u.is_banned);
-      } else if (filters.status === 'inactive') {
-        filtered = filtered.filter(u => !u.is_active);
-      }
+      if (filters.status === 'active') filtered = filtered.filter(u => u.is_active && !u.is_suspended && !u.is_banned);
+      else if (filters.status === 'suspended') filtered = filtered.filter(u => u.is_suspended);
+      else if (filters.status === 'banned') filtered = filtered.filter(u => u.is_banned);
+      else if (filters.status === 'inactive') filtered = filtered.filter(u => !u.is_active);
     }
-
-    // Verification filter
     if (filters.verification !== 'all') {
-      if (filters.verification === 'verified') {
-        filtered = filtered.filter(u => u.verified);
-      } else if (filters.verification === 'unverified') {
-        filtered = filtered.filter(u => !u.verified && !u.userVerified);
-      } else if (filters.verification === 'pending') {
-        filtered = filtered.filter(u => u.needs_verification);
-      }
+      if (filters.verification === 'verified') filtered = filtered.filter(u => u.verified);
+      else if (filters.verification === 'unverified') filtered = filtered.filter(u => !u.verified && !u.needs_verification);
+      else if (filters.verification === 'pending') filtered = filtered.filter(u => u.needs_verification);
     }
-
-    // Search filter
     if (filters.search) {
-      const searchTerm = filters.search.toLowerCase();
+      const term = filters.search.toLowerCase();
       filtered = filtered.filter(u => 
-        u.name?.toLowerCase().includes(searchTerm) ||
-        u.email?.toLowerCase().includes(searchTerm) ||
-        u.phone?.includes(searchTerm) ||
-        u.userType?.toLowerCase().includes(searchTerm) ||
-        u.business_name?.toLowerCase().includes(searchTerm) ||
-        u.estate_name?.toLowerCase().includes(searchTerm)
+        u.name?.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term) ||
+        u.phone?.includes(term) ||
+        u.userType?.toLowerCase().includes(term) ||
+        u.business_name?.toLowerCase().includes(term)
       );
     }
-
     setFilteredUsers(filtered);
   }, [filters, users]);
 
-  // Verify user
-  const handleVerifyUser = async (userId, userType) => {
-    try {
-      if (userType === 'provider') {
-        // Update in service_providers table
-        const { data: provider, error: fetchError } = await supabase
-          .from('service_providers')
-          .select('*')
-          .eq('id', userId)
-          .single();
+ // Verification Logic
+const handleVerifyUser = async (userItem) => {
+  try {
+    const updates = { updated_at: new Date().toISOString() };
 
-        if (fetchError) throw fetchError;
+    // Mapping verification columns based on your specific tables
+    if (userItem.table === 'profiles') {
+      updates.kyc_status = 'approved';
+    } else if (userItem.table === 'service_providers') {
+      updates.kyc_status = 'approved';
+      updates.verified = true;
+    } else if (userItem.table === 'estate_firm_profiles') {
+      updates.verification_status = 'verified';
+    }
 
-        const { error } = await supabase
-          .from('service_providers')
-          .update({
-            verified: true,
-            needs_verification: false,
-            verified_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
+    const { error } = await supabase
+      .from(userItem.table)
+      .update(updates)
+      .eq('id', userItem.id);
 
-        if (error) throw error;
-      } else {
-        // Update in profiles table
-        const { data: profile, error: fetchError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
+    if (error) throw error;
+    await loadUsers();
+    alert('User verified successfully!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Update failed. Ensure you ran the SQL commands to add columns.');
+  }
+};
 
-        if (fetchError) throw fetchError;
+// Unified Status Handler (Suspension/Banning)
+const handleStatusUpdate = async (userItem, field, value) => {
+  try {
+    const { error } = await supabase
+      .from(userItem.table)
+      .update({ 
+        [field]: value, 
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', userItem.id);
 
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            verified: true,
-            needs_verification: false,
-            verified_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
+    if (error) throw error;
+    await loadUsers();
+    alert('Status updated successfully!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert(`Failed to update ${field}.`);
+  }
+};
 
-        if (error) throw error;
+// Convenience wrappers for suspend and ban
+const handleSuspendUser = (userItem, suspend) => {
+  handleStatusUpdate(userItem, 'is_suspended', suspend);
+};
+
+const handleBanUser = (userItem, ban = true) => {
+  handleStatusUpdate(userItem, 'is_banned', ban);
+};
+
+  // ---------- Updated Delete User ----------
+const handleDeleteUser = async (userItem) => {
+  // Use a template literal for a cleaner confirmation message
+  const confirmMessage = `Are you sure you want to delete ${userItem.name}? This will remove all their data across the platform.`;
+  
+  if (!window.confirm(confirmMessage)) return;
+
+  try {
+    setLoading(true);
+    
+    // Ensure we are using the correct table name from the item
+    const targetTable = userItem.table; 
+
+    const { error } = await supabase
+      .from(targetTable)
+      .delete()
+      .eq('id', userItem.id);
+
+    if (error) {
+      // If a foreign key constraint prevents deletion, this will catch it
+      if (error.code === '23503') {
+        throw new Error("Cannot delete user: They have active listings or records linked to them. Delete those first or enable 'Cascade Delete' in Supabase.");
       }
-
-      // Log activity
-      await logActivity(`Verified user: ${users.find(u => u.id === userId)?.name}`, 'user', userId);
-      
-      // Refresh users
-      loadUsers();
-      
-      alert('User verified successfully!');
-    } catch (error) {
-      console.error('Error verifying user:', error);
-      alert('Failed to verify user. Please try again.');
-    }
-  };
-
-  // Suspend/Unsuspend user
-  const handleSuspendUser = async (userId, suspend = true, userType) => {
-    try {
-      if (userType === 'provider') {
-        const { error } = await supabase
-          .from('service_providers')
-          .update({
-            is_suspended: suspend,
-            suspended_at: suspend ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            is_suspended: suspend,
-            suspended_at: suspend ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-
-        if (error) throw error;
-      }
-
-      await logActivity(
-        `${suspend ? 'Suspended' : 'Unsuspended'} user: ${users.find(u => u.id === userId)?.name}`,
-        'user',
-        userId
-      );
-      
-      loadUsers();
-      alert(`User ${suspend ? 'suspended' : 'unsuspended'} successfully!`);
-    } catch (error) {
-      console.error(`Error ${suspend ? 'suspending' : 'unsuspending'} user:`, error);
-      alert(`Failed to ${suspend ? 'suspend' : 'unsuspend'} user. Please try again.`);
-    }
-  };
-
-  // Ban user
-  const handleBanUser = async (userId, ban = true, userType) => {
-    try {
-      if (userType === 'provider') {
-        const { error } = await supabase
-          .from('service_providers')
-          .update({
-            is_banned: ban,
-            banned_at: ban ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            is_banned: ban,
-            banned_at: ban ? new Date().toISOString() : null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-
-        if (error) throw error;
-      }
-
-      await logActivity(
-        `${ban ? 'Banned' : 'Unbanned'} user: ${users.find(u => u.id === userId)?.name}`,
-        'user',
-        userId
-      );
-      
-      loadUsers();
-      alert(`User ${ban ? 'banned' : 'unbanned'} successfully!`);
-    } catch (error) {
-      console.error(`Error ${ban ? 'banning' : 'unbanning'} user:`, error);
-      alert(`Failed to ${ban ? 'ban' : 'unban'} user. Please try again.`);
-    }
-  };
-
-  // Delete user
-  const handleDeleteUser = async (userId, userType) => {
-    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-      return;
+      throw error;
     }
 
-    try {
-      const userName = users.find(u => u.id === userId)?.name;
-
-      if (userType === 'provider') {
-        // First, check if there are any related listings or other data
-        const { data: listings, error: listingsError } = await supabase
-          .from('listings')
-          .select('id')
-          .eq('user_id', userId);
-
-        if (listingsError) throw listingsError;
-
-        if (listings && listings.length > 0) {
-          if (!window.confirm(`This user has ${listings.length} listings. Delete anyway?`)) {
-            return;
-          }
-        }
-
-        const { error } = await supabase
-          .from('service_providers')
-          .delete()
-          .eq('id', userId);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('profiles')
-          .delete()
-          .eq('id', userId);
-
-        if (error) throw error;
-      }
-
-      await logActivity(`Deleted user: ${userName}`, 'user', userId);
-      loadUsers();
-      alert('User deleted successfully!');
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      alert('Failed to delete user. They may have related records that need to be handled first.');
-    }
-  };
-
-  // Log activity
-  const logActivity = async (action, type, entityId = null) => {
-    try {
-      const { error } = await supabase
-        .from('admin_activities')
-        .insert({
-          admin_id: user?.id,
-          action,
-          type,
-          entity_id: entityId,
-          details: { 
-            admin_name: user?.name || 'Admin',
-            admin_email: user?.email 
-          },
-          created_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error logging activity:', error);
-    }
-  };
-
-  // Export users to CSV
+    await loadUsers();
+    alert('User and associated profile deleted successfully!');
+  } catch (error) {
+    console.error('Delete Error:', error);
+    alert(error.message);
+  } finally {
+    setLoading(false);
+  }
+};
+  // ---------- Export CSV ----------
   const handleExportUsers = () => {
     try {
       const csvContent = [
@@ -442,44 +310,28 @@ const AdminUsers = () => {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      
       alert(`Exported ${filteredUsers.length} users to CSV`);
     } catch (error) {
       console.error('Error exporting users:', error);
-      alert('Failed to export users. Please try again.');
+      alert('Failed to export users.');
     }
   };
 
-  // Get unique roles for filter
-  const getUniqueRoles = () => {
-    const roles = [...new Set(users.map(u => u.userType).filter(Boolean))];
-    return roles.sort();
-  };
-
+  // ---------- Utility functions ----------
+  const getUniqueRoles = () => [...new Set(users.map(u => u.userType).filter(Boolean))].sort();
   const getRoleBadgeColor = (role) => {
-    switch(role) {
-      case 'admin': return 'badge-admin';
-      case 'landlord': return 'badge-landlord';
-      case 'tenant': return 'badge-tenant';
-      case 'manager': return 'badge-manager';
-      case 'estate-firm': return 'badge-estate';
-      case 'provider': return 'badge-provider';
-      case 'estate_property': return 'badge-estate';
-      default: return 'badge-default';
-    }
+    const map = {
+      admin: 'badge-admin', landlord: 'badge-landlord', tenant: 'badge-tenant',
+      manager: 'badge-manager', 'estate-firm': 'badge-estate', provider: 'badge-provider'
+    };
+    return map[role] || 'badge-default';
   };
-
   const getRoleIcon = (role) => {
-    switch(role) {
-      case 'admin': return '👑';
-      case 'landlord': return '🏠';
-      case 'tenant': return '👤';
-      case 'manager': return '💼';
-      case 'estate-firm':
-      case 'estate_property': return '🏢';
-      case 'provider': return '🔧';
-      default: return '👤';
-    }
+    const map = {
+      admin: '👑', landlord: '🏠', tenant: '👤', manager: '💼',
+      'estate-firm': '🏢', provider: '🔧'
+    };
+    return map[role] || '👤';
   };
 
   if (user?.role !== 'admin') {
@@ -497,7 +349,7 @@ const AdminUsers = () => {
       <div className="page-header">
         <div className="header-left">
           <h1><Users size={24} /> User Management</h1>
-          <p>Manage all users, landlords, tenants, and service providers</p>
+          <p>Manage all users across the platform</p>
           <small>Total: {users.length} users | Last updated: {new Date().toLocaleTimeString()}</small>
         </div>
         <div className="header-right">
@@ -522,39 +374,28 @@ const AdminUsers = () => {
       {/* Stats Summary */}
       <div className="stats-summary">
         <div className="stat-card">
-          <div className="stat-icon total">
-            <Users />
-          </div>
+          <div className="stat-icon total"><Users /></div>
           <div className="stat-content">
             <h3>{users.length}</h3>
             <p>Total Users</p>
-            <small>All accounts</small>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon verified">
-            <UserCheck />
-          </div>
+          <div className="stat-icon verified"><UserCheck /></div>
           <div className="stat-content">
             <h3>{users.filter(u => u.verified).length}</h3>
             <p>Verified Users</p>
-            <small>{users.length > 0 ? Math.round((users.filter(u => u.verified).length / users.length) * 100) : 0}% verified</small>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon pending">
-            <Shield />
-          </div>
+          <div className="stat-icon pending"><Shield /></div>
           <div className="stat-content">
             <h3>{users.filter(u => u.needs_verification).length}</h3>
             <p>Pending Verification</p>
-            <small>Requires action</small>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon suspended">
-            <UserX />
-          </div>
+          <div className="stat-icon suspended"><UserX /></div>
           <div className="stat-content">
             <h3>{users.filter(u => u.is_suspended).length}</h3>
             <p>Suspended Users</p>
@@ -575,20 +416,14 @@ const AdminUsers = () => {
           />
         </div>
         <div className="filter-controls">
-          <select 
-            value={filters.role}
-            onChange={(e) => setFilters({...filters, role: e.target.value})}
-          >
+          <select value={filters.role} onChange={(e) => setFilters({...filters, role: e.target.value})}>
             <option value="all">All Roles</option>
             {getUniqueRoles().map(role => (
               <option key={role} value={role}>{role}</option>
             ))}
           </select>
 
-          <select 
-            value={filters.status}
-            onChange={(e) => setFilters({...filters, status: e.target.value})}
-          >
+          <select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})}>
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
@@ -596,25 +431,14 @@ const AdminUsers = () => {
             <option value="inactive">Inactive</option>
           </select>
 
-          <select 
-            value={filters.verification}
-            onChange={(e) => setFilters({...filters, verification: e.target.value})}
-          >
+          <select value={filters.verification} onChange={(e) => setFilters({...filters, verification: e.target.value})}>
             <option value="all">All Verification</option>
             <option value="verified">Verified</option>
             <option value="unverified">Unverified</option>
             <option value="pending">Pending</option>
           </select>
 
-          <button 
-            className="btn-clear"
-            onClick={() => setFilters({
-              role: 'all',
-              status: 'all',
-              verification: 'all',
-              search: ''
-            })}
-          >
+          <button className="btn-clear" onClick={() => setFilters({ role: 'all', status: 'all', verification: 'all', search: '' })}>
             Clear Filters
           </button>
         </div>
@@ -632,15 +456,7 @@ const AdminUsers = () => {
             <Users size={48} />
             <h3>No users found</h3>
             <p>Try adjusting your search or filters</p>
-            <button 
-              className="btn-clear"
-              onClick={() => setFilters({
-                role: 'all',
-                status: 'all',
-                verification: 'all',
-                search: ''
-              })}
-            >
+            <button className="btn-clear" onClick={() => setFilters({ role: 'all', status: 'all', verification: 'all', search: '' })}>
               Clear all filters
             </button>
           </div>
@@ -674,9 +490,6 @@ const AdminUsers = () => {
                           <strong>{userItem.name}</strong>
                           <small>ID: {userItem.id?.substring(0, 8)}...</small>
                           {userItem.business_name && <small>{userItem.business_name}</small>}
-                          {userItem.type === 'provider' && (
-                            <small className="text-muted">{userItem.service_type}</small>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -704,9 +517,6 @@ const AdminUsers = () => {
                       <span className={`role-badge ${getRoleBadgeColor(userItem.userType)}`}>
                         {userItem.userType}
                       </span>
-                      {userItem.type === 'provider' && (
-                        <small className="text-muted">{userItem.type}</small>
-                      )}
                     </td>
                     <td>
                       <span className={`status-badge ${userItem.is_suspended ? 'suspended' : userItem.is_banned ? 'banned' : userItem.is_active ? 'active' : 'inactive'}`}>
@@ -714,11 +524,6 @@ const AdminUsers = () => {
                          userItem.is_banned ? 'Banned' : 
                          userItem.is_active ? 'Active' : 'Inactive'}
                       </span>
-                      {userItem.last_login && (
-                        <small className="text-muted">
-                          Last login: {new Date(userItem.last_login).toLocaleDateString()}
-                        </small>
-                      )}
                     </td>
                     <td>
                       <div className="verification-status">
@@ -739,9 +544,6 @@ const AdminUsers = () => {
                     </td>
                     <td>
                       {userItem.createdAt ? new Date(userItem.createdAt).toLocaleDateString() : 'N/A'}
-                      <small className="text-muted">
-                        {userItem.updatedAt && `Updated: ${new Date(userItem.updatedAt).toLocaleDateString()}`}
-                      </small>
                     </td>
                     <td>
                       <div className="action-buttons">
@@ -759,7 +561,7 @@ const AdminUsers = () => {
                         {!userItem.verified && !userItem.needs_verification && (
                           <button 
                             className="btn-verify"
-                            onClick={() => handleVerifyUser(userItem.id, userItem.type)}
+                            onClick={() => handleVerifyUser(userItem)}
                             title="Verify User"
                           >
                             <CheckCircle size={16} />
@@ -769,7 +571,7 @@ const AdminUsers = () => {
                         {!userItem.is_suspended ? (
                           <button 
                             className="btn-suspend"
-                            onClick={() => handleSuspendUser(userItem.id, true, userItem.type)}
+                            onClick={() => handleSuspendUser(userItem, true)}
                             title="Suspend User"
                           >
                             <Ban size={16} />
@@ -777,7 +579,7 @@ const AdminUsers = () => {
                         ) : (
                           <button 
                             className="btn-unsuspend"
-                            onClick={() => handleSuspendUser(userItem.id, false, userItem.type)}
+                            onClick={() => handleSuspendUser(userItem, false)}
                             title="Unsuspend User"
                           >
                             <UserCheck size={16} />
@@ -786,7 +588,7 @@ const AdminUsers = () => {
                         
                         <button 
                           className="btn-delete"
-                          onClick={() => handleDeleteUser(userItem.id, userItem.type)}
+                          onClick={() => handleDeleteUser(userItem)}
                           title="Delete User"
                         >
                           <Trash2 size={16} />
@@ -800,11 +602,6 @@ const AdminUsers = () => {
             
             <div className="table-footer">
               <span>Showing {filteredUsers.length} of {users.length} users</span>
-              <div className="pagination">
-                <button disabled>Previous</button>
-                <span className="current-page">1</span>
-                <button>Next</button>
-              </div>
             </div>
           </>
         )}
@@ -816,14 +613,8 @@ const AdminUsers = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>User Details</h2>
-              <button 
-                className="close-modal"
-                onClick={() => setShowUserDetails(false)}
-              >
-                ×
-              </button>
+              <button className="close-modal" onClick={() => setShowUserDetails(false)}>×</button>
             </div>
-            
             <div className="user-details-content">
               <div className="user-header">
                 <div className="user-avatar-large">
@@ -848,171 +639,56 @@ const AdminUsers = () => {
                       </span>
                     )}
                   </div>
-                  {selectedUser.business_name && (
-                    <p className="business-name">{selectedUser.business_name}</p>
-                  )}
+                  {selectedUser.business_name && <p className="business-name">{selectedUser.business_name}</p>}
                 </div>
               </div>
               
               <div className="details-grid">
                 <div className="detail-section">
                   <h4>Contact Information</h4>
-                  <div className="detail-item">
-                    <strong>Email:</strong>
-                    <span>{selectedUser.email || 'Not provided'}</span>
-                  </div>
-                  <div className="detail-item">
-                    <strong>Phone:</strong>
-                    <span>{selectedUser.phone || 'Not provided'}</span>
-                  </div>
-                  <div className="detail-item">
-                    <strong>User ID:</strong>
-                    <span className="user-id">{selectedUser.id}</span>
-                  </div>
-                  <div className="detail-item">
-                    <strong>Auth ID:</strong>
-                    <span className="text-muted">{selectedUser.auth_id || 'N/A'}</span>
-                  </div>
-                  {(selectedUser.state || selectedUser.address) && (
-                    <div className="detail-item">
-                      <strong>Location:</strong>
-                      <span>{[selectedUser.state, selectedUser.lga, selectedUser.address].filter(Boolean).join(', ')}</span>
-                    </div>
+                  <div className="detail-item"><strong>Email:</strong> {selectedUser.email || 'N/A'}</div>
+                  <div className="detail-item"><strong>Phone:</strong> {selectedUser.phone || 'N/A'}</div>
+                  <div className="detail-item"><strong>User ID:</strong> {selectedUser.id}</div>
+                  {selectedUser.state && (
+                    <div className="detail-item"><strong>Location:</strong> {[selectedUser.state, selectedUser.lga, selectedUser.address].filter(Boolean).join(', ')}</div>
                   )}
                 </div>
                 
                 <div className="detail-section">
                   <h4>Account Information</h4>
-                  <div className="detail-item">
-                    <strong>Account Type:</strong>
-                    <span>{selectedUser.type} / {selectedUser.userType}</span>
-                  </div>
-                  <div className="detail-item">
-                    <strong>Created:</strong>
-                    <span>{new Date(selectedUser.createdAt).toLocaleString()}</span>
-                  </div>
-                  <div className="detail-item">
-                    <strong>Last Updated:</strong>
-                    <span>{selectedUser.updatedAt ? new Date(selectedUser.updatedAt).toLocaleString() : 'Never'}</span>
-                  </div>
-                  <div className="detail-item">
-                    <strong>Last Login:</strong>
-                    <span>{selectedUser.last_login ? new Date(selectedUser.last_login).toLocaleString() : 'Never'}</span>
-                  </div>
-                  {selectedUser.verified && selectedUser.verified_at && (
-                    <div className="detail-item">
-                      <strong>Verified At:</strong>
-                      <span>{new Date(selectedUser.verified_at).toLocaleString()}</span>
-                    </div>
-                  )}
+                  <div className="detail-item"><strong>Created:</strong> {new Date(selectedUser.createdAt).toLocaleString()}</div>
+                  <div className="detail-item"><strong>Last Updated:</strong> {selectedUser.updatedAt ? new Date(selectedUser.updatedAt).toLocaleString() : 'Never'}</div>
+                  <div className="detail-item"><strong>Last Login:</strong> {selectedUser.last_login ? new Date(selectedUser.last_login).toLocaleString() : 'Never'}</div>
                 </div>
                 
-                {(selectedUser.business_name || selectedUser.services || selectedUser.service_type) && (
+                {selectedUser.table === 'estate_firm_profiles' && (
                   <div className="detail-section">
-                    <h4>Service Information</h4>
-                    {selectedUser.business_name && (
-                      <div className="detail-item">
-                        <strong>Business Name:</strong>
-                        <span>{selectedUser.business_name}</span>
-                      </div>
-                    )}
-                    {selectedUser.owner_name && (
-                      <div className="detail-item">
-                        <strong>Owner Name:</strong>
-                        <span>{selectedUser.owner_name}</span>
-                      </div>
-                    )}
-                    {selectedUser.service_type && (
-                      <div className="detail-item">
-                        <strong>Service Type:</strong>
-                        <span>{selectedUser.service_type}</span>
-                      </div>
-                    )}
-                    {selectedUser.services && selectedUser.services.length > 0 && (
-                      <div className="detail-item">
-                        <strong>Services Offered:</strong>
-                        <div className="services-list">
-                          {selectedUser.services.map((service, index) => (
-                            <span key={index} className="service-tag">{service}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {selectedUser.verification_data && (
-                      <div className="detail-item">
-                        <strong>Verification Data:</strong>
-                        <pre className="verification-data">
-                          {JSON.stringify(selectedUser.verification_data, null, 2)}
-                        </pre>
-                      </div>
-                    )}
+                    <h4>Business Information</h4>
+                    <div className="detail-item"><strong>Registration:</strong> {selectedUser.registration_number || 'N/A'}</div>
+                    <div className="detail-item"><strong>Contact Person:</strong> {selectedUser.contact_person || 'N/A'}</div>
                   </div>
                 )}
               </div>
               
               <div className="modal-actions">
-                <button 
-                  className="btn-secondary"
-                  onClick={() => setShowUserDetails(false)}
-                >
-                  Close
-                </button>
+                <button className="btn-secondary" onClick={() => setShowUserDetails(false)}>Close</button>
                 <div className="action-buttons-modal">
                   {!selectedUser.verified && !selectedUser.needs_verification && (
-                    <button 
-                      className="btn-primary"
-                      onClick={() => {
-                        handleVerifyUser(selectedUser.id, selectedUser.type);
-                        setShowUserDetails(false);
-                      }}
-                    >
-                      <CheckCircle size={16} /> Verify User
+                    <button className="btn-primary" onClick={() => { handleVerifyUser(selectedUser); setShowUserDetails(false); }}>
+                      <CheckCircle size={16} /> Verify
                     </button>
                   )}
                   {!selectedUser.is_suspended ? (
-                    <>
-                      <button 
-                        className="btn-warning"
-                        onClick={() => {
-                          handleSuspendUser(selectedUser.id, true, selectedUser.type);
-                          setShowUserDetails(false);
-                        }}
-                      >
-                        <Ban size={16} /> Suspend
-                      </button>
-                      <button 
-                        className="btn-danger"
-                        onClick={() => {
-                          if (window.confirm('Are you sure you want to ban this user?')) {
-                            handleBanUser(selectedUser.id, true, selectedUser.type);
-                            setShowUserDetails(false);
-                          }
-                        }}
-                      >
-                        <UserX size={16} /> Ban User
-                      </button>
-                    </>
+                    <button className="btn-warning" onClick={() => { handleSuspendUser(selectedUser, true); setShowUserDetails(false); }}>
+                      <Ban size={16} /> Suspend
+                    </button>
                   ) : (
-                    <button 
-                      className="btn-success"
-                      onClick={() => {
-                        handleSuspendUser(selectedUser.id, false, selectedUser.type);
-                        setShowUserDetails(false);
-                      }}
-                    >
+                    <button className="btn-success" onClick={() => { handleSuspendUser(selectedUser, false); setShowUserDetails(false); }}>
                       <UserCheck size={16} /> Unsuspend
                     </button>
                   )}
-                  <button 
-                    className="btn-danger"
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to delete this user?')) {
-                        handleDeleteUser(selectedUser.id, selectedUser.type);
-                        setShowUserDetails(false);
-                      }
-                    }}
-                  >
-                    <Trash2 size={16} /> Delete User
+                  <button className="btn-danger" onClick={() => handleDeleteUser(selectedUser)}>
+                    <Trash2 size={16} /> Delete
                   </button>
                 </div>
               </div>
