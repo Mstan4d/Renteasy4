@@ -72,6 +72,9 @@ const AdminSettings = lazy(() => import('../modules/admin/pages/AdminSettings'))
 const AdminProviderOverview = lazy(() => import('../modules/admin/pages/AdminProviderOverview'));
 const AdminServiceCategories = lazy(() => import('../modules/admin/pages/AdminServiceCategories'));
 const AdminReferrals = lazy(() => import('../modules/admin/pages/AdminReferrals'));
+const AdminVerificationsPending = lazy(() => import('../modules/admin/pages/AdminVerificationsPending'));
+const AdminRentalConfirmations = lazy(() => import('../modules/admin/pages/AdminRentalConfirmations'));
+const AdminPaymentProofs = lazy(() => import('../modules/admin/pages/AdminPaymentProofs'));
 
 
 // Manager Dashboard Components
@@ -88,6 +91,8 @@ const ManagerKYC = lazy(() => import('../modules/manager/pages/ManagerKYC'));
 const ManagerRadius = lazy(() => import('../modules/manager/pages/ManagerRadius'));
 const ManagerChatMonitoring = lazy(() => import('../modules/manager/components/ManagerChatMonitoring'));
 const ManagerWithdrawal = lazy(() => import('../modules/manager/pages/ManagerWithdrawal'));
+const ManagerVerificationPage = lazy(() => import('../modules/manager/pages/ManagerVerificationPage'));
+
 
 // Tenant Dashboard Components
 const TenantDashboard = lazy(() => import('../modules/dashboard/pages/tenant/TenantDashboard'));
@@ -269,6 +274,9 @@ const AppRoutes = () => {
         <Route path="provider-overview" element={<AdminProviderOverview />} />
         <Route path="service-categories" element={<AdminServiceCategories />} />
         <Route path="referrals" element={<AdminReferrals />} />
+        <Route path="verifications/pending" element={<AdminVerificationsPending />} />
+        <Route path="rental-confirmations" element={<AdminRentalConfirmations />} />
+        <Route path="payment-proofs" element={<AdminPaymentProofs />} />
       </Route>
 
       {/* ========== TENANT ROUTES ========== */}
@@ -361,6 +369,7 @@ const AppRoutes = () => {
         <Route path="analytics" element={<ManagerAnalytics />} />
         <Route path="setup" element={<ManagerSetup />} />
         <Route path="withdraw" element={<ManagerWithdrawal />} />
+        <Route path="verify/:listingId" element={<ManagerVerificationPage />} />
         <Route path="chat/:chatId/monitor" element={<ManagerChatMonitoring />} />
       </Route>
 

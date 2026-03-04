@@ -17,6 +17,12 @@ const Messages = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [participantProfiles, setParticipantProfiles] = useState({});
+
+  // New state for rental flow
+  const [viewings, setViewings] = useState([]);
+  const [rentalConfirmation, setRentalConfirmation] = useState(null);
+  const [paymentProofs, setPaymentProofs] = useState([]);
+
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const subscriptionRef = useRef(null);
@@ -62,11 +68,11 @@ const Messages = () => {
     if (!timestamp) return '';
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
-   const isValidUUID = (uuid) => {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuid && typeof uuid === 'string' && uuidRegex.test(uuid);
-};
 
+  const isValidUUID = (uuid) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuid && typeof uuid === 'string' && uuidRegex.test(uuid);
+  };
 
   // Fetch listing by ID
   const fetchListing = async (id) => {
@@ -79,59 +85,89 @@ const Messages = () => {
     return data;
   };
 
+  // Fetch viewings for this chat
+  const fetchViewings = async (chatId) => {
+    const { data, error } = await supabase
+      .from('viewings')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    setViewings(data || []);
+  };
+
+  // Fetch rental confirmation for this chat/listing
+  const fetchRentalConfirmation = async (listingId, chatId) => {
+    const { data, error } = await supabase
+      .from('rental_confirmations')
+      .select('*')
+      .eq('listing_id', listingId)
+      .eq('chat_id', chatId)
+      .maybeSingle();
+    if (error) throw error;
+    setRentalConfirmation(data || null);
+  };
+
+  // Fetch payment proofs for this chat
+  const fetchPaymentProofs = async (chatId) => {
+    const { data, error } = await supabase
+      .from('payment_proofs')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    setPaymentProofs(data || []);
+  };
+
   // Load existing chat by ID
   const loadExistingChat = async (id) => {
-  try {
-    setLoading(true);
-    const { data: chatData, error: chatError } = await supabase
-      .from('chats')
-      .select('*')
-      .eq('id', id)
-      .single();
+    try {
+      setLoading(true);
+      const { data: chatData, error: chatError } = await supabase
+        .from('chats')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    if (chatError || !chatData) {
-      alert('Chat not found');
-      navigate('/listings');
-      return;
+      if (chatError || !chatData) {
+        alert('Chat not found');
+        navigate('/listings');
+        return;
+      }
+
+      if (!isValidUUID(chatData.listing_id)) {
+        console.error('Invalid listing_id in chat:', chatData.listing_id);
+        alert('This chat has an invalid reference to a listing. Please contact support.');
+        navigate('/listings');
+        return;
+      }
+
+      if (!hasChatAccess(chatData)) {
+        alert('You do not have permission to access this chat');
+        navigate('/listings');
+        return;
+      }
+
+      const listingData = await fetchListing(chatData.listing_id);
+      setListing(listingData);
+      setChat(chatData);
+
+      await fetchParticipantProfiles(chatData);
+      await fetchMessages(id);
+      await fetchViewings(id);
+      await fetchRentalConfirmation(listingData.id, id);
+      await fetchPaymentProofs(id);
+    } catch (error) {
+      console.error('Error loading chat:', error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // ✅ Validate listing_id
-    if (!isValidUUID(chatData.listing_id)) {
-      console.error('Invalid listing_id in chat:', chatData.listing_id);
-      alert('This chat has an invalid reference to a listing. Please contact support.');
-      navigate('/listings');
-      return;
-    }
-
-    // Check access permission
-    if (!hasChatAccess(chatData)) {
-      alert('You do not have permission to access this chat');
-      navigate('/listings');
-      return;
-    }
-
-    // Fetch associated listing
-    const listingData = await fetchListing(chatData.listing_id);
-    setListing(listingData);
-    setChat(chatData);
-
-    // Fetch participant names/profiles
-    await fetchParticipantProfiles(chatData);
-
-    // Fetch messages
-    await fetchMessages(id);
-  } catch (error) {
-    console.error('Error loading chat:', error);
-  } finally {
-    setLoading(false);
-  }
-};
   // Check if current user has access to chat (business rules)
   const hasChatAccess = (chat) => {
     if (!user) return false;
-    // Admin and super-admin have full access
     if (user.role === 'admin' || user.role === 'super-admin') return true;
-    // Check if user is participant1, participant2, or monitoring manager
     return (
       user.id === chat.participant1_id ||
       user.id === chat.participant2_id ||
@@ -174,7 +210,6 @@ const Messages = () => {
     if (error) throw error;
     setMessages(data || []);
 
-    // Mark unread messages as read (if from others)
     const unread = data.filter(m => m.sender_id !== user.id && !m.read_at);
     if (unread.length > 0) {
       await supabase
@@ -202,7 +237,6 @@ const Messages = () => {
         },
         (payload) => {
           const newMsg = payload.new;
-          // Only add if not from current user (already optimistically added)
           if (newMsg.sender_id !== user.id) {
             setMessages((prev) => [...prev, newMsg]);
           }
@@ -215,21 +249,18 @@ const Messages = () => {
 
   // Load or create a chat for a listing
   const loadOrCreateChat = async (listingId) => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    // ✅ Validate the listing ID from URL
-    if (!isValidUUID(listingId)) {
-      alert('Invalid listing ID');
-      navigate('/listings');
-      return;
-    }
+      if (!isValidUUID(listingId)) {
+        alert('Invalid listing ID');
+        navigate('/listings');
+        return;
+      }
 
-      // Fetch listing details
       const listingData = await fetchListing(listingId);
       setListing(listingData);
 
-      // Check if a chat already exists with this listing and current user as participant
       const { data: existingChats, error: fetchError } = await supabase
         .from('chats')
         .select('*')
@@ -237,7 +268,6 @@ const Messages = () => {
 
       if (fetchError) throw fetchError;
 
-      // Look for a chat where current user is participant1, participant2, or monitoring manager
       let existingChat = existingChats?.find(c =>
         c.participant1_id === user.id ||
         c.participant2_id === user.id ||
@@ -245,7 +275,6 @@ const Messages = () => {
       );
 
       if (existingChat) {
-        // Check access
         if (!hasChatAccess(existingChat)) {
           alert('Access denied');
           navigate('/listings');
@@ -254,31 +283,31 @@ const Messages = () => {
         setChat(existingChat);
         await fetchParticipantProfiles(existingChat);
         await fetchMessages(existingChat.id);
+        await fetchViewings(existingChat.id);
+        await fetchRentalConfirmation(listingData.id, existingChat.id);
+        await fetchPaymentProofs(existingChat.id);
         setLoading(false);
         return;
       }
 
       // Determine participants based on listing poster role
-      let participant1_id = null; // Typically the poster (landlord, tenant, estate firm)
-      let participant2_id = user.id; // Incoming tenant
-      let monitoring_manager_id = null; // Will be set if manager assigned
-
+      let participant1_id = null;
+      let participant2_id = user.id;
+      let monitoring_manager_id = null;
       let commission_applied = false;
       let estate_firm_listing = false;
       let state = 'pending_availability';
 
       if (listingData.poster_role === 'tenant') {
-        // Outgoing tenant posting
-        participant1_id = listingData.poster_id; // outgoing tenant
-        // Check if a manager is already assigned to this listing
+        participant1_id = listingData.poster_id;
         const { data: assignment } = await supabase
-          .from('manager_assignments') // Assumes you have this table
+          .from('manager_assignments')
           .select('manager_id')
           .eq('listing_id', listingId)
           .maybeSingle();
         if (assignment) {
           monitoring_manager_id = assignment.manager_id;
-          state = 'active'; // manager already assigned, chat can be active after availability? Actually need confirmation? For tenant listings, chat can become active only after manager accepts, but we already have assignment.
+          state = 'active';
         } else {
           state = 'pending_manager';
         }
@@ -286,15 +315,14 @@ const Messages = () => {
       } else if (listingData.poster_role === 'landlord') {
         participant1_id = listingData.poster_id;
         commission_applied = true;
-        state = 'pending_availability'; // landlord must confirm availability
+        state = 'pending_availability';
       } else if (listingData.poster_role === 'estate_firm') {
         participant1_id = listingData.poster_id;
         estate_firm_listing = true;
         commission_applied = false;
-        state = 'pending_availability'; // estate firm confirms availability
+        state = 'pending_availability';
       }
 
-      // Create new chat
       const { data: newChat, error: createError } = await supabase
         .from('chats')
         .insert([{
@@ -306,7 +334,6 @@ const Messages = () => {
           commission_applied,
           estate_firm_listing,
           manager_assigned: !!monitoring_manager_id,
-          // Include other fields like created_at, updated_at (auto by default)
         }])
         .select()
         .single();
@@ -315,21 +342,19 @@ const Messages = () => {
 
       setChat(newChat);
       await fetchParticipantProfiles(newChat);
-
-      // Add a system message
       await supabase.from('messages').insert([{
         chat_id: newChat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000', // system
+        sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `Conversation started for ${listingData.title}`,
         is_system: true,
       }]);
 
-      setMessages([]); // initially empty
+      setMessages([]);
+      setLoading(false);
     } catch (error) {
       console.error('Error creating chat:', error);
       alert('Could not start conversation');
-    } finally {
       setLoading(false);
     }
   };
@@ -339,7 +364,6 @@ const Messages = () => {
     if (user.role !== 'manager') return;
 
     try {
-      // Update chat to set monitoring_manager_id
       const { error } = await supabase
         .from('chats')
         .update({
@@ -351,16 +375,23 @@ const Messages = () => {
 
       if (error) throw error;
 
-      // Add system message
+      // Also update listing: assign manager and set verification_status
+      await supabase
+        .from('listings')
+        .update({
+          assigned_manager_id: user.id,
+          verification_status: 'pending_verification'
+        })
+        .eq('id', listing.id);
+
       await supabase.from('messages').insert([{
         chat_id: chat.id,
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
-        content: `👨‍💼 Manager ${participantProfiles[user.id]?.full_name || user.email} has accepted this listing via proximity notification.`,
+        content: `👨‍💼 Manager ${participantProfiles[user.id]?.full_name || user.email} has accepted this listing.`,
         is_system: true,
       }]);
 
-      // Refresh chat
       const { data: updatedChat } = await supabase
         .from('chats')
         .select('*')
@@ -391,7 +422,6 @@ const Messages = () => {
 
       if (error) throw error;
 
-      // Add system message
       const role = listing.poster_role === 'landlord' ? 'Landlord' : 'Estate Firm';
       const content = isAvailable
         ? `✅ ${role} confirmed property is available. Chat is now active.`
@@ -405,7 +435,6 @@ const Messages = () => {
         is_system: true,
       }]);
 
-      // Refresh chat
       const { data: updatedChat } = await supabase
         .from('chats')
         .select('*')
@@ -414,6 +443,200 @@ const Messages = () => {
       setChat(updatedChat);
     } catch (error) {
       console.error('Error responding availability:', error);
+    }
+  };
+
+  // ========== NEW FUNCTIONS FOR RENTAL FLOW ==========
+
+  // Record viewing outcome (manager only)
+  const recordViewingOutcome = async (outcome, notes = '') => {
+    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
+      alert('Only the assigned manager can record viewing outcomes');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('viewings')
+        .insert([{
+          chat_id: chat.id,
+          listing_id: listing.id,
+          manager_id: user.id,
+          tenant_id: chat.participant2_id,
+          outcome,
+          notes,
+        }]);
+      if (error) throw error;
+
+      await supabase.from('messages').insert([{
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_role: 'system',
+        content: `👁️ Viewing outcome: ${outcome} ${notes ? `– ${notes}` : ''}`,
+        is_system: true,
+      }]);
+
+      // Refresh viewings
+      await fetchViewings(chat.id);
+    } catch (error) {
+      console.error('Error recording viewing outcome:', error);
+      alert('Failed to record outcome');
+    }
+  };
+
+  // Mark listing as taken (manager only, after accepted viewing)
+  const markAsTaken = async () => {
+    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
+      alert('Only assigned manager can mark as taken');
+      return;
+    }
+
+    // Check if there is an accepted viewing
+    const acceptedViewing = viewings.find(v => v.outcome === 'accepted');
+    if (!acceptedViewing) {
+      alert('Tenant must accept the house before marking as taken');
+      return;
+    }
+
+    try {
+      // Update listing status
+      await supabase
+        .from('listings')
+        .update({ status: 'taken', taken_at: new Date().toISOString() })
+        .eq('id', listing.id);
+
+      // Create rental confirmation record
+      const { error: rcError } = await supabase
+        .from('rental_confirmations')
+        .insert([{
+          listing_id: listing.id,
+          chat_id: chat.id,
+          landlord_confirmed: false,
+          tenant_confirmed: false,
+          admin_confirmed: false,
+        }]);
+      if (rcError) throw rcError;
+
+      await supabase.from('messages').insert([{
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_role: 'system',
+        content: `🏠 Property marked as TAKEN. Awaiting landlord and tenant confirmation.`,
+        is_system: true,
+      }]);
+
+      // Refresh rental confirmation
+      await fetchRentalConfirmation(listing.id, chat.id);
+    } catch (error) {
+      console.error('Error marking as taken:', error);
+      alert('Failed to mark as taken');
+    }
+  };
+
+  // Tenant confirm rental
+  const tenantConfirmRental = async (confirm) => {
+    if (user.role !== 'tenant' || user.id !== chat.participant2_id) return;
+
+    try {
+      const updates = {
+        tenant_confirmed: confirm,
+        tenant_confirmed_at: new Date().toISOString(),
+      };
+      await supabase
+        .from('rental_confirmations')
+        .update(updates)
+        .eq('listing_id', listing.id)
+        .eq('chat_id', chat.id);
+
+      await supabase.from('messages').insert([{
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_role: 'system',
+        content: confirm ? `✅ Tenant confirmed rental.` : `❌ Tenant denied rental.`,
+        is_system: true,
+      }]);
+
+      await fetchRentalConfirmation(listing.id, chat.id);
+    } catch (error) {
+      console.error('Error confirming rental:', error);
+    }
+  };
+
+  // Upload payment proof (tenant)
+  const uploadPaymentProof = async (file, proofType) => {
+    if (!file || !chat) return;
+
+    try {
+      setUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `payment_proofs/${chat.id}/${Date.now()}.${fileExt}`;
+      const filePath = fileName;
+
+      const { error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('payment-proofs')
+        .getPublicUrl(filePath);
+
+      const { error: insertError } = await supabase
+        .from('payment_proofs')
+        .insert([{
+          chat_id: chat.id,
+          listing_id: listing.id,
+          tenant_id: user.id,
+          proof_type: proofType,
+          file_url: urlData.publicUrl,
+          description: `Payment proof uploaded by tenant`,
+        }]);
+
+      if (insertError) throw insertError;
+
+      await supabase.from('messages').insert([{
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_role: 'system',
+        content: `💰 Tenant uploaded payment proof (${proofType}). Pending verification.`,
+        is_system: true,
+      }]);
+
+      await fetchPaymentProofs(chat.id);
+    } catch (error) {
+      console.error('Error uploading payment proof:', error);
+      alert('Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Admin verify payment proof
+  const verifyPaymentProof = async (proofId) => {
+    if (!(user.role === 'admin' || user.role === 'super-admin')) return;
+
+    try {
+      await supabase
+        .from('payment_proofs')
+        .update({
+          verified: true,
+          verified_by: user.id,
+          verified_at: new Date().toISOString(),
+        })
+        .eq('id', proofId);
+
+      await supabase.from('messages').insert([{
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_role: 'system',
+        content: `✅ Admin verified payment proof.`,
+        is_system: true,
+      }]);
+
+      await fetchPaymentProofs(chat.id);
+    } catch (error) {
+      console.error('Error verifying payment proof:', error);
     }
   };
 
@@ -430,21 +653,18 @@ const Messages = () => {
       created_at: new Date().toISOString(),
     };
 
-    // Optimistically add to UI
     setMessages((prev) => [...prev, newMsg]);
     setMessageText('');
 
-    // Insert into DB
     const { error } = await supabase.from('messages').insert([newMsg]);
     if (error) {
       console.error('Error sending message:', error);
       alert('Failed to send message');
-      // Remove optimistic message
       setMessages((prev) => prev.filter(m => m.created_at !== newMsg.created_at));
     }
   };
 
-  // Handle file upload (attachment)
+  // Handle file upload (attachments) – existing
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !chat) return;
@@ -467,7 +687,6 @@ const Messages = () => {
 
       const attachmentUrl = urlData.publicUrl;
 
-      // Create a message with attachment
       const attachmentMsg = {
         chat_id: chat.id,
         sender_id: user.id,
@@ -487,75 +706,7 @@ const Messages = () => {
       alert('File upload failed');
     } finally {
       setUploading(false);
-      e.target.value = ''; // reset file input
-    }
-  };
-
-  // Mark as rented (manager only) with updated commission
-  const markAsRented = async () => {
-    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
-      alert('Only assigned manager can mark as rented');
-      return;
-    }
-
-    if (!chat.availability_confirmed) {
-      alert('Availability must be confirmed first');
-      return;
-    }
-
-    // Calculate commission if applicable (updated percentages)
-    let commissionDetails = null;
-    if (chat.commission_applied && listing.price) {
-      const rentalAmount = listing.price;
-      commissionDetails = {
-        rentalAmount,
-        totalCommission: rentalAmount * 0.075, // 7.5%
-        managerShare: rentalAmount * 0.025,    // 2.5%
-        referrerShare: rentalAmount * 0.015,   // 1.5% (outgoing tenant)
-        platformShare: rentalAmount * 0.035,   // 3.5%
-        calculatedAt: new Date().toISOString(),
-      };
-    }
-
-    const updates = {
-      rented: true,
-      rented_at: new Date().toISOString(),
-      rented_by: user.id,
-      commission_details: commissionDetails,
-      state: 'rented',
-    };
-
-    try {
-      const { error } = await supabase
-        .from('chats')
-        .update(updates)
-        .eq('id', chat.id);
-
-      if (error) throw error;
-
-      // System message
-      const content = commissionDetails
-        ? `✅ Property marked as RENTED by manager. Commission of ₦${commissionDetails.totalCommission.toLocaleString()} calculated (2.5% manager, 1.5% referrer, 3.5% RentEasy).`
-        : '✅ Property marked as RENTED by manager. No commission (Estate Firm listing).';
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content,
-        is_system: true,
-      }]);
-
-      // Refresh chat
-      const { data: updatedChat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chat.id)
-        .single();
-      setChat(updatedChat);
-    } catch (error) {
-      console.error('Error marking as rented:', error);
-      alert('Failed to mark as rented');
+      e.target.value = '';
     }
   };
 
@@ -572,15 +723,10 @@ const Messages = () => {
     };
 
     try {
-      const { error } = await supabase
+      await supabase
         .from('chats')
-        .update({
-          state: 'dispute',
-          dispute: disputeData,
-        })
+        .update({ state: 'dispute', dispute: disputeData })
         .eq('id', chat.id);
-
-      if (error) throw error;
 
       await supabase.from('messages').insert([{
         chat_id: chat.id,
@@ -626,12 +772,10 @@ const Messages = () => {
     }
 
     try {
-      const { error } = await supabase
+      await supabase
         .from('chats')
         .update(updates)
         .eq('id', chat.id);
-
-      if (error) throw error;
 
       await supabase.from('messages').insert([{
         chat_id: chat.id,
@@ -659,7 +803,21 @@ const Messages = () => {
     alert('Referral link copied!');
   };
 
-  // Render logic
+  // Determine verification status message
+  const getVerificationStatusDisplay = () => {
+    if (!listing) return null;
+    switch (listing.verification_status) {
+      case 'pending_verification':
+        return { text: '⏳ Pending verification by manager', class: 'pending' };
+      case 'pending_admin':
+        return { text: '⏳ Pending admin verification (call landlord)', class: 'pending' };
+      case 'verified':
+        return { text: '✅ Verified', class: 'verified' };
+      default:
+        return null;
+    }
+  };
+
   if (loading) return <div className="messages-loading">Loading chat…</div>;
 
   if (!chat || !listing) {
@@ -678,15 +836,13 @@ const Messages = () => {
     listing.poster_role === 'tenant' &&
     !chat.manager_assigned &&
     user.role === 'tenant' &&
-    user.id !== chat.participant1_id && // not the outgoing tenant
+    user.id !== chat.participant1_id &&
     !(user.role === 'admin' || user.role === 'super-admin')
   ) {
     return (
       <div className="messages-locked">
         <h3>⏳ Waiting for RentEasy Manager Assignment</h3>
-        <p>
-          For listings posted by outgoing tenants, incoming tenants must communicate through an assigned RentEasy manager.
-        </p>
+        <p>For listings posted by outgoing tenants, incoming tenants must communicate through an assigned RentEasy manager.</p>
         <p>A manager will be assigned via proximity notification shortly.</p>
         <div className="commission-notice">
           <strong>Commission breakdown:</strong>
@@ -701,6 +857,7 @@ const Messages = () => {
   }
 
   const showCommissionInfo = chat.commission_applied && !chat.estate_firm_listing;
+  const verificationStatus = getVerificationStatusDisplay();
 
   return (
     <div className="messages-page">
@@ -720,6 +877,11 @@ const Messages = () => {
           <span className={`status-badge status-${chat.state}`}>
             Status: {chat.state?.replace('_', ' ').toUpperCase()}
           </span>
+          {verificationStatus && (
+            <span className={`status-badge ${verificationStatus.class}`}>
+              {verificationStatus.text}
+            </span>
+          )}
           {chat.monitoring_manager_id && <span className="manager-badge">👨‍💼 Manager Assigned</span>}
           {chat.commission_details?.totalCommission && (
             <span className="commission-badge">
@@ -759,6 +921,134 @@ const Messages = () => {
               ? 'Chat will include RentEasy manager for commission monitoring.'
               : 'Estate firm listings have no commission or manager involvement.'}
           </small>
+        </div>
+      )}
+
+      {/* Verification prompt for manager */}
+      {user.role === 'manager' && listing.verification_status === 'pending_verification' && (
+        <div className="verification-box">
+          <h4>🔍 Property Verification Required</h4>
+          <p>Visit the property, confirm details, and upload photos.</p>
+          <button
+            className="btn primary"
+            onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
+          >
+            Start Verification
+          </button>
+        </div>
+      )}
+
+      {/* After manager submits verification, admin pending */}
+      {listing.verification_status === 'pending_admin' && (
+        <div className="verification-box pending">
+          <h4>⏳ Verification Submitted</h4>
+          <p>Admin is contacting landlord to confirm. You'll be notified once verified.</p>
+        </div>
+      )}
+
+      {/* After verification, manager can record viewing outcome */}
+      {user.role === 'manager' && listing.verification_status === 'verified' && chat.state === 'active' && (
+        <div className="viewing-box">
+          <h4>👁️ Record Viewing Outcome</h4>
+          <div className="viewing-buttons">
+            <button
+              className="btn success"
+              onClick={() => recordViewingOutcome('accepted')}
+            >
+              ✅ Tenant Accepted
+            </button>
+            <button
+              className="btn warning"
+              onClick={() => recordViewingOutcome('declined')}
+            >
+              ❌ Tenant Declined
+            </button>
+            <button
+              className="btn secondary"
+              onClick={() => recordViewingOutcome('no_show')}
+            >
+              🚫 Tenant No-Show
+            </button>
+          </div>
+          <small>After acceptance, you can mark the property as taken.</small>
+        </div>
+      )}
+
+      {/* Mark as taken button (after accepted viewing) */}
+      {user.role === 'manager' &&
+       viewings.some(v => v.outcome === 'accepted') &&
+       listing.status !== 'taken' && (
+        <div className="taken-box">
+          <button className="btn success" onClick={markAsTaken}>
+            🏠 Mark as Taken
+          </button>
+        </div>
+      )}
+
+      {/* Tenant confirmation prompt */}
+      {user.role === 'tenant' && rentalConfirmation && !rentalConfirmation.tenant_confirmed && (
+        <div className="confirm-rental-box">
+          <h4>Did you rent this house?</h4>
+          <div className="confirm-buttons">
+            <button className="btn success" onClick={() => tenantConfirmRental(true)}>
+              ✅ Yes, I rented it
+            </button>
+            <button className="btn danger" onClick={() => tenantConfirmRental(false)}>
+              ❌ No, I did not
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Payment proof upload (tenant, after rental confirmed) */}
+      {user.role === 'tenant' && rentalConfirmation?.tenant_confirmed && (
+        <div className="payment-proof-box">
+          <h4>Upload Payment Proof (Optional)</h4>
+          <p>Upload screenshot, receipt photo, or record an audio message confirming payment.</p>
+          <div className="proof-upload-buttons">
+            <input
+              type="file"
+              id="payment-proof-file"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                if (e.target.files[0]) {
+                  const proofType = e.target.files[0].type.startsWith('image/') ? 'screenshot' : 'receipt_photo';
+                  uploadPaymentProof(e.target.files[0], proofType);
+                }
+              }}
+              accept="image/*,.pdf,.mp3,.m4a"
+            />
+            <button
+              className="btn secondary"
+              onClick={() => document.getElementById('payment-proof-file').click()}
+              disabled={uploading}
+            >
+              {uploading ? 'Uploading...' : '📎 Upload Proof'}
+            </button>
+          </div>
+          {paymentProofs.length > 0 && (
+            <div className="proof-list">
+              <h5>Uploaded Proofs:</h5>
+              {paymentProofs.map(proof => (
+                <div key={proof.id} className="proof-item">
+                  <a href={proof.file_url} target="_blank" rel="noopener noreferrer">
+                    {proof.proof_type} – {new Date(proof.created_at).toLocaleString()}
+                  </a>
+                  {proof.verified ? (
+                    <span className="verified-badge">✅ Verified</span>
+                  ) : (
+                    <span className="pending-badge">⏳ Pending</span>
+                  )}
+                  {/* Admin can verify directly in chat */}
+                  {(user.role === 'admin' || user.role === 'super-admin') && !proof.verified && (
+                    <button className="btn small" onClick={() => verifyPaymentProof(proof.id)}>
+                      Verify
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -834,7 +1124,6 @@ const Messages = () => {
           <button onClick={sendMessage} disabled={!messageText.trim()}>
             Send
           </button>
-          {/* File attachment button */}
           <input
             type="file"
             ref={fileInputRef}

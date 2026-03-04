@@ -56,6 +56,8 @@ const PostPropertyPage = () => {
     // Commission settings
     commission_rate: 0, // Default, will be set based on user role
     posted_by: profile?.role,
+
+    landlord_phone: '',
   });
 
   // Load user data
@@ -333,7 +335,11 @@ debugFormData();
       updated_at: new Date().toISOString(),
       
       // Images will be added after upload
-      images: []
+      images: [],
+
+      // NEW FIELDS
+        landlord_phone: formData.landlord_phone || null,
+        verification_status: profile?.role === 'estate-firm' ? 'verified' : 'pending_manager',
     };
     
     // Add estate firm ID if applicable
@@ -396,10 +402,11 @@ debugFormData();
     alert(successMessage);
     
     // ========== STEP 4: NOTIFY NEARBY MANAGERS ==========
-    if (formData.coordinates?.lat && formData.coordinates?.lng) {
-      console.log('📢 Notifying nearby managers...');
-      await notifyNearbyManagers(listing.id, formData.coordinates);
-    }
+     // Notify nearby managers (only if not estate firm? Actually all non-estate listings need manager)
+      if (profile?.role !== 'estate-firm' && formData.coordinates?.lat && formData.coordinates?.lng) {
+        console.log('📢 Notifying nearby managers...');
+        await notifyNearbyManagers(listing.id, formData.coordinates);
+      }
     
     // ========== STEP 5: NAVIGATE TO DASHBOARD ==========
     setTimeout(() => {

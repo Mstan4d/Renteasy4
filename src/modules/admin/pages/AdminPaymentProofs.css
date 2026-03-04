@@ -1,0 +1,196 @@
+/* src/modules/admin/pages/AdminPaymentProofs.css */
+
+.admin-payment-proofs {
+  padding: 2rem;
+  background: #f3f4f6;
+  min-height: 100vh;
+}
+
+.admin-payment-proofs h1 {
+  font-size: 2rem;
+  color: #1f2937;
+  margin-bottom: 2rem;
+}
+
+.empty-state {
+  background: white;
+  border-radius: 12px;
+  padding: 4rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 1.1rem;
+  border: 2px dashed #e5e7eb;
+}
+
+.proofs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.proof-card {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+
+.proof-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.proof-header {
+  background: #f9fafb;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.proof-type {
+  background: #e5e7eb;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: capitalize;
+}
+
+.proof-date {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.proof-body {
+  padding: 1.5rem;
+  flex: 1;
+}
+
+.proof-body p {
+  margin: 0.5rem 0;
+  color: #4b5563;
+  word-wrap: break-word;
+}
+
+.proof-body p strong {
+  color: #1f2937;
+  width: 100px;
+  display: inline-block;
+}
+
+.proof-file {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.proof-file a {
+  display: inline-block;
+  background: #f3f4f6;
+  color: #2563eb;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background 0.2s;
+  word-break: break-all;
+}
+
+.proof-file a:hover {
+  background: #e5e7eb;
+  text-decoration: underline;
+}
+
+.proof-actions {
+  padding: 1rem 1.5rem 1.5rem;
+  border-top: 1px solid #e5e7eb;
+  text-align: right;
+}
+
+.btn-verify {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.2s;
+}
+
+.btn-verify:hover {
+  background: #059669;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .admin-payment-proofs {
+    padding: 1.5rem;
+  }
+
+  .admin-payment-proofs h1 {
+    font-size: 1.75rem;
+  }
+
+  .empty-state {
+    padding: 3rem;
+  }
+
+  .proofs-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .proof-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .proof-body p strong {
+    width: 80px;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-payment-proofs {
+    padding: 1rem;
+  }
+
+  .admin-payment-proofs h1 {
+    font-size: 1.5rem;
+  }
+
+  .empty-state {
+    padding: 2rem;
+    font-size: 1rem;
+  }
+
+  .proof-card {
+    border-radius: 8px;
+  }
+
+  .proof-body {
+    padding: 1rem;
+  }
+
+  .proof-body p {
+    font-size: 0.95rem;
+  }
+
+  .proof-body p strong {
+    display: block;
+    width: auto;
+    margin-bottom: 0.25rem;
+  }
+
+  .btn-verify {
+    padding: 0.7rem;
+  }
+}

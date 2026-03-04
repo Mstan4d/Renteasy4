@@ -1,4 +1,4 @@
-// src/modules/properties/components/steps/BasicInfoStep.jsx - CORRECTED
+// src/modules/properties/components/steps/BasicInfoStep.jsx
 import React from 'react';
 import { DollarSign, Home, FileText, User } from 'lucide-react';
 
@@ -10,6 +10,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
     { value: '3_bedroom', label: '3 Bedroom' },
     { value: '4_bedroom', label: '4 Bedroom' },
     { value: '5_bedroom', label: '5 Bedroom' },
+    { value: '6_bedroom', label: '6 Bedroom' },
     { value: 'studio', label: 'Studio' },
     { value: 'duplex', label: 'Duplex' },
     { value: 'bungalow', label: 'Bungalow' },
@@ -47,17 +48,11 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
     updateFormData({ [field]: value });
   };
 
-  // Handle amenity checkbox change
   const handleAmenityChange = (amenity, isChecked) => {
     const currentAmenities = formData.amenities || [];
-    let updatedAmenities;
-    
-    if (isChecked) {
-      updatedAmenities = [...currentAmenities, amenity];
-    } else {
-      updatedAmenities = currentAmenities.filter(a => a !== amenity);
-    }
-    
+    const updatedAmenities = isChecked
+      ? [...currentAmenities, amenity]
+      : currentAmenities.filter(a => a !== amenity);
     updateFormData({ amenities: updatedAmenities });
   };
 
@@ -80,7 +75,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         <input
           type="text"
           placeholder="e.g., 3 Bedroom Luxury Apartment in Lekki"
-          value={formData.title}
+          value={formData.title || ''}
           onChange={(e) => handleChange('title', e.target.value)}
           maxLength={100}
           required
@@ -96,7 +91,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         </label>
         <textarea
           placeholder="Describe your property in detail. Include amenities, features, neighborhood info, etc."
-          value={formData.description}
+          value={formData.description || ''}
           onChange={(e) => handleChange('description', e.target.value)}
           rows={5}
           required
@@ -107,27 +102,27 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
       </div>
 
       {/* Price */}
-    
-<div className="form-group">
-  <label>
-    <DollarSign size={18} />
-    Annual Rent (₦) * - NIGERIA STANDARD
-  </label>
-  <input
-    type="number"
-    placeholder="e.g., 1,800,000 (yearly)"
-    value={formData.rent_amount}
-    onChange={(e) => handleChange('rent_amount', e.target.value)}
-    min="0"
-    step="10000"
-    required
-  />
-  <small className="hint">
-    {formData.rent_amount 
-      ? `₦${parseInt(formData.rent_amount || 0).toLocaleString()}/year (₦${(parseInt(formData.rent_amount || 0) / 12).toLocaleString()}/month)`
-      : 'Enter the ANNUAL rent amount (Nigeria standard)'}
-  </small>
-</div>
+      <div className="form-group">
+        <label>
+          <DollarSign size={18} />
+          Annual Rent (₦) * – NIGERIA STANDARD
+        </label>
+        <input
+          type="number"
+          placeholder="e.g., 1,800,000 (yearly)"
+          value={formData.rent_amount || ''}
+          onChange={(e) => handleChange('rent_amount', e.target.value)}
+          min="0"
+          step="10000"
+          required
+        />
+        <small className="hint">
+          {formData.rent_amount
+            ? `₦${parseInt(formData.rent_amount || 0).toLocaleString()}/year (₦${(parseInt(formData.rent_amount || 0) / 12).toLocaleString()}/month)`
+            : 'Enter the ANNUAL rent amount (Nigeria standard)'}
+        </small>
+      </div>
+
       {/* Property Type */}
       <div className="form-group">
         <label>
@@ -135,7 +130,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
           Property Type *
         </label>
         <select
-          value={formData.property_type || ""}
+          value={formData.property_type || ''}
           onChange={(e) => handleChange('property_type', e.target.value)}
           required
         >
@@ -153,7 +148,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         <div className="form-group">
           <label>Bedrooms</label>
           <select
-            value={formData.bedrooms}
+            value={formData.bedrooms || 1}
             onChange={(e) => handleChange('bedrooms', parseInt(e.target.value))}
           >
             {[1, 2, 3, 4, 5, 6].map(num => (
@@ -167,7 +162,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         <div className="form-group">
           <label>Bathrooms</label>
           <select
-            value={formData.bathrooms}
+            value={formData.bathrooms || 1}
             onChange={(e) => handleChange('bathrooms', parseInt(e.target.value))}
           >
             {[1, 2, 3, 4, 5, 6].map(num => (
@@ -185,7 +180,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         <input
           type="number"
           placeholder="e.g., 120"
-          value={formData.area}
+          value={formData.area || ''}
           onChange={(e) => handleChange('area', e.target.value)}
           min="0"
         />
@@ -210,15 +205,15 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         </div>
       </div>
 
-      {/* Contact Info */}
+      {/* Contact Information */}
       <div className="contact-info-section">
         <h3>
           <User size={20} />
-          Contact Information
+          Your Contact Information
         </h3>
         <div className="form-row">
           <div className="form-group">
-            <label>Contact Phone *</label>
+            <label>Your Phone *</label>
             <input
               type="tel"
               placeholder="e.g., 08012345678"
@@ -229,10 +224,10 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
           </div>
 
           <div className="form-group">
-            <label>Contact Email *</label>
+            <label>Your Email *</label>
             <input
               type="email"
-              placeholder="e.g., contact@example.com"
+              placeholder="e.g., you@example.com"
               value={formData.contactEmail || userProfile?.email || ''}
               onChange={(e) => handleChange('contactEmail', e.target.value)}
               required
@@ -240,6 +235,25 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
           </div>
         </div>
       </div>
+
+      {/* Landlord Phone – Only for outgoing tenants */}
+      {userRole === 'tenant' && (
+        <div className="contact-info-section" style={{ marginTop: '20px' }}>
+          <h4>Landlord's Contact (Optional but helpful)</h4>
+          <div className="form-group">
+            <label>Landlord's Phone Number</label>
+            <input
+              type="tel"
+              placeholder="e.g., 08012345678"
+              value={formData.landlord_phone || ''}
+              onChange={(e) => handleChange('landlord_phone', e.target.value)}
+            />
+            <small className="hint">
+              If you have the landlord's phone number, provide it – this helps our manager verify the listing faster.
+            </small>
+          </div>
+        </div>
+      )}
 
       {/* User Role Info */}
       <div className="user-role-notice">

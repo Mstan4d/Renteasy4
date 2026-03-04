@@ -1,0 +1,122 @@
+/* src/modules/admin/pages/AdminRentalConfirmations.css */
+
+.admin-rental-confirmations {
+  padding: 2rem;
+  background: #f3f4f6;
+  min-height: 100vh;
+}
+
+.admin-rental-confirmations h1 {
+  font-size: 2rem;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.admin-rental-confirmations p {
+  color: #6b7280;
+  margin-bottom: 2rem;
+}
+
+.empty-state {
+  background: white;
+  border-radius: 12px;
+  padding: 4rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 1.1rem;
+  border: 2px dashed #e5e7eb;
+}
+
+/* Table container for scroll */
+.table-container {
+  overflow-x: auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.confirmations-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+.confirmations-table th,
+.confirmations-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.confirmations-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.confirmations-table tr:hover {
+  background: #f9fafb;
+}
+
+.confirmations-table td small {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.btn-confirm {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin: 0.25rem;
+  white-space: nowrap;
+}
+
+.btn-confirm:hover {
+  background: #1d4ed8;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .admin-rental-confirmations {
+    padding: 1.5rem;
+  }
+
+  .admin-rental-confirmations h1 {
+    font-size: 1.75rem;
+  }
+
+  .empty-state {
+    padding: 3rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-rental-confirmations {
+    padding: 1rem;
+  }
+
+  .admin-rental-confirmations h1 {
+    font-size: 1.5rem;
+  }
+
+  .empty-state {
+    padding: 2rem;
+    font-size: 1rem;
+  }
+
+  /* Table cells already nowrap, but ensure text is readable */
+  .confirmations-table td {
+    font-size: 0.9rem;
+    padding: 0.75rem 0.5rem;
+  }
+
+  .btn-confirm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+}

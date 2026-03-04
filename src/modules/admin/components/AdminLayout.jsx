@@ -5,7 +5,8 @@ import { useAuth } from '../../../shared/context/AuthContext';
 import { 
   LayoutDashboard, Users, Home, Building, ShieldCheck, 
   BarChart3, Settings, LogOut, Menu, X, Bell, Search,
-  FileText, AlertCircle, DollarSign, CreditCard, Plus, Wrench, Package
+  FileText, AlertCircle, DollarSign, CreditCard, Plus, Wrench, Package,
+  CheckCircle  
 } from 'lucide-react';
 import './AdminLayout.css';
 
@@ -46,12 +47,19 @@ const AdminLayout = () => {
     }
   }, [location.pathname]);
 
-  const menuItems = [
+   const menuItems = [
     { path: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { path: '/admin/users', label: 'Users', icon: <Users size={20} /> },
     { path: '/admin/listings', label: 'Listings', icon: <Home size={20} /> },
     { path: '/admin/services', label: 'Services', icon: <Building size={20} /> },
+    // General Verifications (overview)
     { path: '/admin/verification', label: 'Verifications', icon: <ShieldCheck size={20} /> },
+    // NEW: Pending Admin Verifications
+    { path: '/admin/verifications/pending', label: 'Listing Verifications', icon: <ShieldCheck size={20} /> },
+    // NEW: Rental Confirmations
+    { path: '/admin/rental-confirmations', label: 'Rental Confirmations', icon: <CheckCircle size={20} /> },
+    // NEW: Payment Proofs
+    { path: '/admin/payment-proofs', label: 'Payment Proofs', icon: <DollarSign size={20} /> },
     { path: '/admin/reports', label: 'Reports', icon: <FileText size={20} /> },
     { path: '/admin/issues', label: 'Issues', icon: <AlertCircle size={20} /> },
     { path: '/admin/transactions', label: 'Transactions', icon: <CreditCard size={20} /> },
@@ -109,7 +117,7 @@ const AdminLayout = () => {
   };
 
   const handleVerifyClick = () => {
-    navigate('/admin/verifications');
+    navigate('/admin/verification');
   };
 
   const handleAddClick = () => {

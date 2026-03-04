@@ -1,9 +1,10 @@
 /* src/modules/manager/components/ManagerSidebar.css */
 
+/* src/modules/manager/components/ManagerSideBar.css */
 .manager-sidebar {
   width: 280px;
   background: linear-gradient(180deg, #1e3c72 0%, #4b5f83 100%);
-  color: red !important; /* Force white text */
+  color: white !important; /* FIXED: was red */
   height: 100vh;
   position: fixed;
   left: 0;

@@ -1,4 +1,4 @@
-// src/modules/manager/pages/ManagerDashboard.jsx
+// src/modules/manager/pages/ManagerDashboard.jsx (updated)
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
@@ -17,6 +17,7 @@ const ManagerDashboard = () => {
   const [assignedChats, setAssignedChats] = useState([]);
   const [availableListings, setAvailableListings] = useState([]);
   const [verifiedProperties, setVerifiedProperties] = useState([]);
+  const [pendingVerifications, setPendingVerifications] = useState([]); // NEW
   const [earnings, setEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -84,48 +85,57 @@ const ManagerDashboard = () => {
 
   // ---------- Load all dashboard data ----------
   const loadDashboardData = async () => {
-  setLoading(true);
-  try {
-    // 1. Get manager's assigned chats
-    const { data: chats, error: chatsError } = await supabase
-      .from('chats')
-      .select('*')
-      .or(
-        `participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id},manager_assigned.eq.true`
-      );
-    if (chatsError) throw chatsError;
-    setAssignedChats(chats || []);
+    setLoading(true);
+    try {
+      // 1. Get manager's assigned chats
+      const { data: chats, error: chatsError } = await supabase
+        .from('chats')
+        .select('*')
+        .or(
+          `participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id},manager_assigned.eq.true`
+        );
+      if (chatsError) throw chatsError;
+      setAssignedChats(chats || []);
 
-    // 2. Get verified properties (listings where manager is assigned and verified)
-    const { data: verified, error: verifiedError } = await supabase
-      .from('listings')
-      .select('*')
-      .eq('manager_by', user.id)
-      .eq('verified', true);
-    if (verifiedError) throw verifiedError;
-    setVerifiedProperties(verified || []);
+      // 2. Get verified properties (listings where manager is assigned and verified)
+      const { data: verified, error: verifiedError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('assigned_manager_id', user.id)
+        .eq('verification_status', 'verified'); // using new verification_status
+      if (verifiedError) throw verifiedError;
+      setVerifiedProperties(verified || []);
 
-    // 3. Calculate total earnings (sum of manager_share from commissions)
-    const { data: commissions, error: commError } = await supabase
-      .from('commissions')
-      .select('manager_share')
-      .eq('manager_id', user.id)
-      .eq('status', 'paid');
-    if (commError) throw commError;
-    const total = (commissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
-    setEarnings(total);
-  } catch (error) {
-    console.error('Error loading dashboard data:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+      // 3. NEW: Get listings pending verification (assigned but not yet verified)
+      const { data: pending, error: pendingError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('assigned_manager_id', user.id)
+        .eq('verification_status', 'pending_verification');
+      if (pendingError) throw pendingError;
+      setPendingVerifications(pending || []);
+
+      // 4. Calculate total earnings (sum of manager_share from commissions)
+      const { data: commissions, error: commError } = await supabase
+        .from('commissions')
+        .select('manager_share')
+        .eq('manager_id', user.id)
+        .eq('status', 'paid');
+      if (commError) throw commError;
+      const total = (commissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      setEarnings(total);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (user) loadDashboardData();
   }, [user]);
 
-  // ---------- Accept a listing ----------
+  // ---------- Accept a listing (from proximity notification) ----------
   const acceptListing = async (listingId) => {
     if (kycStatus !== 'approved') {
       alert('⚠️ KYC Verification Required');
@@ -148,6 +158,16 @@ const ManagerDashboard = () => {
         return;
       }
 
+      // UPDATE THE LISTING: assign manager and set verification status
+      const { error: updateListingError } = await supabase
+        .from('listings')
+        .update({
+          assigned_manager_id: user.id,
+          verification_status: 'pending_verification', // manager must now verify
+        })
+        .eq('id', listingId);
+      if (updateListingError) throw updateListingError;
+
       // Create or update chat
       const { data: existingChat } = await supabase
         .from('chats')
@@ -155,54 +175,54 @@ const ManagerDashboard = () => {
         .eq('listing_id', listingId)
         .maybeSingle();
 
-      // Inside acceptListing, after fetching listing:
-if (!existingChat) {
-  // Create new chat with manager assigned
-  const chatTemplate = {
-    listing_id: listingId,
-    participant1_id: listing.poster_role === 'tenant' ? listing.poster_id : null,
-    participant2_id: listing.poster_role === 'landlord' ? listing.poster_id : null,
-    monitoring_manager_id: user.id,
-    state: 'pending_availability',
-    manager_assigned: true,
-    manager_assigned_at: new Date().toISOString(),
-    chat_type: listing.poster_role === 'tenant' ? 'manager_intermediary' : 'monitoring',
-  };
+      if (!existingChat) {
+        // Create new chat with manager assigned
+        const chatTemplate = {
+          listing_id: listingId,
+          participant1_id: listing.poster_role === 'tenant' ? listing.poster_id : null,
+          participant2_id: listing.poster_role === 'landlord' ? listing.poster_id : null,
+          monitoring_manager_id: user.id,
+          state: 'pending_availability',
+          manager_assigned: true,
+          manager_assigned_at: new Date().toISOString(),
+          chat_type: listing.poster_role === 'tenant' ? 'manager_intermediary' : 'monitoring',
+        };
 
-  const { error: chatError } = await supabase.from('chats').insert([chatTemplate]);
-  if (chatError) throw chatError;
+        const { error: chatError } = await supabase.from('chats').insert([chatTemplate]);
+        if (chatError) throw chatError;
 
-  // Get the newly created chat id
-  const { data: newChat } = await supabase
-    .from('chats')
-    .select('id')
-    .eq('listing_id', listingId)
-    .single();
+        // Get the newly created chat id
+        const { data: newChat } = await supabase
+          .from('chats')
+          .select('id')
+          .eq('listing_id', listingId)
+          .single();
 
-  // Add a system message
-  await supabase.from('messages').insert([
-    {
-      chat_id: newChat.id,
-      sender_id: '00000000-0000-0000-0000-000000000000',
-      content:
-        listing.poster_role === 'tenant'
-          ? `🏠 Manager ${user.name} assigned. All communication will go through manager.`
-          : `👨‍💼 Manager ${user.name} assigned to monitor this conversation.`,
-      is_system: true,
-    },
-  ]);
-} else {
-  // Update existing chat – assign manager if not already
-  const { error: updateError } = await supabase
-    .from('chats')
-    .update({
-      monitoring_manager_id: user.id,
-      manager_assigned: true,
-      manager_assigned_at: new Date().toISOString(),
-    })
-    .eq('id', existingChat.id);
-  if (updateError) throw updateError;
-}
+        // Add a system message
+        await supabase.from('messages').insert([
+          {
+            chat_id: newChat.id,
+            sender_id: '00000000-0000-0000-0000-000000000000',
+            content:
+              listing.poster_role === 'tenant'
+                ? `🏠 Manager ${user.name} assigned. All communication will go through manager.`
+                : `👨‍💼 Manager ${user.name} assigned to monitor this conversation.`,
+            is_system: true,
+          },
+        ]);
+      } else {
+        // Update existing chat – assign manager if not already
+        const { error: updateError } = await supabase
+          .from('chats')
+          .update({
+            monitoring_manager_id: user.id,
+            manager_assigned: true,
+            manager_assigned_at: new Date().toISOString(),
+          })
+          .eq('id', existingChat.id);
+        if (updateError) throw updateError;
+      }
+
       // Mark notification as accepted
       await supabase
         .from('manager_notifications')
@@ -211,9 +231,9 @@ if (!existingChat) {
         .eq('manager_id', user.id);
 
       // Remove from local notifications
-      setProximityNotifications((prev) => prev.filter((n) => n.listingId !== listingId));
+      setProximityNotifications((prev) => prev.filter((n) => n.listing_id !== listingId));
 
-      alert(`✅ You are now managing "${listing.title}"`);
+      alert(`✅ You are now assigned to manage "${listing.title}" – please verify the property.`);
       loadDashboardData(); // refresh data
     } catch (error) {
       console.error('Error accepting listing:', error);
@@ -221,7 +241,7 @@ if (!existingChat) {
     }
   };
 
-  // ---------- Verify a property ----------
+  // ---------- Verify a property (mark as verified) ----------
   const verifyProperty = async (listingId) => {
     if (kycStatus !== 'approved') {
       alert('Complete KYC verification first');
@@ -231,48 +251,43 @@ if (!existingChat) {
 
     try {
       // Check if manager is assigned to this property
-      // Replace the check inside verifyProperty:
-const { data: chat } = await supabase
-  .from('chats')
-  .select('monitoring_manager_id, participant1_id, participant2_id')
-  .eq('listing_id', listingId)
-  .single();
+      const { data: listing, error: listingError } = await supabase
+        .from('listings')
+        .select('assigned_manager_id, verification_status')
+        .eq('id', listingId)
+        .single();
 
-if (
-  !chat ||
-  (chat.monitoring_manager_id !== user.id &&
-   chat.participant1_id !== user.id &&
-   chat.participant2_id !== user.id)
-) {
-  alert('You can only verify properties you are managing');
-  return;
-}
+      if (listingError) throw listingError;
+      if (listing.assigned_manager_id !== user.id) {
+        alert('You can only verify properties assigned to you');
+        return;
+      }
 
-      // Update listing
-      const { error: listingError } = await supabase
+      // Update listing to verified
+      const { error: updateError } = await supabase
         .from('listings')
         .update({
+          verification_status: 'verified',
           verified: true,
           verification_date: new Date().toISOString(),
           verified_by: user.id,
-          permanent_manager: true,
-          managed_by: user.id,
         })
         .eq('id', listingId);
-      if (listingError) throw listingError;
+      if (updateError) throw updateError;
 
-      // Add system message to chat
-      const { data: chatData } = await supabase
+      // Add system message to chat (if chat exists)
+      const { data: chat } = await supabase
         .from('chats')
         .select('id')
         .eq('listing_id', listingId)
         .single();
-      if (chatData) {
+
+      if (chat) {
         await supabase.from('messages').insert([
           {
-            chat_id: chatData.id,
+            chat_id: chat.id,
             sender_id: '00000000-0000-0000-0000-000000000000',
-            content: `✅ Property verified on‑site by manager ${user.name}. Manager is now permanently assigned.`,
+            content: `✅ Property verified on‑site by manager ${user.name}.`,
             is_system: true,
           },
         ]);
@@ -346,7 +361,7 @@ if (
     }
   };
 
-  // ---------- UI rendering (same as before, but using state variables) ----------
+  // ---------- UI rendering (same as before, but with pendingVerifications added) ----------
   if (loading) {
     return <div className="manager-loading">Loading dashboard...</div>;
   }
@@ -415,7 +430,13 @@ if (
           className={`tab-btn ${activeTab === 'properties' ? 'active' : ''}`}
           onClick={() => setActiveTab('properties')}
         >
-          🏠 Properties ({verifiedProperties.length})
+          🏠 Verified ({verifiedProperties.length})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setActiveTab('pending')}
+        >
+          ⏳ Pending Verification ({pendingVerifications.length})
         </button>
         <button
           className={`tab-btn ${activeTab === 'earnings' ? 'active' : ''}`}
@@ -442,6 +463,14 @@ if (
               </div>
               
               <div className="stat-card">
+                <div className="stat-icon">⏳</div>
+                <div className="stat-content">
+                  <h3>{pendingVerifications.length}</h3>
+                  <p>Pending Verifications</p>
+                </div>
+              </div>
+              
+              <div className="stat-card">
                 <div className="stat-icon">🏠</div>
                 <div className="stat-content">
                   <h3>{verifiedProperties.length}</h3>
@@ -454,14 +483,6 @@ if (
                 <div className="stat-content">
                   <h3>₦{earnings.toLocaleString()}</h3>
                   <p>Total Earnings</p>
-                </div>
-              </div>
-              
-              <div className="stat-card">
-                <div className="stat-icon">🔔</div>
-                <div className="stat-content">
-                  <h3>{proximityNotifications.length}</h3>
-                  <p>New Listings</p>
                 </div>
               </div>
             </div>
@@ -483,7 +504,24 @@ if (
             <div className="recent-activity">
               <h3>Recent Activity</h3>
               <div className="activity-list">
-                {assignedChats.slice(0, 3).map(chat => (
+                {pendingVerifications.slice(0, 2).map(listing => (
+                  <div key={listing.id} className="activity-item">
+                    <div className="activity-icon">⏳</div>
+                    <div className="activity-details">
+                      <strong>{listing.title}</strong>
+                      <p>Pending verification</p>
+                      <small>Assigned {new Date(listing.created_at).toLocaleDateString()}</small>
+                    </div>
+                    <button 
+                      className="btn btn-sm btn-primary"
+                      onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
+                    >
+                      Verify
+                    </button>
+                  </div>
+                ))}
+                
+                {assignedChats.slice(0, 2).map(chat => (
                   <div key={chat.id} className="activity-item">
                     <div className="activity-icon">
                       {chat.chatType === 'manager_intermediary' ? '💬' : '👁️'}
@@ -502,9 +540,9 @@ if (
                   </div>
                 ))}
                 
-                {assignedChats.length === 0 && (
+                {pendingVerifications.length === 0 && assignedChats.length === 0 && (
                   <div className="empty-activity">
-                    <p>No active chats. Accept a listing to get started!</p>
+                    <p>No recent activity. Accept a listing to get started!</p>
                     <button 
                       className="btn btn-primary"
                       onClick={() => setActiveTab('notifications')}
@@ -624,7 +662,7 @@ if (
                 {assignedChats.map(chat => {
                   const listing = verifiedProperties.find(l => l.id === chat.listingId) || 
                                 JSON.parse(localStorage.getItem('listings') || '[]')
-                                  .find(l => l.id === chat.listingId)
+                                  .find(l => l.id === chat.listingId);
                   
                   return (
                     <div key={chat.id} className="chat-card">
@@ -707,26 +745,26 @@ if (
                         )}
                       </div>
                     </div>
-                  )
+                  );
                 })}
               </div>
             )}
           </div>
         )}
 
-        {/* PROPERTIES TAB */}
+        {/* PROPERTIES TAB (verified only) */}
         {activeTab === 'properties' && (
           <div className="properties-container">
             <div className="section-header">
-              <h2>🏠 Managed Properties</h2>
-              <p>Properties you're managing or have verified</p>
+              <h2>🏠 Verified Properties</h2>
+              <p>Properties you've successfully verified</p>
             </div>
 
             {verifiedProperties.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">🏠</div>
                 <h3>No verified properties</h3>
-                <p>Verify properties you're managing to get permanently assigned</p>
+                <p>Complete verification for assigned listings to see them here.</p>
               </div>
             ) : (
               <div className="properties-grid">
@@ -783,11 +821,80 @@ if (
                       <button 
                         className="btn btn-secondary"
                         onClick={() => {
-                          const chat = assignedChats.find(c => c.listingId === property.id)
-                          if (chat) navigate(`/dashboard/manager/chat/${chat.id}/monitor`)
+                          const chat = assignedChats.find(c => c.listingId === property.id);
+                          if (chat) navigate(`/dashboard/manager/chat/${chat.id}/monitor`);
                         }}
                       >
                         View Chat
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PENDING VERIFICATIONS TAB */}
+        {activeTab === 'pending' && (
+          <div className="pending-container">
+            <div className="section-header">
+              <h2>⏳ Pending Verifications</h2>
+              <p>Listings assigned to you that require on‑site verification</p>
+            </div>
+            {pendingVerifications.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">✅</div>
+                <h3>No pending verifications</h3>
+                <p>All assigned listings have been verified.</p>
+              </div>
+            ) : (
+              <div className="pending-grid">
+                {pendingVerifications.map(listing => (
+                  <div key={listing.id} className="pending-card">
+                    <div className="pending-header">
+                      <span className="badge pending">Pending Verification</span>
+                      {listing.landlord_phone && (
+                        <span className="badge info">📞 Landlord phone provided</span>
+                      )}
+                    </div>
+                    <div className="pending-body">
+                      <h4>{listing.title}</h4>
+                      <div className="pending-details">
+                        <div className="detail">
+                          <span className="label">Address:</span>
+                          <span className="value">{listing.address}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Rent:</span>
+                          <span className="value">₦{listing.price?.toLocaleString()}/year</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Posted by:</span>
+                          <span className="value">
+                            {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' : '🏠 Landlord'}
+                          </span>
+                        </div>
+                        {listing.landlord_phone && (
+                          <div className="detail">
+                            <span className="label">Landlord phone:</span>
+                            <span className="value">{listing.landlord_phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="pending-actions">
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
+                      >
+                        Start Verification
+                      </button>
+                      <button 
+                        className="btn btn-secondary"
+                        onClick={() => navigate(`/listings/${listing.id}`)}
+                      >
+                        View Listing
                       </button>
                     </div>
                   </div>
@@ -899,7 +1006,7 @@ if (
         )}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ManagerDashboard
+export default ManagerDashboard;
