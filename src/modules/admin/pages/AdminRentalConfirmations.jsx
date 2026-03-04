@@ -99,48 +99,61 @@ const AdminRentalConfirmations = () => {
       {confirmations.length === 0 ? (
         <div className="empty-state">No pending rental confirmations.</div>
       ) : (
-        <table className="confirmations-table">
-          <thead>
-            <tr>
-              <th>Property</th>
-              <th>Tenant</th>
-              <th>Landlord Confirmed</th>
-              <th>Tenant Confirmed</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {confirmations.map(conf => (
-              <tr key={conf.id}>
-                <td>
-                  <strong>{conf.listings?.title}</strong><br />
-                  <small>{conf.listings?.address}</small>
-                </td>
-                <td>{conf.profiles?.full_name || conf.tenant_id?.slice(0,8)}</td>
-                <td>
-                  {conf.landlord_confirmed ? '✅' : '❌'}
-                  {conf.landlord_confirmed_at && <br/><small>{new Date(conf.landlord_confirmed_at).toLocaleDateString()}</small>}
-                </td>
-                <td>
-                  {conf.tenant_confirmed ? '✅' : '❌'}
-                  {conf.tenant_confirmed_at && <br/><small>{new Date(conf.tenant_confirmed_at).toLocaleDateString()}</small>}
-                </td>
-                <td>
-                  {!conf.landlord_confirmed && (
-                    <button className="btn-confirm" onClick={() => markLandlordConfirmed(conf.id)}>
-                      Landlord Confirmed
-                    </button>
-                  )}
-                  {!conf.tenant_confirmed && (
-                    <button className="btn-confirm" onClick={() => markTenantConfirmed(conf.id)}>
-                      Force Tenant Confirm
-                    </button>
-                  )}
-                </td>
+        <div className="table-container">
+          <table className="confirmations-table">
+            <thead>
+              <tr>
+                <th>Property</th>
+                <th>Tenant</th>
+                <th>Landlord Confirmed</th>
+                <th>Tenant Confirmed</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {confirmations.map(conf => (
+                <tr key={conf.id}>
+                  <td>
+                    <strong>{conf.listings?.title || 'Unknown'}</strong>
+                    <br />
+                    <small>{conf.listings?.address || ''}</small>
+                  </td>
+                  <td>{conf.profiles?.full_name || conf.tenant_id?.slice(0, 8)}</td>
+                  <td>
+                    {conf.landlord_confirmed ? '✅' : '❌'}
+                    {conf.landlord_confirmed_at && (
+                      <>
+                        <br />
+                        <small>{new Date(conf.landlord_confirmed_at).toLocaleDateString()}</small>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    {conf.tenant_confirmed ? '✅' : '❌'}
+                    {conf.tenant_confirmed_at && (
+                      <>
+                        <br />
+                        <small>{new Date(conf.tenant_confirmed_at).toLocaleDateString()}</small>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    {!conf.landlord_confirmed && (
+                      <button className="btn-confirm" onClick={() => markLandlordConfirmed(conf.id)}>
+                        Landlord Confirmed
+                      </button>
+                    )}
+                    {!conf.tenant_confirmed && (
+                      <button className="btn-confirm" onClick={() => markTenantConfirmed(conf.id)}>
+                        Force Tenant Confirm
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
