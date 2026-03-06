@@ -58,6 +58,7 @@ const PostPropertyPage = () => {
     posted_by: profile?.role,
 
     landlord_phone: '',
+    extra_fees: [],
   });
 
   // Load user data
@@ -340,6 +341,7 @@ debugFormData();
       // NEW FIELDS
         landlord_phone: formData.landlord_phone || null,
         verification_status: profile?.role === 'estate-firm' ? 'verified' : 'pending_manager',
+        extra_fees: formData.extra_fees || [], 
     };
     
     // Add estate firm ID if applicable

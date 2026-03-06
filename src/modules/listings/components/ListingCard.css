@@ -126,6 +126,52 @@
     border-radius: 12px;
     margin: 8px 0;
   }
+
+  /* Contact Button */
+.btn-primary .contact-btn {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.2s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.listing-card .contact-btn:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.listing-card .contact-btn:active {
+  transform: translateY(0);
+}
+
+.listing-card .contact-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .listing-card .contact-btn {
+    background: #2563eb;
+  }
+  .listing-card .contact-btn:hover {
+    background: #1d4ed8;
+  }
+  .listing-card .contact-btn:disabled {
+    background: #4b5563;
+    color: #9ca3af;
+  }
+}
   
   .original-price {
     display: flex;
@@ -376,4 +422,46 @@
   font-size: 11px;
   color: #666;
   line-height: 1.4;
+}
+
+.extra-fees {
+  margin: 8px 0;
+  font-size: 0.9rem;
+}
+
+.fees-list {
+  margin-left: 8px;
+}
+
+.fee-item {
+  display: flex;
+  justify-content: space-between;
+  color: #4b5563;
+}
+
+.fee-name {
+  font-weight: 500;
+}
+
+.fee-amount {
+  color: #059669;
+}
+
+.more-fees {
+  font-style: italic;
+  color: #6b7280;
+}
+
+.total-price {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.total-amount {
+  color: #1e40af;
+  font-size: 1.2rem;
 }

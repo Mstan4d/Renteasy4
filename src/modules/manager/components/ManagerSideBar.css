@@ -1,10 +1,8 @@
 /* src/modules/manager/components/ManagerSidebar.css */
-
-/* src/modules/manager/components/ManagerSideBar.css */
 .manager-sidebar {
   width: 280px;
   background: linear-gradient(180deg, #1e3c72 0%, #4b5f83 100%);
-  color: white !important; /* FIXED: was red */
+  color: white;
   height: 100vh;
   position: fixed;
   left: 0;
@@ -18,20 +16,22 @@
   flex-direction: column;
 }
 
-/* Desktop - always visible */
-@media (min-width: 769px) {
+/* Adjust top and height for header */
+@media (min-width: 1024px) {
   .manager-sidebar {
+    top: 70px;
+    height: calc(100vh - 70px);
     transform: translateX(0) !important;
   }
 }
 
-/* Mobile - show when open class is present */
-@media (max-width: 768px) {
+@media (max-width: 1023px) {
   .manager-sidebar {
+    top: 70px;
+    height: calc(100vh - 70px);
     transform: translateX(-100%);
     width: 85%;
     max-width: 320px;
-    box-shadow: 2px 0 15px rgba(0, 0, 0, 0.2);
   }
   
   .manager-sidebar.open {

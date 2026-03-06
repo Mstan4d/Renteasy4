@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import PropertyImage from '../../../shared/components/PropertyImage';
 import { 
   ArrowLeft, MapPin, CheckCircle, Clock, User, Phone, Mail, 
-  Home, DollarSign, Shield, Star, Image as ImageIcon, Building
+  Home, DollarSign, Shield, Star, Image as ImageIcon, Building, Receipt
 } from 'lucide-react';
 import './ListingDetails.css';
 
@@ -26,38 +26,35 @@ const ListingDetails = ({
   const [reviews, setReviews] = useState(listing.reviews || []);
 
   const getSafeImageUrl = (url) => {
-  if (!url) {
-    return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
-  }
-  
-  // Handle blob URLs
-  if (url.startsWith('blob:')) {
-    return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
-  }
-  
-  // Ensure HTTPS
-  if (url.startsWith('http://')) {
-    return url.replace('http://', 'https://');
-  }
-  
-  return url;
-};
+    if (!url) {
+      return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
+    }
+    if (url.startsWith('blob:')) {
+      return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
+    }
+    if (url.startsWith('http://')) {
+      return url.replace('http://', 'https://');
+    }
+    return url;
+  };
 
-  // CORRECT COMMISSION CALCULATION
+  const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
   const isEstateFirm = listing.posterRole === 'estate-firm';
-  const uplift = isEstateFirm ? 0 : parseFloat(listing.price) * 0.075;
-  const priceAfter = isEstateFirm ? parseFloat(listing.price) : parseFloat(listing.price) + uplift;
-  
-  const commissionBreakdown = isEstateFirm 
-    ? { rentEasy: 0, manager: 0, referral: 0 }
-    : listing.commission?.breakdown || {
-        rentEasy: uplift * (3.5/7.5),    // 3.5%
-        manager: uplift * (2.5/7.5),     // 2.5%
-        referral: uplift * (1.5/7.5)     // 1.5%
-      };
+  const commission = isEstateFirm ? 0 : basePrice * 0.075;
+
+  // Extra fees – expecting array of { name, amount, description? }
+  const extraFees = listing.extra_fees || [];
+  const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+  const totalPrice = basePrice + commission + totalExtraFees;
+
+  const commissionBreakdown = isEstateFirm ? null : {
+    rentEasy: commission * (3.5 / 7.5),
+    manager: commission * (2.5 / 7.5),
+    referral: commission * (1.5 / 7.5),
+  };
 
   const formatPrice = (price) => {
-    return `₦${parseFloat(price).toLocaleString()}`;
+    return `₦${Math.round(price).toLocaleString()}`;
   };
 
   const formatDate = (dateString) => {
@@ -81,12 +78,8 @@ const ListingDetails = ({
   const handleSubmitReview = async () => {
     if (newReview.trim()) {
       try {
-        // Save review to Supabase
         const updatedReviews = [...reviews, newReview.trim()];
         setReviews(updatedReviews);
-        
-        // Note: In production, you'd have a reviewsService for this
-        // For now, we'll just update the local state
         alert('Review submitted successfully!');
         setNewReview('');
       } catch (error) {
@@ -96,7 +89,6 @@ const ListingDetails = ({
     }
   };
 
-  // Get poster role label
   const getPosterRoleLabel = () => {
     switch(listing.posterRole || listing.userRole) {
       case 'estate-firm': return 'Estate Firm';
@@ -106,7 +98,6 @@ const ListingDetails = ({
     }
   };
 
-  // Get poster role icon
   const getPosterRoleIcon = () => {
     switch(listing.posterRole || listing.userRole) {
       case 'estate-firm': return <Building size={16} />;
@@ -170,14 +161,14 @@ const ListingDetails = ({
           </h3>
           <div className="images-grid">
             {listing.images?.map((image, index) => (
-  <div key={index} className="image-item">
-    <PropertyImage 
-  src={image} 
-  alt={`${listing.title} - ${index + 1}`}
-  className="image-preview"
-/>
-  </div>
-))}
+              <div key={index} className="image-item">
+                <PropertyImage 
+                  src={image} 
+                  alt={`${listing.title} - ${index + 1}`}
+                  className="image-preview"
+                />
+              </div>
+            ))}
             {(!listing.images || listing.images.length === 0) && (
               <div className="no-images">
                 <ImageIcon size={48} />
@@ -217,8 +208,8 @@ const ListingDetails = ({
                 <span className="detail-label">Amenities:</span>
                 <span className="detail-value">
                   {Array.isArray(listing.amenities) 
-  ? listing.amenities.join(', ') 
-  : (typeof listing.amenities === 'string' ? listing.amenities : 'No amenities listed')}
+                    ? listing.amenities.join(', ') 
+                    : (typeof listing.amenities === 'string' ? listing.amenities : 'No amenities listed')}
                 </span>
               </div>
               <div className="detail-item">
@@ -274,11 +265,11 @@ const ListingDetails = ({
               </h3>
               <div className="price-details">
                 <div className="price-item">
-                  <span className="price-label">Monthly Rent:</span>
-                  <span className="price-value">{formatPrice(listing.price)}</span>
+                  <span className="price-label">Annual Rent:</span>
+                  <span className="price-value">{formatPrice(basePrice)}</span>
                 </div>
-                
-                {!isEstateFirm ? (
+
+                {!isEstateFirm && (
                   <div className="commission-section">
                     <h4>
                       <Shield size={16} />
@@ -303,7 +294,32 @@ const ListingDetails = ({
                       </span>
                     </div>
                   </div>
-                ) : (
+                )}
+
+                {/* Extra Fees Section */}
+                {extraFees.length > 0 && (
+                  <div className="extra-fees-section">
+                    <h4>
+                      <Receipt size={16} />
+                      Additional Fees
+                    </h4>
+                    {extraFees.map((fee, index) => (
+                      <div key={index} className="fee-item">
+                        <span className="fee-name">{fee.name}:</span>
+                        <span className="fee-amount">+ {formatPrice(fee.amount)}</span>
+                        {fee.description && (
+                          <small className="fee-description">({fee.description})</small>
+                        )}
+                      </div>
+                    ))}
+                    <div className="fee-total">
+                      <span>Total Additional Fees:</span>
+                      <span>{formatPrice(totalExtraFees)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {isEstateFirm && (
                   <div className="commission-section">
                     <h4>
                       <Building size={16} />
@@ -321,7 +337,7 @@ const ListingDetails = ({
 
                 <div className="total-price">
                   <span>Total Payable:</span>
-                  <span className="total-amount">{formatPrice(priceAfter)}</span>
+                  <span className="total-amount">{formatPrice(totalPrice)}</span>
                 </div>
               </div>
             </div>

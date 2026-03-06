@@ -18,32 +18,23 @@
   background-color: var(--background);
   min-height: 100vh;
   color: var(--text-main);
-  padding-bottom: 80px; /* Space for mobile nav */
+  padding-bottom: 60px; /* Space for mobile nav */
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-/* Header Section */
-.manager-header {
-  background: white;
-  padding: 1.5rem;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
+
 
 .manager-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 500;
   margin: 0;
 }
 
 .manager-subtitle {
   color: var(--text-muted);
-  font-size: 0.9rem;
-  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  margin-top: 0.20rem;
+  margin-left: 5%;
 }
 
 /* KYC Warning Banner */
@@ -309,4 +300,134 @@
   justify-content: center;
   font-weight: 600;
   color: var(--primary);
+}
+
+/* Hero Section - Compact */
+.dashboard-hero {
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  border-radius: 16px;
+  padding: 10px 18px; /* reduced vertical padding */
+  margin-bottom: 20px;
+  color: white;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.hero-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hero-left h1 {
+  font-size: 1.6rem; /* slightly smaller */
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  color: white;
+}
+
+.hero-subtitle {
+  font-size: 0.95rem;
+  opacity: 0.9;
+  margin: 0 0 8px 0;
+}
+
+.hero-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hero-badges .badge {
+  padding: 4px 12px;
+  border-radius: 30px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  padding: 10px 18px;
+  border-radius: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.hero-stat {
+  text-align: center;
+}
+
+.hero-stat .stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  display: block;
+  line-height: 1.2;
+  color: white;
+}
+
+.hero-stat .stat-label {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hero-kyc-btn {
+  background: white;
+  color: #1e3c72;
+  border: none;
+  border-radius: 30px;
+  padding: 6px 18px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.hero-kyc-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+  .dashboard-hero {
+    padding: 16px;
+  }
+  .hero-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .hero-right {
+    align-items: stretch;
+    width: 100%;
+  }
+  .hero-stats {
+    justify-content: space-around;
+    border-radius: 20px;
+    padding: 8px;
+  }
+  .hero-stat .stat-value {
+    font-size: 1.2rem;
+  }
+  .hero-stat .stat-label {
+    font-size: 0.65rem;
+  }
+  .hero-kyc-btn {
+    width: 100%;
+    text-align: center;
+  }
 }

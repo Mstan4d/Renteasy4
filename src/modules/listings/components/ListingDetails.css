@@ -569,3 +569,124 @@
       border-top-color: #475569;
     }
   }
+
+  /* Add to src/modules/listings/components/ListingDetails.css */
+
+/* Extra Fees Section */
+.extra-fees-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.extra-fees-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1rem;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.fee-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+  color: #4b5563;
+}
+
+.fee-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+.fee-amount {
+  font-weight: 600;
+  color: #059669;
+}
+
+.fee-description {
+  display: block;
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.fee-total {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px dashed #d1d5db;
+  font-weight: 600;
+  color: #374151;
+}
+
+.fee-total span:last-child {
+  color: #059669;
+  font-size: 1rem;
+}
+
+/* Total Price */
+.total-price {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 2px solid #e5e7eb;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.total-amount {
+  color: #1e40af;
+  font-size: 1.5rem;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .extra-fees-section {
+    border-top-color: #4b5563;
+  }
+
+  .extra-fees-section h4 {
+    color: #e5e7eb;
+  }
+
+  .fee-item {
+    color: #d1d5db;
+  }
+
+  .fee-name {
+    color: #f3f4f6;
+  }
+
+  .fee-amount {
+    color: #34d399;
+  }
+
+  .fee-description {
+    color: #9ca3af;
+  }
+
+  .fee-total {
+    border-top-color: #4b5563;
+    color: #f3f4f6;
+  }
+
+  .fee-total span:last-child {
+    color: #34d399;
+  }
+
+  .total-price {
+    border-top-color: #4b5563;
+    color: #f3f4f6;
+  }
+
+  .total-amount {
+    color: #60a5fa;
+  }
+}

@@ -1,4 +1,3 @@
-// src/modules/listings/components/StatsSummary.jsx
 import React from 'react';
 import { CheckCircle, Clock, DollarSign, Home } from 'lucide-react';
 import './StatsSummary.css';
@@ -8,41 +7,41 @@ const StatsSummary = ({ stats }) => {
     <div className="stats-summary">
       <div className="stat-item">
         <div className="stat-icon total">
-          <Home size={20} />
+          <Home size={16} />
         </div>
         <div className="stat-content">
-          <span className="stat-value">{stats.total}</span>
-          <span className="stat-label">Total Properties</span>
+          <span className="stat-value">{stats.total || 0}</span>
+          <span className="stat-label">Total</span>
         </div>
       </div>
       
       <div className="stat-item">
         <div className="stat-icon verified">
-          <CheckCircle size={20} />
+          <CheckCircle size={16} />
         </div>
         <div className="stat-content">
-          <span className="stat-value">{stats.verified}</span>
+          <span className="stat-value">{stats.verified || 0}</span>
           <span className="stat-label">Verified</span>
         </div>
       </div>
       
       <div className="stat-item">
         <div className="stat-icon pending">
-          <Clock size={20} />
+          <Clock size={16} />
         </div>
         <div className="stat-content">
-          <span className="stat-value">{stats.unverified}</span>
+          <span className="stat-value">{stats.pending || 0}</span>
           <span className="stat-label">Pending</span>
         </div>
       </div>
       
       <div className="stat-item">
         <div className="stat-icon price">
-          <DollarSign size={20} />
+          <DollarSign size={16} />
         </div>
         <div className="stat-content">
-          <span className="stat-value">₦{stats.avgPrice.toLocaleString()}</span>
-          <span className="stat-label">Avg. Price</span>
+          <span className="stat-value">₦{(stats.avgPrice || 0).toLocaleString()}</span>
+          <span className="stat-label">Avg</span>
         </div>
       </div>
     </div>

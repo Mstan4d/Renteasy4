@@ -1,161 +1,178 @@
 /* src/modules/manager/components/ManagerLayout.css */
 .manager-layout {
-    display: flex;
-    min-height: 50vh;
-    position: relative;
+  display: flex;
+  min-height: 100vh;
+  background: #f5f7fa;
+  position: relative;
+}
+
+/* Fixed Header */
+.manager-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  z-index: 1100;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-menu-toggle {
+  background: #f0f2f5;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1e3c72;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: all 0.2s ease;
+}
+
+.header-menu-toggle:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e0;
+}
+
+.header-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e3c72;
+  margin: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.notifications {
+  position: relative;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.notifications:hover {
+  color: #1e3c72;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.user-profile:hover {
+  color: #1e3c72;
+}
+
+.user-name {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* Sidebar */
+.manager-sidebar {
+  position: fixed;
+  top: 70px; /* Below header */
+  left: 0;
+  width: 280px;
+  height: calc(100vh - 70px);
+  background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
+  color: white;
+  z-index: 1050;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  overflow-y: auto;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.manager-sidebar.open {
+  transform: translateX(0);
+}
+
+/* Main content */
+.manager-main {
+  flex: 1;
+  margin-left: 0;
+  margin-top: 70px; /* Header height */
+  padding: 24px;
+  transition: margin-left 0.3s ease;
+  width: 100%;
+}
+
+.manager-main.sidebar-visible {
+  margin-left: 280px;
+}
+
+.manager-content {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Overlay for mobile */
+.sidebar-overlay {
+  position: fixed;
+  top: 70px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1040;
+  cursor: pointer;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1023px) {
+  .manager-main.sidebar-visible {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .manager-header {
+    padding: 0 16px;
   }
   
-  /* Manager Sidebar Toggle Button */
-  .manager-sidebar-toggle {
-    position: fixed;
-    top: 80px; /* Adjust based on your header height */
-    left: 15px;
-    z-index: 1100;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 50px;
-    height: 50px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    transition: all 0.3s ease;
-    display: none; /* Hidden by default on desktop */
+  .header-title {
+    font-size: 1rem;
   }
   
-  .manager-sidebar-toggle:hover {
-    background: #0056b3;
-    transform: scale(1.05);
+  .user-name {
+    display: none;
   }
   
-  /* Manager Main Content */
   .manager-main {
-    flex: 1;
-    margin-left: 280px; /* Desktop sidebar width */
-    transition: margin-left 0.3s ease;
-    padding: 20px;
-    min-height: 100vh;
+    padding: 16px;
   }
-  
-  .manager-content {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding-top: 20px;
-  }
-  
-  /* Sidebar Overlay for mobile */
-  .sidebar-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-    cursor: pointer;
-  }
-  
-  /* Sidebar Close Button */
-  .sidebar-close-btn {
-    display: none;
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background: none;
-    border: none;
-    color: white;
-    font-size: 28px;
-    cursor: pointer;
-    z-index: 10;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .sidebar-close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  
-  /* ===== RESPONSIVE DESIGN ===== */
-  
-  @media (max-width: 1024px) {
-    .manager-main {
-      margin-left: 0;
-      padding: 15px;
-      padding-top: 70px; /* Space for toggle button */
-    }
-  }
-  
-  @media (max-width: 768px) {
-    .manager-sidebar-toggle {
-      display: flex;
-      top: 70px; /* Adjust based on your actual header height */
-    }
-    
-    .manager-sidebar {
-      transform: translateX(-100%);
-    }
-    
-    .manager-sidebar.open {
-      transform: translateX(0);
-      box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
-    }
-    
-    .sidebar-close-btn {
-      display: flex;
-    }
-    
-    .manager-sidebar.open ~ .sidebar-overlay {
-      display: block;
-    }
-    
-    .manager-sidebar.open + .manager-main .manager-sidebar-toggle {
-      left: 295px; /* Sidebar width + padding */
-    }
-    
-    .manager-main {
-      padding-top: 80px; /* More space for toggle button */
-    }
-  }
-  
-  @media (max-width: 480px) {
-    .manager-sidebar {
-      width: 100%;
-      max-width: 320px;
-    }
-    
-    .manager-main {
-      padding: 10px;
-      padding-top: 70px;
-    }
-    
-    .manager-sidebar.open + .manager-main .manager-sidebar-toggle {
-      left: 10px; /* Adjust for smaller screens */
-    }
-  }
-  
-  /* Scrollbar styling for sidebar */
-  .manager-sidebar::-webkit-scrollbar {
-    width: 6px;
-  }
-  
-  .manager-sidebar::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  
-  .manager-sidebar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 3px;
-  }
-  
-  .manager-sidebar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.5);
-  }
+}

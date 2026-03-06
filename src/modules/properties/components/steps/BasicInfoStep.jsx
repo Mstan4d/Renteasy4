@@ -1,6 +1,6 @@
 // src/modules/properties/components/steps/BasicInfoStep.jsx
 import React from 'react';
-import { DollarSign, Home, FileText, User } from 'lucide-react';
+import { DollarSign, Home, FileText, User, Plus, Trash2 } from 'lucide-react';
 
 const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
   const propertyTypes = [
@@ -54,6 +54,25 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
       ? [...currentAmenities, amenity]
       : currentAmenities.filter(a => a !== amenity);
     updateFormData({ amenities: updatedAmenities });
+  };
+
+  // Extra fees handlers
+  const addFee = () => {
+    const currentFees = formData.extra_fees || [];
+    updateFormData({
+      extra_fees: [...currentFees, { name: '', amount: 0, description: '' }]
+    });
+  };
+
+  const updateFee = (index, field, value) => {
+    const updatedFees = [...(formData.extra_fees || [])];
+    updatedFees[index] = { ...updatedFees[index], [field]: value };
+    updateFormData({ extra_fees: updatedFees });
+  };
+
+  const removeFee = (index) => {
+    const updatedFees = (formData.extra_fees || []).filter((_, i) => i !== index);
+    updateFormData({ extra_fees: updatedFees });
   };
 
   return (
@@ -203,6 +222,57 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Extra Fees Section */}
+      <div className="extra-fees-section">
+        <h3>Additional Fees (Optional)</h3>
+        <p className="section-hint">
+          Add any one‑time charges like caution fee, legal fee, drink money, etc.
+        </p>
+        
+        {(formData.extra_fees || []).map((fee, index) => (
+          <div key={index} className="fee-row">
+            <div className="fee-inputs">
+              <input
+                type="text"
+                placeholder="Fee name (e.g., Caution Fee)"
+                value={fee.name}
+                onChange={(e) => updateFee(index, 'name', e.target.value)}
+                className="fee-name-input"
+              />
+              <input
+                type="number"
+                placeholder="Amount (₦)"
+                value={fee.amount}
+                onChange={(e) => updateFee(index, 'amount', parseFloat(e.target.value) || 0)}
+                className="fee-amount-input"
+                min="0"
+                step="1000"
+              />
+              <input
+                type="text"
+                placeholder="Description (optional)"
+                value={fee.description || ''}
+                onChange={(e) => updateFee(index, 'description', e.target.value)}
+                className="fee-desc-input"
+              />
+            </div>
+            <button
+              type="button"
+              className="remove-fee-btn"
+              onClick={() => removeFee(index)}
+              aria-label="Remove fee"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+        
+        <button type="button" className="add-fee-btn" onClick={addFee}>
+          <Plus size={16} />
+          Add Fee
+        </button>
       </div>
 
       {/* Contact Information */}

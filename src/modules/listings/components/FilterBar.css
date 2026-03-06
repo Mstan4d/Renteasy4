@@ -7,9 +7,9 @@
     top: 70px;
     z-index: 100;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-  }
-  
-  .filter-bar-inner {
+}
+
+.filter-bar-inner {
     max-width: 1400px;
     margin: 0 auto;
     padding: 0 24px;
@@ -17,23 +17,21 @@
     gap: 12px;
     align-items: center;
     flex-wrap: wrap;
-  }
-  
-  /* Filter Groups */
-  .filter-group {
+}
+
+.filter-group {
     display: flex;
     align-items: center;
     min-width: 180px;
-    flex: 1;
-  }
-  
-  /* Search Group */
-  .search-group {
-    flex: 2;
+    flex: 1 1 auto;
+}
+
+.search-group {
+    flex: 2 1 300px;
     position: relative;
-  }
-  
-  .search-input {
+}
+
+.search-input {
     width: 100%;
     padding: 10px 16px 10px 40px;
     border: 2px solid #e2e8f0;
@@ -41,23 +39,22 @@
     font-size: 14px;
     transition: all 0.3s ease;
     background: white;
-  }
-  
-  .search-input:focus {
+}
+
+.search-input:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-  }
-  
-  .filter-icon {
+}
+
+.filter-icon {
     position: absolute;
     left: 12px;
     color: #a0aec0;
     pointer-events: none;
-  }
-  
-  /* Filter Select */
-  .filter-select {
+}
+
+.filter-select {
     width: 100%;
     padding: 10px 16px;
     border: 2px solid #e2e8f0;
@@ -67,56 +64,57 @@
     font-size: 14px;
     cursor: pointer;
     transition: all 0.3s ease;
-  }
-  
-  .filter-select:focus {
+}
+
+.filter-select:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-  }
-  
-  .filter-select:disabled {
+}
+
+.filter-select:disabled {
     background: #f7fafc;
     color: #cbd5e0;
     cursor: not-allowed;
-  }
-  
-  /* Price Group */
-  .price-group {
+}
+
+.price-group {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
     min-width: 250px;
-  }
-  
-  .price-input {
-    flex: 1;
+    flex: 1 1 250px;
+}
+
+.price-input {
+    flex: 1 1 100px;
+    min-width: 80px;
     padding: 10px 12px;
     border: 2px solid #e2e8f0;
     border-radius: 8px;
     font-size: 14px;
     transition: all 0.3s ease;
-  }
-  
-  .price-input:focus {
+}
+
+.price-input:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-  }
-  
-  .price-separator {
+}
+
+.price-separator {
     color: #a0aec0;
     font-weight: 600;
     padding: 0 4px;
-  }
-  
-  /* Verification Group */
-  .verification-group {
+}
+
+.verification-group {
     min-width: auto;
     flex: none;
-  }
-  
-  .checkbox-label {
+}
+
+.checkbox-label {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -125,24 +123,23 @@
     color: #4a5568;
     font-size: 14px;
     font-weight: 500;
-  }
-  
-  .checkbox-input {
+}
+
+.checkbox-input {
     width: 16px;
     height: 16px;
     border-radius: 4px;
     border: 2px solid #cbd5e0;
     cursor: pointer;
     transition: all 0.2s ease;
-  }
-  
-  .checkbox-input:checked {
+}
+
+.checkbox-input:checked {
     background-color: #667eea;
     border-color: #667eea;
-  }
-  
-  /* Clear Filters Button */
-  .clear-filters-btn {
+}
+
+.clear-filters-btn {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -156,123 +153,127 @@
     cursor: pointer;
     transition: all 0.3s ease;
     flex: none;
-  }
-  
-  .clear-filters-btn:hover {
+}
+
+.clear-filters-btn:hover {
     background: #f1f3f5;
     border-color: #dee2e6;
     color: #495057;
-  }
-  
-  /* Responsive Design */
-  @media (max-width: 1200px) {
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
     .filter-bar-inner {
-      gap: 10px;
+        gap: 10px;
     }
-    
+
     .filter-group {
-      min-width: 160px;
+        min-width: 160px;
     }
-    
+
     .price-group {
-      min-width: 220px;
+        min-width: 220px;
     }
-  }
-  
-  @media (max-width: 992px) {
+}
+
+@media (max-width: 992px) {
     .filter-bar {
-      top: 60px;
+        top: 60px;
     }
-    
+
     .filter-bar-inner {
-      padding: 0 16px;
+        padding: 0 16px;
     }
-    
+
     .filter-group {
-      min-width: calc(50% - 10px);
-      flex: 0 0 calc(50% - 10px);
+        min-width: calc(50% - 10px);
+        flex: 0 0 calc(50% - 10px);
     }
-    
+
     .search-group {
-      flex: 0 0 100%;
+        flex: 0 0 100%;
     }
-    
+
     .verification-group {
-      flex: 0 0 calc(50% - 10px);
+        flex: 0 0 calc(50% - 10px);
     }
-    
+
     .clear-filters-btn {
-      flex: 0 0 100%;
-      justify-content: center;
+        flex: 0 0 100%;
+        justify-content: center;
     }
-  }
-  
-  @media (max-width: 768px) {
+}
+
+@media (max-width: 768px) {
     .filter-group {
-      min-width: 100%;
-      flex: 0 0 100%;
+        min-width: 100%;
+        flex: 0 0 100%;
     }
-    
+
     .price-group {
-      min-width: 100%;
+        min-width: 100%;
     }
-    
+
+    .price-input {
+        min-width: 0;
+    }
+
     .verification-group {
-      flex: 0 0 100%;
+        flex: 0 0 100%;
     }
-  }
-  
-  /* Dark mode support */
-  @media (prefers-color-scheme: dark) {
+}
+
+/* Dark mode – adjusted to keep inner elements light/blue */
+@media (prefers-color-scheme: dark) {
     .filter-bar {
-      background: #1e293b;
-      border-bottom-color: #475569;
+        background: #1a202c; /* dark background for the bar itself */
+        border-bottom-color: #2d3748;
     }
-    
+
     .search-input,
     .filter-select,
     .price-input {
-      background: #334155;
-      border-color: #475569;
-      color: #e2e8f0;
+        background: #2d3748; /* slightly lighter dark for inputs */
+        border-color: #4a5568;
+        color: #e2e8f0;
     }
-    
+
     .search-input:focus,
     .filter-select:focus,
     .price-input:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
     }
-    
+
     .filter-select:disabled {
-      background: #475569;
-      color: #94a3b8;
+        background: #4a5568;
+        color: #a0aec0;
     }
-    
+
     .filter-icon {
-      color: #94a3b8;
+        color: #a0aec0;
     }
-    
+
     .price-separator {
-      color: #94a3b8;
+        color: #a0aec0;
     }
-    
+
     .checkbox-label {
-      color: #e2e8f0;
+        color: #e2e8f0;
     }
-    
+
     .checkbox-input {
-      border-color: #64748b;
+        border-color: #718096;
     }
-    
+
     .clear-filters-btn {
-      background: #334155;
-      border-color: #475569;
-      color: #e2e8f0;
+        background: #2d3748;
+        border-color: #4a5568;
+        color: #e2e8f0;
     }
-    
+
     .clear-filters-btn:hover {
-      background: #475569;
-      border-color: #64748b;
+        background: #4a5568;
+        border-color: #718096;
     }
-  }
+}

@@ -1,5 +1,79 @@
-// src/shared/services/listingsService.js - COMPLETE VERSION
+// src/shared/services/listingsService.js
 import { supabase } from '../lib/supabaseClient';
+
+// Helper to transform raw database row into frontend-friendly structure
+const transformListing = (item) => {
+  // Handle amenities: could be array, string, or null
+  let amenities = [];
+  if (Array.isArray(item.amenities)) {
+    amenities = item.amenities;
+  } else if (typeof item.amenities === 'string') {
+    amenities = item.amenities.split(',').map(a => a.trim()).filter(Boolean);
+  }
+
+  // Ensure images is an array
+  const images = item.images || item.image_urls || [];
+
+  return {
+    id: item.id,
+    title: item.title || '',
+    description: item.description || '',
+    price: item.price || item.rent_amount || 0,
+    state: item.state,
+    city: item.city,
+    lga: item.lga,
+    address: item.address,
+    landmark: item.landmark,
+    propertyType: item.property_type,
+    status: item.status,
+    verified: item.is_verified,
+    userVerified: item.user?.verified || false,
+    posterRole: item.poster_role,
+    posterName: item.poster_name || item.user?.full_name || 'Unknown',
+    posterId: item.user_id,
+    posterPhone: item.poster_phone || item.user?.phone,
+    images,
+    amenities,
+    bedrooms: item.bedrooms,
+    bathrooms: item.bathrooms,
+    area: item.area,
+    coordinates: item.coordinates,
+    isManaged: item.is_managed,
+    managedBy: item.manager?.full_name,
+    managedById: item.managed_by,
+    managedAt: item.managed_at,
+    commissionRate: item.commission_rate,
+    verificationLevel: item.verification_level,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+    postedDate: item.posted_date,
+    approvedAt: item.approved_at,
+    approvedBy: item.approved_by,
+    rejected: item.rejected,
+    rejectedAt: item.rejected_at,
+    rejectedBy: item.rejected_by,
+    rentedAt: item.rented_at,
+    rentedTo: item.rented_to,
+    // For compatibility with existing code that uses `postedBy`
+    userRole: item.poster_role,
+    postedBy: {
+      id: item.user?.id,
+      isVerified: item.user?.verified || false,
+      fullName: item.user?.full_name,
+      email: item.user?.email,
+      role: item.user?.role,
+      phone: item.user?.phone,
+      avatar_url: item.user?.avatar_url
+    },
+    // Tenant info (if rented)
+    tenant: item.tenant ? {
+      id: item.tenant.id,
+      name: item.tenant.full_name,
+      phone: item.tenant.phone,
+      email: item.tenant.email
+    } : null
+  };
+};
 
 export const listingsService = {
   // Get all listings with filters
@@ -79,68 +153,15 @@ export const listingsService = {
 
       if (error) throw error;
 
-      // Transform data to match frontend structure
-      return data.map(item => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        price: item.price || item.rent_amount || 0,
-        state: item.state,
-        city: item.city,
-        lga: item.lga,
-        address: item.address,
-        landmark: item.landmark,
-        propertyType: item.property_type,
-        status: item.status,
-        verified: item.is_verified,
-        userVerified: item.user?.verified || false,
-        posterRole: item.poster_role,
-        posterName: item.poster_name || item.user?.full_name,
-        posterId: item.user_id,
-        posterPhone: item.poster_phone || item.user?.phone,
-        images: item.images || [],
-        amenities: Array.isArray(item.amenities) ? item.amenities : 
-                  (typeof item.amenities === 'string' ? 
-                   item.amenities.split(',').map(a => a.trim()).filter(Boolean) : []),
-        bedrooms: item.bedrooms,
-        bathrooms: item.bathrooms,
-        area: item.area,
-        coordinates: item.coordinates,
-        isManaged: item.is_managed,
-        managedBy: item.manager?.full_name,
-        managedById: item.managed_by,
-        managedAt: item.managed_at,
-        commissionRate: item.commission_rate,
-        verificationLevel: item.verification_level,
-        createdAt: item.created_at,
-        updatedAt: item.updated_at,
-        postedDate: item.posted_date,
-        approvedAt: item.approved_at,
-        approvedBy: item.approved_by,
-        rejected: item.rejected,
-        rejectedAt: item.rejected_at,
-        rejectedBy: item.rejected_by,
-        rentedAt: item.rented_at,
-        rentedTo: item.rented_to,
-        // For compatibility with existing code
-        userRole: item.poster_role,
-        postedBy: {
-          id: item.user?.id,
-          isVerified: item.user?.verified || false,
-          fullName: item.user?.full_name,
-          email: item.user?.email,
-          role: item.user?.role,
-          phone: item.user?.phone,
-          avatar_url: item.user?.avatar_url
-        }
-      }));
+      // Transform each item using the helper
+      return (data || []).map(item => transformListing(item));
     } catch (error) {
       console.error('Error fetching listings:', error);
       throw error;
     }
   },
 
-  // ✅ ADD THIS MISSING FUNCTION: Get listing by ID
+  // Get listing by ID
   async getById(id) {
     try {
       const { data, error } = await supabase
@@ -163,58 +184,8 @@ export const listingsService = {
       if (error) throw error;
       if (!data) return null;
 
-      // Transform the data
-      return {
-        id: data.id,
-        title: data.title,
-        description: data.description,
-        price: data.price || data.rent_amount || 0,
-        state: data.state,
-        city: data.city,
-        lga: data.lga,
-        address: data.address,
-        propertyType: data.property_type,
-        status: data.status,
-        verified: data.is_verified,
-        userVerified: data.user?.verified || false,
-        posterRole: data.poster_role,
-        posterName: data.poster_name || data.user?.full_name,
-        posterId: data.user_id,
-        images: data.images || [],
-        amenities: Array.isArray(data.amenities) ? data.amenities : 
-                  (typeof data.amenities === 'string' ? 
-                   data.amenities.split(',').map(a => a.trim()).filter(Boolean) : []),
-        bedrooms: data.bedrooms,
-        bathrooms: data.bathrooms,
-        area: data.area,
-        createdAt: data.created_at,
-        isManaged: data.is_managed,
-        managedBy: data.manager?.full_name,
-        managedById: data.managed_by,
-        commissionRate: data.commission_rate,
-        userRole: data.poster_role,
-        postedBy: {
-          isVerified: data.user?.verified || false,
-          fullName: data.user?.full_name
-        },
-        coordinates: data.coordinates,
-        landmark: data.landmark,
-        verificationLevel: data.verification_level,
-        postedDate: data.posted_date,
-        approvedAt: data.approved_at,
-        approvedBy: data.approved_by,
-        rejected: data.rejected,
-        rejectedAt: data.rejected_at,
-        rejectedBy: data.rejected_by,
-        rentedAt: data.rented_at,
-        rentedTo: data.rented_to,
-        tenant: data.tenant ? {
-          id: data.tenant.id,
-          name: data.tenant.full_name,
-          phone: data.tenant.phone,
-          email: data.tenant.email
-        } : null
-      };
+      // Transform the data using the same helper
+      return transformListing(data);
     } catch (error) {
       console.error('Error fetching listing:', error);
       throw error;

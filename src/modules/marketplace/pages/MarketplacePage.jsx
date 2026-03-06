@@ -44,7 +44,7 @@ const MarketplacePage = () => {
     fetchMarketplaceData();
   }, []);
 
-  // ---------- Updated fetchMarketplaceData ----------
+ // ---------- Updated fetchMarketplaceData ----------
 const fetchMarketplaceData = async () => {
   setIsLoading(true);
   setError(null);
@@ -85,8 +85,8 @@ const fetchMarketplaceData = async () => {
       .order('created_at', { ascending: false });
     if (efError) throw efError;
 
-    // 2. Fetch Service Providers
-    const { data: serviceProvidersRaw, error: spError } = await supabase
+    // 2. Fetch Service Provider profiles (no embedding of service_providers)
+    const { data: serviceProviderProfiles, error: spError } = await supabase
       .from('profiles')
       .select(`
         id,
@@ -101,24 +101,6 @@ const fetchMarketplaceData = async () => {
         free_booking_used,
         total_bookings,
         created_at,
-        service_providers!user_id (
-          id,
-          business_name,
-          title,
-          description,
-          category,
-          price_range_low,
-          price_range_high,
-          location,
-          lga,
-          state,
-          response_time,
-          years_experience,
-          success_rate,
-          areas_served,
-          services,
-          avatar_url
-        ),
         subscriptions!user_id (
           id,
           plan_type,
@@ -138,10 +120,27 @@ const fetchMarketplaceData = async () => {
       .order('created_at', { ascending: false });
     if (spError) throw spError;
 
-    // 3. Fetch all services from the services table for these providers
+    // 3. Fetch all service_providers details separately
+    let providerDetailsMap = {};
+    if (serviceProviderProfiles && serviceProviderProfiles.length > 0) {
+      const providerIds = serviceProviderProfiles.map(p => p.id);
+      const { data: spDetails, error: spDetailsError } = await supabase
+        .from('service_providers')
+        .select('*')
+        .in('user_id', providerIds);
+      if (spDetailsError) throw spDetailsError;
+
+      // Group by user_id (assuming one service_provider per user)
+      providerDetailsMap = (spDetails || []).reduce((acc, detail) => {
+        acc[detail.user_id] = detail;
+        return acc;
+      }, {});
+    }
+
+    // 4. Fetch services for these providers (unchanged)
     let servicesByProvider = {};
-    if (serviceProvidersRaw && serviceProvidersRaw.length > 0) {
-      const providerIds = serviceProvidersRaw.map(p => p.id);
+    if (serviceProviderProfiles && serviceProviderProfiles.length > 0) {
+      const providerIds = serviceProviderProfiles.map(p => p.id);
       const { data: servicesData, error: srvError } = await supabase
         .from('services')
         .select('provider_id, service_title')
@@ -156,114 +155,116 @@ const fetchMarketplaceData = async () => {
       }
     }
 
+    // 5. Transform estate firms (unchanged)
     const transformedEstateFirms = (estateFirms || []).map(firm => {
-  const activeBoost = firm.active_boosts?.find(b => 
-    b.status === 'active' && new Date(b.expires_at) > new Date()
-  );
-  const isBoosted = !!activeBoost;
-  const boostPriority = activeBoost?.package?.priority_level || 0;
-  const isVerified = firm.is_kyc_verified === true || firm.kyc_status === 'approved';
-  const subscription = firm.subscriptions?.[0];
-  const isSubscribed = subscription?.status === 'active' && 
-    (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+      const activeBoost = firm.active_boosts?.find(b => 
+        b.started_at && new Date(b.expires_at) > new Date()
+      );
+      const isBoosted = !!activeBoost;
+      const boostPriority = activeBoost?.package?.priority_level || 0;
+      const isVerified = firm.is_kyc_verified === true || firm.kyc_status === 'approved';
+      const subscription = firm.subscriptions?.[0];
+      const isSubscribed = subscription?.status === 'active' && 
+        (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
 
-  return {
-    id: firm.id || `temp-${Math.random()}`,
-    type: 'estate-firm',
-    name: firm.full_name || 'Estate Firm',
-    description: 'Professional real estate services',
-    logo: firm.avatar_url || '🏢',
-    location: firm.location || `${firm.state || ''} ${firm.lga || ''}`.trim() || 'Nigeria',
-    rating: firm.rating ?? 4.0,              // ✅ default rating
-    reviews: firm.reviews_count ?? 0,
-    services: ['Property Management', 'Sales & Rentals', 'Valuation'],
-    verificationState: isVerified ? 'verified' : 'unverified',
-    boostState: isBoosted ? 'boosted' : 'not-boosted',
-    subscriptionState: isSubscribed ? 'subscribed' : 'unsubscribed',
-    badges: [
-      ...(isVerified ? ['verified'] : []),
-      ...(isBoosted ? ['boosted'] : []),
-      ...(!isVerified ? ['unverified'] : [])
-    ],
-    yearsExperience: firm.years_experience ?? 5,
-    propertiesManaged: firm.properties_managed ?? 120,
-    responseTime: firm.response_time ?? '2-4 hours',
-    contact: {
-      phone: firm.phone,
-      email: firm.email
-    },
-    boostPriority,
-    createdAt: firm.created_at || new Date().toISOString()
-  };
-});
+      return {
+        id: firm.id,
+        type: 'estate-firm',
+        name: firm.full_name || 'Estate Firm',
+        description: 'Professional real estate services',
+        logo: firm.avatar_url || '🏢',
+        location: firm.location || `${firm.state || ''} ${firm.lga || ''}`.trim() || 'Nigeria',
+        rating: firm.rating ?? 4.0,
+        reviews: firm.reviews_count ?? 0,
+        services: ['Property Management', 'Sales & Rentals', 'Valuation'],
+        verificationState: isVerified ? 'verified' : 'unverified',
+        boostState: isBoosted ? 'boosted' : 'not-boosted',
+        subscriptionState: isSubscribed ? 'subscribed' : 'unsubscribed',
+        badges: [
+          ...(isVerified ? ['verified'] : []),
+          ...(isBoosted ? ['boosted'] : []),
+          ...(!isVerified ? ['unverified'] : [])
+        ],
+        yearsExperience: firm.years_experience ?? 5,
+        propertiesManaged: firm.properties_managed ?? 120,
+        responseTime: firm.response_time ?? '2-4 hours',
+        contact: {
+          phone: firm.phone,
+          email: firm.email
+        },
+        boostPriority,
+        createdAt: firm.created_at || new Date().toISOString()
+      };
+    });
 
-    // 5. Transform Service Providers, merging services from the services table
-    const transformedServiceProviders = (serviceProvidersRaw || []).map(profile => {
-  const providerDetails = profile.service_providers?.[0] || {};
-  const activeBoost = profile.active_boosts?.find(b => 
-    b.status === 'active' && new Date(b.expires_at) > new Date()
-  );
-  const isBoosted = !!activeBoost;
-  const boostPriority = activeBoost?.package?.priority_level || 0;
-  const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
-  const subscription = profile.subscriptions?.[0];
-  const isSubscribed = subscription?.status === 'active' && 
-    (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+    // 6. Transform service providers using the separate details map
+    const transformedServiceProviders = (serviceProviderProfiles || []).map(profile => {
+      const providerDetails = providerDetailsMap[profile.id] || {};
+      const activeBoost = profile.active_boosts?.find(b => 
+        b.started_at && new Date(b.expires_at) > new Date()
+      );
+      const isBoosted = !!activeBoost;
+      const boostPriority = activeBoost?.package?.priority_level || 0;
+      const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
+      const subscription = profile.subscriptions?.[0];
+      const isSubscribed = subscription?.status === 'active' && 
+        (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
 
-  const freeBookingUsed = profile.free_booking_used || 0;
-  const freeBookingLimit = 10;
-  const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
-  const subscriptionState = freeBookingUsed >= freeBookingLimit 
-    ? (isSubscribed ? 'subscribed' : 'requires_subscription') 
-    : 'free';
+      const freeBookingUsed = profile.free_booking_used || 0;
+      const freeBookingLimit = 10;
+      const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
+      const subscriptionState = freeBookingUsed >= freeBookingLimit 
+        ? (isSubscribed ? 'subscribed' : 'requires_subscription') 
+        : 'free';
 
-  const priceLow = providerDetails.price_range_low || 0;
-  const priceHigh = providerDetails.price_range_high || 0;
-  const priceRange = priceLow && priceHigh 
-    ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
-    : 'Contact for pricing';
+      const priceLow = providerDetails.price_range_low || 0;
+      const priceHigh = providerDetails.price_range_high || 0;
+      const priceRange = priceLow && priceHigh 
+        ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
+        : 'Contact for pricing';
 
-  // Merge services from service_providers and services table
-  const providerServicesFromSP = providerDetails.services || [];
-  const providerServicesFromTable = servicesByProvider[profile.id] || [];
-  const allServices = [...new Set([...providerServicesFromSP, ...providerServicesFromTable])];
+      // Merge services from service_providers and services table
+      const providerServicesFromSP = providerDetails.services || [];
+      const providerServicesFromTable = servicesByProvider[profile.id] || [];
+      const allServices = [...new Set([...providerServicesFromSP, ...providerServicesFromTable])];
 
-  return {
-    id: profile.id || `temp-${Math.random()}`,
-    providerId: providerDetails.id || profile.id,
-    type: 'service-provider',
-    name: providerDetails.business_name || profile.full_name || 'Service Provider',
-    title: providerDetails.title || '',
-    description: providerDetails.description || 'Experienced professional',
-    profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
-    location: providerDetails.location || profile.location || 
-              `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
-    rating: profile.rating ?? 4.5,              // ✅ default rating
-    reviews: profile.reviews_count ?? 0,
-    services: allServices,
-    category: providerDetails.category || '',
-    priceRange,
-    verificationState: isVerified ? 'verified' : 'unverified',
-    boostState: isBoosted ? 'boosted' : 'not-boosted',
-    subscriptionState,
-    badges: [
-      ...(isVerified ? ['verified'] : []),
-      ...(isBoosted ? ['boosted'] : []),
-      ...(!isVerified ? ['unverified'] : [])
-    ],
-    bookingsCount: freeBookingUsed,
-    freeBookingsLeft,
-    totalBookings: profile.total_bookings || 0,
-    yearsExperience: providerDetails.years_experience || 0,
-    successRate: providerDetails.success_rate || 95,
-    responseTime: providerDetails.response_time || 'Within 2-4 hours',
-    areasServed: providerDetails.areas_served || [],
-    boostPriority,
-    createdAt: profile.created_at || new Date().toISOString()
-  };
-});
-    // 6. Combine all items and sort (unchanged)
-    const allItems = [...transformedEstateFirms, ...transformedServiceProviders].filter(Boolean);;
+      return {
+        id: profile.id,
+        providerId: providerDetails.id || profile.id,
+        type: 'service-provider',
+        name: providerDetails.business_name || profile.full_name || 'Service Provider',
+        title: providerDetails.title || '',
+        description: providerDetails.description || 'Experienced professional',
+        profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
+        location: providerDetails.location || profile.location || 
+                  `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
+        rating: profile.rating ?? 4.5,
+        reviews: profile.reviews_count ?? 0,
+        services: allServices,
+        category: providerDetails.category || '',
+        priceRange,
+        verificationState: isVerified ? 'verified' : 'unverified',
+        boostState: isBoosted ? 'boosted' : 'not-boosted',
+        subscriptionState,
+        badges: [
+          ...(isVerified ? ['verified'] : []),
+          ...(isBoosted ? ['boosted'] : []),
+          ...(!isVerified ? ['unverified'] : [])
+        ],
+        bookingsCount: freeBookingUsed,
+        freeBookingsLeft,
+        totalBookings: profile.total_bookings || 0,
+        yearsExperience: providerDetails.years_experience || 0,
+        successRate: providerDetails.success_rate || 95,
+        responseTime: providerDetails.response_time || 'Within 2-4 hours',
+        areasServed: providerDetails.areas_served || [],
+        boostPriority,
+        createdAt: profile.created_at || new Date().toISOString()
+      };
+    });
+
+    // 7. Combine all items and sort (unchanged)
+    const allItems = [...transformedEstateFirms, ...transformedServiceProviders].filter(Boolean);
     const sortedItems = allItems.sort((a, b) => {
       if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
       if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;

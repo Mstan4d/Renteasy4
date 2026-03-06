@@ -1,15 +1,15 @@
-// src/modules/manager/components/ManagerSidebar.jsx - UPDATED
+// src/modules/manager/components/ManagerSidebar.jsx
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../shared/context/AuthContext'
-import './ManagerSideBar.css'
+import './ManagerSidebar.css'
 
 const ManagerSidebar = ({ isOpen, onClose }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   if (!user) {
-    return null; // or a loading spinner
+    return null;
   }
 
   const handleLinkClick = () => {
@@ -41,7 +41,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
         const chats = JSON.parse(localStorage.getItem('chats') || '[]')
         const managerAssignments = JSON.parse(localStorage.getItem('managerAssignments') || '[]')
         
-        // Count available listings within 1km radius
         const availableListings = listings.filter(listing => {
           if (listing.posterRole === 'estate_firm') return false
           const hasManager = chats.some(chat => 
@@ -123,7 +122,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
       icon: '📈',
       path: '/dashboard/manager/commission'
     },
-    
     {
       id: 'analytics',
       label: 'Analytics',
@@ -166,7 +164,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
 
   return (
     <aside className={`manager-sidebar ${isOpen ? 'open' : ''}`}>
-      {/* HEADER */}
       <div className="sidebar-header">
         <div className="manager-info">
           <div className="manager-avatar">
@@ -181,7 +178,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
           </div>
         </div>
 
-        {/* KYC STATUS */}
         <div className="kyc-status-sidebar">
           {(() => {
             const kycVerifications = JSON.parse(localStorage.getItem('kycVerifications') || '[]')
@@ -212,7 +208,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
         </div>
       </div>
 
-      {/* NAVIGATION MENU - ALWAYS VISIBLE (just labels hide on mobile) */}
       <nav className="sidebar-nav">
         <ul className="nav-menu">
           {menuItems.map(item => {
@@ -232,7 +227,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
                   <span className="nav-icon">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
                   
-                  {/* BADGES */}
                   {badgeCount && badgeCount > 0 && (
                     <span className="nav-badge">{badgeCount}</span>
                   )}
@@ -252,7 +246,6 @@ const ManagerSidebar = ({ isOpen, onClose }) => {
         </ul>
       </nav>
 
-      {/* FOOTER - Only Logout Button */}
       <div className="sidebar-footer">
         <button 
           className="logout-btn"

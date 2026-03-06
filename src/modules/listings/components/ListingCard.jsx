@@ -1,43 +1,35 @@
 // src/modules/listings/components/ListingCard.jsx
 import React from 'react';
-import { MapPin, CheckCircle, Clock, User, Building, Home } from 'lucide-react';
+import { MapPin, CheckCircle, Clock, User, Building, Home, Receipt } from 'lucide-react';
 import './ListingCard.css';
 
 const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) => {
   const imageUrl = listing.images?.[0] || 
                  listing.image_urls?.[0] || 
-                 https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&h=400&fit=crop;
+                 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&h=400&fit=crop';
 
-                 // Fix price display:
-const price = listing.price || listing.rent_amount || 0;
-const formattedPrice = new Intl.NumberFormat('en-NG', {
-  style: 'currency',
-  currency: 'NGN'
-}).format(parseFloat(price));
-
-// Fix role display:
-const posterRole = listing.posterRole || listing.userRole;
-const roleLabel = {
-  'tenant': '👤 Outgoing Tenant',
-  'landlord': '🏠 Landlord',
-  'estate-firm': '🏢 Estate Firm'
-}[posterRole] || 'Unknown';
-  
-  // CORRECT COMMISSION CALCULATION
+  const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
   const isEstateFirm = listing.posterRole === 'estate-firm';
-  const uplift = isEstateFirm ? 0 : parseFloat(listing.price) * 0.075;
-  const priceAfter = isEstateFirm ? parseFloat(listing.price) : parseFloat(listing.price) + uplift;
-  
-  const commissionBreakdown = isEstateFirm 
-    ? { rentEasy: 0, manager: 0, referral: 0 }
-    : listing.commission?.breakdown || {
-        rentEasy: uplift * (3.5/7.5),    // 3.5%
-        manager: uplift * (2.5/7.5),     // 2.5%
-        referral: uplift * (1.5/7.5)     // 1.5%
-      };
+
+  // Commission calculation (7.5% only for non-estate)
+  const commission = isEstateFirm ? 0 : basePrice * 0.075;
+
+  // Extra fees – expecting array of { name, amount, description? }
+  const extraFees = listing.extra_fees || [];
+  const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+
+  // Total price
+  const totalPrice = basePrice + commission + totalExtraFees;
+
+  // Commission breakdown (for tooltip or small display)
+  const commissionBreakdown = isEstateFirm ? null : {
+    rentEasy: commission * (3.5 / 7.5),
+    manager: commission * (2.5 / 7.5),
+    referral: commission * (1.5 / 7.5),
+  };
 
   const formatPrice = (price) => {
-    return `₦${parseFloat(price).toLocaleString()}`;
+    return `₦${Math.round(price).toLocaleString()}`;
   };
 
   const formatDate = (dateString) => {
@@ -49,7 +41,6 @@ const roleLabel = {
     });
   };
 
-  // Get role icon
   const getRoleIcon = () => {
     switch(listing.posterRole || listing.userRole) {
       case 'estate-firm': return <Building size={14} />;
@@ -58,7 +49,6 @@ const roleLabel = {
     }
   };
 
-  // Get role label
   const getRoleLabel = () => {
     switch(listing.posterRole || listing.userRole) {
       case 'estate-firm': return 'Estate Firm';
@@ -67,6 +57,10 @@ const roleLabel = {
       default: return 'Unknown';
     }
   };
+
+  // Limit extra fees shown initially to first 2, with a "+X more" indicator
+  const visibleFees = extraFees.slice(0, 2);
+  const hiddenFeesCount = extraFees.length - visibleFees.length;
 
   return (
     <div className={`listing-card ${!listing.verified ? 'unverified' : ''} ${listing.posterRole || ''}`}>
@@ -113,21 +107,50 @@ const roleLabel = {
         {/* Price Section */}
         <div className="listing-price">
           <div className="original-price">
-            <span className="price-label">Anual Rent:</span>
-            <span className="price-amount">{formatPrice(listing.price)}</span>
+            <span className="price-label">Annual Rent:</span>
+            <span className="price-amount">{formatPrice(basePrice)}</span>
           </div>
-          <div className="commission-price">
-            <span className="commission-label">
-              {isEstateFirm ? 'Total Payable:' : 'After 7.5% Commission:'}
-            </span>
-            <span className="commission-amount">{formatPrice(priceAfter)}</span>
-          </div>
+
           {!isEstateFirm && (
+            <div className="commission-item">
+              <span className="commission-label">Commission (7.5%):</span>
+              <span className="commission-amount">+ {formatPrice(commission)}</span>
+            </div>
+          )}
+
+          {/* Extra Fees */}
+          {extraFees.length > 0 && (
+            <div className="extra-fees">
+              <span className="fees-label">Additional Fees:</span>
+              <div className="fees-list">
+                {visibleFees.map((fee, idx) => (
+                  <div key={idx} className="fee-item">
+                    <span className="fee-name">{fee.name}:</span>
+                    <span className="fee-amount">+ {formatPrice(fee.amount)}</span>
+                  </div>
+                ))}
+                {hiddenFeesCount > 0 && (
+                  <div className="fee-item more-fees">
+                    <span className="fee-name">+{hiddenFeesCount} more</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Total Price */}
+          <div className="total-price">
+            <span className="total-label">Total Payable:</span>
+            <span className="total-amount">{formatPrice(totalPrice)}</span>
+          </div>
+
+          {/* Detailed breakdown (optional, can be shown on hover or in details) */}
+          {!isEstateFirm && commissionBreakdown && (
             <div className="commission-breakdown">
               <small>
-                Breakdown: RentEasy ({formatPrice(Math.round(commissionBreakdown.rentEasy))}) + 
-                Manager ({formatPrice(Math.round(commissionBreakdown.manager))}) + 
-                Referral ({formatPrice(Math.round(commissionBreakdown.referral))})
+                Breakdown: RentEasy ({formatPrice(commissionBreakdown.rentEasy)}) + 
+                Manager ({formatPrice(commissionBreakdown.manager)}) + 
+                Referral ({formatPrice(commissionBreakdown.referral)})
               </small>
             </div>
           )}

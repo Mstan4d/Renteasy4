@@ -82,8 +82,9 @@
 }
 
 .stat-label {
-  font-weight: 500;
+  font-weight: 800;
   opacity: 0.9;
+   color: white;
 }
 
 .verification-promo {
@@ -436,6 +437,49 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+ /* Contact Button */
+.btn-contact {
+ padding: 8px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  flex: 1;
+  transition: background 0.2s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.btn-contact:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.btn-contact:active {
+  transform: translateY(0);
+}
+
+.btn-contact:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+.btn-contact {
+    background: #2563eb;
+  }
+.btn-contact:hover {
+    background: #1d4ed8;
+  }
+.btn-contact:disabled {
+    background: #4b5563;
+    color: #9ca3af;
+  }
 }
 
 .btn-view-details {
