@@ -1,17 +1,17 @@
-// src/components/post-property/steps/LocationStep.jsx
 import React, { useState, useEffect } from 'react';
-import { MapPin, Navigation, AlertCircle, CheckCircle } from 'lucide-react';
+import { MapPin, Navigation, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import { supabase } from '../../../../shared/lib/supabaseClient';
 import './LocationStep.css';
 
-const LocationStep = ({ formData, updateFormData, onNext }) => {
+const LocationStep = ({ formData, updateFormData }) => {
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [locationCaptured, setLocationCaptured] = useState(!!formData.coordinates?.lat);
   const [states, setStates] = useState([]);
   const [lgas, setLgas] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingStates, setLoadingStates] = useState(true);
+  const [loadingLgas, setLoadingLgas] = useState(false);
 
-  // Fetch all active states on mount
+  // Fetch active states on mount
   useEffect(() => {
     fetchStates();
   }, []);
@@ -26,76 +26,107 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
   }, [formData.state]);
 
   const fetchStates = async () => {
-    const { data, error } = await supabase
-      .from('states')
-      .select('id, name')
-      .eq('active', true)
-      .order('name');
-    if (!error) setStates(data || []);
+    setLoadingStates(true);
+    try {
+      const { data, error } = await supabase
+        .from('states')
+        .select('id, name')
+        .eq('active', true)
+        .order('name');
+      if (error) throw error;
+      setStates(data || []);
+    } catch (error) {
+      console.error('Error fetching states:', error);
+      // Fallback to static list
+      setStates([
+        { id: 1, name: 'Lagos' },
+        { id: 2, name: 'Abuja' },
+        // ... add other states
+      ]);
+    } finally {
+      setLoadingStates(false);
+    }
   };
 
   const fetchLgas = async (stateName) => {
-    // First get state id
-    const { data: stateData } = await supabase
-      .from('states')
-      .select('id')
-      .eq('name', stateName)
-      .single();
-    if (!stateData) return;
+    setLoadingLgas(true);
+    try {
+      // First get state id from the name
+      const { data: stateData, error: stateError } = await supabase
+        .from('states')
+        .select('id')
+        .eq('name', stateName)
+        .single();
+      if (stateError) throw stateError;
+      if (!stateData) {
+        setLgas([]);
+        return;
+      }
 
-    const { data, error } = await supabase
-      .from('lgas')
-      .select('name')
-      .eq('state_id', stateData.id)
-      .eq('active', true)
-      .order('name');
-    if (!error) setLgas(data || []);
+      const { data, error } = await supabase
+        .from('lgas')
+        .select('name')
+        .eq('state_id', stateData.id)
+        .eq('active', true)
+        .order('name');
+      if (error) throw error;
+      setLgas(data || []);
+    } catch (error) {
+      console.error('Error fetching LGAs:', error);
+      // Fallback to static mapping
+      const localLgas = {
+        'Lagos': ['Ikeja', 'Agege', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere'],
+        'Abuja': ['Abuja Municipal', 'Bwari', 'Gwagwalada', 'Kuje', 'Kwali', 'Abaji']
+      };
+      setLgas(localLgas[stateName]?.map(name => ({ name })) || []);
+    } finally {
+      setLoadingLgas(false);
+    }
   };
 
+  // Simplified geolocation (like ManagerRadius)
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      alert('Geolocation is not supported by your browser. Please enter the address manually.');
       return;
     }
 
     setIsGeolocating(true);
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const { latitude, longitude } = position.coords;
-
-        // Save coordinates
         updateFormData({
           coordinates: { lat: latitude, lng: longitude }
         });
-
-        // Optionally reverse geocode using a free service (e.g., OpenStreetMap Nominatim)
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-          );
-          const data = await response.json();
-          if (data && data.display_name) {
-            updateFormData({ address: data.display_name });
-          }
-        } catch (error) {
-          console.error('Reverse geocoding failed:', error);
-          // Keep existing address or leave empty
-        }
-
         setIsGeolocating(false);
         setLocationCaptured(true);
+        alert('📍 Location detected successfully!');
       },
       (error) => {
         setIsGeolocating(false);
-        alert('Could not detect location. Please type the address manually.');
+        let message = 'Could not detect location. ';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            message += 'Please enable location permissions in your browser and try again, or enter the address manually.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            message += 'Location information is unavailable. Please enter the address manually.';
+            break;
+          case error.TIMEOUT:
+            message += 'Location request timed out. Please try again or enter manually.';
+            break;
+          default:
+            message += 'Please enter the address manually.';
+        }
+        alert(message);
       },
-      { enableHighAccuracy: true, timeout: 5000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
   const handleStateChange = (e) => {
     const selectedState = e.target.value;
-    updateFormData({ state: selectedState, lga: '' }); // reset LGA
+    updateFormData({ state: selectedState, lga: '' });
   };
 
   return (
@@ -107,28 +138,49 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
         </p>
       </div>
 
-      {/* PROMINENT GPS BUTTON */}
+      {/* Geolocation Card */}
       <div className={`geo-card ${locationCaptured ? 'success' : ''}`}>
         <div className="geo-content">
           <Navigation size={28} className="geo-icon" />
           <div className="geo-text">
-            <h4>{locationCaptured ? "GPS Coordinates Locked" : "Click to Pin Location"}</h4>
-            <p>{locationCaptured ? "Manager will be notified of this exact spot." : "Required for 2.5% commission eligibility."}</p>
+            <h4>{locationCaptured ? "GPS Coordinates Locked" : "Pin Your Location"}</h4>
+            <p>
+              {locationCaptured 
+                ? "Manager will be notified of this exact spot." 
+                : "Required for 2.5% commission eligibility."}
+            </p>
           </div>
         </div>
         <button
           type="button"
-          className="btn-capture"
+          className={`btn-capture ${isGeolocating ? 'loading' : ''}`}
           onClick={getCurrentLocation}
           disabled={isGeolocating}
         >
-          {isGeolocating ? "Locating..." : locationCaptured ? <CheckCircle size={20} /> : "Get Location"}
+          {isGeolocating ? (
+            <>
+              <Loader size={18} className="spinner" />
+              Locating...
+            </>
+          ) : locationCaptured ? (
+            <>
+              <CheckCircle size={18} />
+              Location Locked
+            </>
+          ) : (
+            <>
+              <Navigation size={18} />
+              Get Current Location
+            </>
+          )}
         </button>
       </div>
 
       <div className="form-grid">
         <div className="form-group full-width">
-          <label htmlFor="address"><MapPin size={16} /> Full Address *</label>
+          <label htmlFor="address">
+            <MapPin size={16} /> Full Address *
+          </label>
           <input
             type="text"
             id="address"
@@ -145,6 +197,7 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
             id="state"
             value={formData.state || ''}
             onChange={handleStateChange}
+            disabled={loadingStates}
             required
           >
             <option value="">Select State</option>
@@ -160,10 +213,12 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
             id="lga"
             value={formData.lga || ''}
             onChange={(e) => updateFormData({ lga: e.target.value })}
-            disabled={!formData.state || lgas.length === 0}
+            disabled={!formData.state || loadingLgas}
             required
           >
-            <option value="">Select LGA</option>
+            <option value="">
+              {loadingLgas ? 'Loading LGAs...' : 'Select LGA'}
+            </option>
             {lgas.map(lga => (
               <option key={lga.name} value={lga.name}>{lga.name}</option>
             ))}
@@ -197,7 +252,9 @@ const LocationStep = ({ formData, updateFormData, onNext }) => {
       {!locationCaptured && (
         <div className="alert-banner">
           <AlertCircle size={18} />
-          <span><b>Note:</b> Accurate GPS location helps managers verify your house faster.</span>
+          <span>
+            <b>Note:</b> Accurate GPS location helps managers verify your house faster.
+          </span>
         </div>
       )}
     </div>

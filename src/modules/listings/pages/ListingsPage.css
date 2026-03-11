@@ -37,6 +37,44 @@
   margin-bottom: 16px;
 }
 
+.filter-section {
+  margin-bottom: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.filter-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #1e293b;
+}
+
+.toggle-filters-btn {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle-filters-btn:hover {
+  background: #1d4ed8;
+}
+
 /* Quick Stats */
 .quick-stats {
   display: flex;
@@ -775,14 +813,6 @@
   }
 }
 
-/* Fix for any potential sticky filter bar */
-.filter-bar {
-  position: static !important;
-  top: auto !important;
-  z-index: auto !important;
-}
-
-/* ADD TO EXISTING ListingsPage.css */
 
 /* Fix for results count collision */
 .results-count {
@@ -818,17 +848,6 @@
   min-height: 500px; /* Ensure enough space for content */
 }
 
-/* Fix for filter bar sticking */
-.filter-bar {
-  position: relative !important;
-  top: auto !important;
-  z-index: 10 !important;
-  margin-bottom: 20px;
-  background: white;
-  border-radius: 8px;
-  padding: 15px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
 
 /* Fix for verification legend spacing */
 .verification-legend {
@@ -909,5 +928,266 @@
   
   .filter-bar {
     padding: 12px;
+  }
+}
+
+/* ===== Collapsible Stats & Filters ===== */
+.header-controls {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.toggle-stats-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 16px;
+  border-radius: 30px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toggle-stats-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* ===== ListingsPage.css – Compact Professional Layout ===== */
+
+/* Existing styles for cards, grid, etc. remain unchanged.
+   Add the following at the end of your file. */
+
+/* ===== Top Control Bar ===== */
+.top-control-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0 16px;
+}
+
+.control-left {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.control-left button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  border-radius: 30px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-left button:hover {
+  background: #f8fafc;
+  border-color: #cbd5e0;
+}
+
+.control-left button.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: white;
+}
+
+.control-left button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.control-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.results-count-small {
+  font-size: 0.85rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 6px 12px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.sort-select-small {
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  color: #1e293b;
+  background: white;
+  cursor: pointer;
+}
+
+/* ===== Collapsible Stats Section ===== */
+.stats-section {
+  margin-bottom: 20px;
+  animation: slideDown 0.3s ease;
+}
+
+.quick-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.quick-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 8px 14px;
+  border-radius: 30px;
+  font-size: 0.85rem;
+}
+
+.stat-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.stat-icon.verified { color: #10b981; }
+.stat-icon.pending { color: #f59e0b; }
+.stat-icon.rejected { color: #ef4444; }
+.stat-icon.unverified { color: #fbbf24; }
+
+.stat-count {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.stat-label {
+  color: #64748b;
+}
+
+/* ===== Collapsible Filter Section ===== */
+.filter-section {
+  margin-bottom: 20px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  animation: slideDown 0.3s ease;
+}
+
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  cursor: pointer;
+}
+
+.filter-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.toggle-filters-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.filter-bar {
+  border: none !important;
+  box-shadow: none !important;
+  padding: 16px !important;
+  margin: 0 !important;
+}
+
+/* ===== Results Count (old) – we keep it for backward compatibility, but may hide if using top bar ===== */
+.results-count {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 16px 24px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* If you remove the old results-count from JSX, you can delete the above block. */
+
+/* ===== Animation ===== */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Dark Mode Adjustments ===== */
+@media (prefers-color-scheme: dark) {
+  .control-left button {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+  .control-left button:hover {
+    background: #334155;
+  }
+  .control-left button.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+  .results-count-small {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+  .sort-select-small {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+  .quick-stat {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+  .stat-label {
+    color: #94a3b8;
+  }
+  .filter-section {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .filter-header {
+    background: #0f172a;
+    border-color: #334155;
+  }
+  .filter-header h3 {
+    color: #f1f5f9;
+  }
+  .toggle-filters-btn {
+    color: #60a5fa;
   }
 }

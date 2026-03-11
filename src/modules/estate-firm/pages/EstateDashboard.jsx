@@ -98,7 +98,7 @@ const EstateDashboard = () => {
       
       console.log('Loading estate dashboard data for user:', user.id);
 
-      // 1. Load estate firm profile from estate_firms table
+      // 1. Load estate firm profile from estate_firm_profiles table
       let estateFirmProfile = null;
       try {
         const { data, error: firmError } = await supabase
@@ -113,7 +113,7 @@ const EstateDashboard = () => {
             // Get user profile for business name
             const { data: userProfile } = await supabase
               .from('profiles')
-              .select('full_name, email, phone')
+              .select('name, email, phone') // changed from full_name to name
               .eq('id', user.id)
               .single();
 
@@ -122,7 +122,7 @@ const EstateDashboard = () => {
               .from('estate_firm_profiles')
               .insert({
                 user_id: user.id,
-                firm_name: userProfile?.full_name || 'Estate Firm',
+                firm_name: userProfile?.name || 'Estate Firm', // changed
                 description: 'Professional estate management firm',
                 contact_email: userProfile?.email || '',
                 contact_phone: userProfile?.phone || '',
@@ -165,7 +165,7 @@ const EstateDashboard = () => {
           .gte('expires_at', new Date().toISOString())
           .order('expires_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (!subscriptionError) {
           subscription = subscriptionData;
@@ -416,39 +416,26 @@ const EstateDashboard = () => {
   };
 
   // Handle posting property
-  const handleAddProperty = async (type) => {
-    if (!canPostProperty()) {
-      setShowSubscriptionModal(true);
-      return;
-    }
+  const handleAddProperty = (type) => {
+  console.log('handleAddProperty called with type:', type, 'estateFirmData.id:', estateFirmData.id);
+  
+  if (!canPostProperty()) {
+    setShowSubscriptionModal(true);
+    return;
+  }
 
-    if (type === 'rent-easy') {
-      if (estateFirmData.freePostsRemaining > 0 && !estateFirmData.hasActiveSubscription) {
-        try {
-          const { error } = await supabase
-            .from('estate_firms')
-            .update({
-              free_posts_remaining: estateFirmData.freePostsRemaining - 1,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', estateFirmData.id);
+  if (!estateFirmData.id) {
+    alert('Estate firm profile not fully loaded. Please refresh and try again.');
+    return;
+  }
 
-          if (error) throw error;
-
-          setEstateFirmData(prev => ({
-            ...prev,
-            freePostsRemaining: prev.freePostsRemaining - 1
-          }));
-        } catch (error) {
-          console.error('Error updating free posts:', error);
-          alert('Error updating post count. Please try again.');
-          return;
-        }
-      }
-      
-      navigate('/dashboard/post-property?type=estate-firm');
-    }
-  };
+  if (type === 'rent-easy') {
+    // Use the same path as bottom nav
+    const url = `/post-property?type=estate-firm&estateFirmId=${estateFirmData.id}`;
+    console.log('Navigating to:', url);
+    navigate(url);
+  }
+};
 
   // Handle subscription purchase
   const handleSubscribe = async () => {
@@ -472,7 +459,7 @@ const EstateDashboard = () => {
 
       // Update estate firm profile
       const { error: updateError } = await supabase
-        .from('estate_firms')
+        .from('estate_firm_profiles')
         .update({
           subscription_status: 'active',
           subscription_expiry: subscription.expires_at,
@@ -503,7 +490,7 @@ const EstateDashboard = () => {
   const handleApplyVerification = async () => {
     try {
       const { error } = await supabase
-        .from('estate_firms')
+        .from('estate_firm_profiles')
         .update({
           verification_status: 'pending',
           updated_at: new Date().toISOString()
@@ -528,12 +515,19 @@ const EstateDashboard = () => {
 
   // Handle boost purchase
   const handleBoost = async (boostType) => {
+    // For now, simulate payment. In production, integrate actual payment.
+    const confirmPayment = window.confirm('Boost costs ₦5,000 for 30 days. Proceed to payment?');
+    if (!confirmPayment) return;
+
     try {
+      // Here you would integrate with a payment gateway (Paystack, etc.)
+      // After successful payment, update the boost status.
+      
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + 30); // 30 days boost
 
       const { error } = await supabase
-        .from('estate_firms')
+        .from('estate_firm_profiles')
         .update({
           boost_status: 'boosted',
           boost_expiry: expiryDate.toISOString(),
@@ -1138,6 +1132,14 @@ const EstateDashboard = () => {
           </Card>
         </div>
       </div>
+
+      {/* Modals */}
+      <SubscriptionModal 
+        show={showSubscriptionModal}
+        onHide={() => setShowSubscriptionModal(false)}
+        onSubscribe={handleSubscribe}
+        freePostsRemaining={estateFirmData.freePostsRemaining}
+      />
 
       {/* Add Property Modal */}
       <Modal show={showAddPropertyModal} onHide={() => setShowAddPropertyModal(false)} size="lg">

@@ -29,7 +29,7 @@ const transformListing = (item) => {
     verified: item.is_verified,
     userVerified: item.user?.verified || false,
     posterRole: item.poster_role,
-    posterName: item.poster_name || item.user?.full_name || 'Unknown',
+    posterName: item.poster_name || item.user?.name || 'Unknown',
     posterId: item.user_id,
     posterPhone: item.poster_phone || item.user?.phone,
     images,
@@ -59,7 +59,7 @@ const transformListing = (item) => {
     postedBy: {
       id: item.user?.id,
       isVerified: item.user?.verified || false,
-      fullName: item.user?.full_name,
+      fullName: item.user?.name,
       email: item.user?.email,
       role: item.user?.role,
       phone: item.user?.phone,
@@ -84,13 +84,13 @@ export const listingsService = {
         .select(`
           *,
           user:user_id (
-            id, full_name, email, role, verified, phone, avatar_url, created_at
+            id, name, email, role, verified, phone, avatar_url, created_at
           ),
           manager:managed_by (
-            id, full_name, phone, avatar_url
+            id, name, phone, avatar_url
           ),
           tenant:rented_to (
-            id, full_name, phone, email
+            id, name, phone, email
           )
         `)
         .eq('is_active', true);
@@ -169,13 +169,13 @@ export const listingsService = {
         .select(`
           *,
           user:user_id (
-            id, full_name, email, role, verified, phone, avatar_url, created_at
+            id, name, email, role, verified, phone, avatar_url, created_at
           ),
           manager:managed_by (
-            id, full_name, phone, avatar_url
+            id, name, phone, avatar_url
           ),
           tenant:rented_to (
-            id, full_name, phone, email
+            id, name, phone, email
           )
         `)
         .eq('id', id)
@@ -222,7 +222,7 @@ export const listingsService = {
         amenities: listingData.amenities || [],
         images: listingData.images || [],
         poster_role: listingData.poster_role || profile.role,
-        poster_name: listingData.poster_name || profile.full_name,
+        poster_name: listingData.poster_name || profile.name,
         poster_phone: listingData.poster_phone || profile.phone,
         status: 'pending',
         is_verified: false,

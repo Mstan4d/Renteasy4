@@ -1,8 +1,11 @@
 // src/modules/properties/components/steps/BasicInfoStep.jsx
-import React from 'react';
-import { DollarSign, Home, FileText, User, Plus, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { DollarSign, Home, FileText, User, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import './BasicInfoStep.css';
 
 const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
+  const [showAmenities, setShowAmenities] = useState(false);
+
   const propertyTypes = [
     { value: 'self_contain', label: 'Self Contain' },
     { value: '1_bedroom', label: '1 Bedroom' },
@@ -124,7 +127,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
       <div className="form-group">
         <label>
           <DollarSign size={18} />
-          Annual Rent (₦) * – NIGERIA STANDARD
+          Annual Rent (₦)
         </label>
         <input
           type="number"
@@ -206,22 +209,34 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
         <small className="hint">Optional - helps tenants understand space</small>
       </div>
 
-      {/* Amenities */}
-      <div className="form-group">
-        <label>Amenities</label>
-        <div className="amenities-grid">
-          {availableAmenities.map((amenity) => (
-            <div key={amenity} className="amenity-checkbox">
-              <input
-                type="checkbox"
-                id={`amenity-${amenity}`}
-                checked={formData.amenities?.includes(amenity) || false}
-                onChange={(e) => handleAmenityChange(amenity, e.target.checked)}
-              />
-              <label htmlFor={`amenity-${amenity}`}>{amenity}</label>
-            </div>
-          ))}
+      {/* Amenities with collapsible toggle */}
+      <div className="form-group amenities-section">
+        <div className="amenities-header">
+          <label>Amenities</label>
+          <button
+            type="button"
+            className="toggle-amenities-btn"
+            onClick={() => setShowAmenities(!showAmenities)}
+          >
+            {showAmenities ? 'Hide' : 'Show'} Amenities
+            {showAmenities ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
         </div>
+        {showAmenities && (
+          <div className="amenities-grid">
+            {availableAmenities.map((amenity) => (
+              <div key={amenity} className="amenity-checkbox">
+                <input
+                  type="checkbox"
+                  id={`amenity-${amenity}`}
+                  checked={formData.amenities?.includes(amenity) || false}
+                  onChange={(e) => handleAmenityChange(amenity, e.target.checked)}
+                />
+                <label htmlFor={`amenity-${amenity}`}>{amenity}</label>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Extra Fees Section */}

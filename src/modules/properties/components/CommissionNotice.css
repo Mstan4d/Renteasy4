@@ -1,389 +1,255 @@
 /* src/modules/properties/components/CommissionNotice.css */
-.commission-notice {
-    background: white;
-    border-radius: 15px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-    border: 1px solid #e3e8ff;
-    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.08);
-  }
-  
-  .commission-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #e3e8ff;
-  }
-  
-  .commission-header h3 {
-    margin: 0;
-    color: #2d3748;
-    font-size: 1.25rem;
-  }
-  
-  .commission-header svg {
-    color: #667eea;
-  }
-  
-  .commission-description {
-    color: #4a5568;
-    line-height: 1.6;
-    margin-bottom: 1.5rem;
-    font-size: 15px;
-  }
-  
-  .commission-breakdown {
-    background: #f8f9ff;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-  }
-  
-  .breakdown-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid rgba(226, 232, 240, 0.5);
-  }
-  
-  .breakdown-item:last-child {
-    border-bottom: none;
-  }
-  
-  .breakdown-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #4a5568;
-    font-size: 14px;
-  }
-  
-  .breakdown-label svg {
-    color: #718096;
-  }
-  
-  .commission-item .commission-value {
-    font-weight: 600;
-    font-size: 15px;
-  }
-  
-  .commission-item.renteasy .commission-value {
-    color: #667eea;
-  }
-  
-  .commission-item.manager .commission-value {
-    color: #38b2ac;
-  }
-  
-  .commission-item.referral .commission-value {
-    color: #ed8936;
-  }
-  
-  .breakdown-separator {
-    text-align: center;
-    font-size: 18px;
-    font-weight: bold;
-    color: #a0aec0;
-    padding: 8px 0;
-  }
-  
-  .total-item {
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    border-radius: 8px;
-    padding: 15px;
-    margin-top: 10px;
-    border: none;
-  }
-  
-  .total-item .breakdown-label {
-    color: white;
-    font-weight: 500;
-  }
-  
-  .total-item .commission-value {
-    color: white;
-    font-size: 18px;
-    font-weight: 700;
-  }
-  
-  .tenant-bonus-notice {
-    background: #e6fffa;
-    border: 1px solid #81e6d9;
-    border-radius: 8px;
-    padding: 1rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 1rem;
-  }
-  
-  .tenant-bonus-notice svg {
-    color: #319795;
-    flex-shrink: 0;
-  }
-  
-  .tenant-bonus-notice div {
-    flex: 1;
-  }
-  
-  .tenant-bonus-notice strong {
-    color: #234e52;
-    display: block;
-    margin-bottom: 4px;
-  }
-  
-  .tenant-bonus-notice p {
-    color: #4a5568;
-    font-size: 14px;
-    margin: 0;
-    line-height: 1.5;
-  }
-  
-  .commission-note {
-    background: #fefcbf;
-    border: 1px solid #f6e05e;
-    border-radius: 8px;
-    padding: 12px;
-    margin-top: 1rem;
-  }
-  
-  .commission-note small {
-    color: #744210;
-    font-size: 13px;
-    line-height: 1.4;
-  }
-  
-  .price {
-    font-weight: 700;
-    color: #2d3748;
-    font-size: 16px;
-  }
-  
-  @media (max-width: 768px) {
-    .commission-notice {
-      padding: 1rem;
-      margin: 1rem;
-    }
-    
-    .commission-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-    }
-    
-    .commission-breakdown {
-      padding: 1rem;
-    }
-    
-    .breakdown-item {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 4px;
-      padding: 10px 0;
-    }
-    
-    .commission-item .commission-value {
-      align-self: flex-end;
-    }
-  }
 
-  /* CommissionNotice.css */
 .commission-notice {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
-  border: 2px solid;
-  border-radius: 15px;
-  padding: 1.5rem;
-  margin: 2rem 0;
-  animation: slideIn 0.5s ease-out;
-  transition: all 0.3s ease;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 0;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
 }
 
-.commission-notice:hover {
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
+.commission-notice.estate {
+  border-left: 4px solid #8b5cf6; /* purple for estate firms */
+}
+
+.commission-notice.regular {
+  border-left: 4px solid #2563eb; /* blue for regular */
 }
 
 .commission-notice.info {
-  background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
-  border-color: #fbbf24;
-  text-align: center;
+  background: #f8fafc;
+  border-left: 4px solid #f59e0b;
 }
 
 .commission-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .commission-header h3 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #1a202c;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1f2937;
   margin: 0;
 }
 
-.commission-description {
-  color: #2d3748;
-  font-size: 1rem;
-  line-height: 1.5;
-  margin-bottom: 1.5rem;
-}
-
-.commission-breakdown {
-  background: white;
-  border-radius: 10px;
-  padding: 1.5rem;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+.commission-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .breakdown-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px dashed #e2e8f0;
-  transition: background-color 0.2s ease;
-}
-
-.breakdown-item:hover {
-  background-color: #f7fafc;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px dashed #f1f5f9;
 }
 
 .breakdown-item:last-child {
   border-bottom: none;
 }
 
-.breakdown-item.highlight {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-  border-radius: 8px;
-  border: 1px solid #10b981;
-  margin: 0.5rem 0;
+.breakdown-item.base-rent {
+  font-size: 1.1rem;
+  color: #1e293b;
 }
 
-.breakdown-item.total-item {
-  background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
-  color: white;
-  border-radius: 8px;
-  border: none;
-  margin-top: 0.5rem;
+.breakdown-item.base-rent strong {
+  font-size: 1.2rem;
+  color: #059669;
 }
 
-.breakdown-label {
+.commission-addons {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 4px 0;
+}
+
+.commission-split {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-weight: 500;
-  color: #4a5568;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: #334155;
 }
 
-.breakdown-item.total-item .breakdown-label {
-  color: rgba(255, 255, 255, 0.95);
+.commission-split span {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
 }
 
-.breakdown-item.total-item .price,
-.breakdown-item.total-item .total-amount {
-  color: white;
-  font-size: 1.5rem;
-}
+.commission-split span:nth-child(1) { color: #2563eb; }
+.commission-split span:nth-child(2) { color: #10b981; }
+.commission-split span:nth-child(3) { color: #7c3aed; }
 
-.breakdown-separator {
-  text-align: center;
-  font-size: 1.5rem;
+.breakdown-item.total {
+  font-size: 1.2rem;
   font-weight: 700;
-  color: #4a5568;
-  padding: 0.5rem 0;
-}
-
-.price {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #10b981;
-}
-
-.commission-renteasy {
-  color: #3b82f6;
-  font-weight: 700;
-}
-
-.commission-manager {
-  color: #8b5cf6;
-  font-weight: 700;
-}
-
-.commission-poster {
-  color: #10b981;
-  font-weight: 800;
-  font-size: 1.25rem;
+  margin-top: 8px;
+  border-top: 2px solid #e5e7eb;
+  padding-top: 12px;
 }
 
 .total-amount {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: #1e3a8a;
+  color: #2563eb;
+  font-size: 1.4rem;
 }
 
-.commission-note {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: white;
+.poster-earnings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0f9ff;
   border-radius: 8px;
-  border-left: 4px solid #10b981;
+  padding: 12px;
+  margin-top: 8px;
+  border-left: 3px solid #2563eb;
+  color: #1e3c72;
 }
 
-.commission-note p {
-  margin: 0;
-  line-height: 1.6;
+.poster-earnings svg {
+  color: #2563eb;
+  flex-shrink: 0;
 }
 
-/* Animations */
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
+.poster-earnings span {
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .commission-notice {
+    background: #1e293b;
+    border-color: #334155;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  .commission-header h3 {
+    color: #f1f5f9;
+  }
+  .breakdown-item {
+    border-bottom-color: #334155;
+    color: #e2e8f0;
+  }
+  .breakdown-item.base-rent strong {
+    color: #34d399;
+  }
+  .commission-addons {
+    background: #2d3a4a;
+  }
+  .commission-split span {
+    color: #cbd5e1;
+  }
+  .commission-split span:nth-child(1) { color: #93c5fd; }
+  .commission-split span:nth-child(2) { color: #6ee7b7; }
+  .commission-split span:nth-child(3) { color: #c4b5fd; }
+  .breakdown-item.total {
+    border-top-color: #334155;
+    color: #f1f5f9;
+  }
+  .total-amount {
+    color: #60a5fa;
+  }
+  .poster-earnings {
+    background: #1e3a5f;
+    border-left-color: #60a5fa;
+    color: #e2e8f0;
+  }
+  .poster-earnings svg {
+    color: #60a5fa;
   }
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 640px) {
   .commission-notice {
-    padding: 1rem;
-    margin: 1rem 0;
+    padding: 16px;
   }
-  
-  .commission-header {
+  .commission-split span {
     flex-direction: column;
-    text-align: center;
-    gap: 0.5rem;
+    align-items: flex-start;
+    gap: 2px;
   }
-  
-  .commission-header h3 {
-    font-size: 1.25rem;
+  .breakdown-item.total {
+    font-size: 1rem;
   }
-  
-  .breakdown-item {
-    flex-direction: column;
-    gap: 0.5rem;
-    text-align: center;
+  .total-amount {
+    font-size: 1.2rem;
   }
-  
-  .breakdown-label {
-    justify-content: center;
+}
+
+.extra-fees-summary {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+}
+
+.extra-fees-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.extra-fee-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.extra-fee-item small {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-left: 4px;
+}
+
+.extra-fees-total {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d1d5db;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.extra-fees-total span:last-child {
+  color: #059669;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .extra-fees-summary {
+    background: #2d3748;
   }
-  
-  .price,
-  .total-amount,
-  .commission-renteasy,
-  .commission-manager,
-  .commission-poster {
-    font-size: 1.1rem;
+  .extra-fees-header {
+    color: #e2e8f0;
+  }
+  .extra-fee-item {
+    color: #cbd5e0;
+  }
+  .extra-fee-item small {
+    color: #94a3b8;
+  }
+  .extra-fees-total {
+    border-top-color: #4b5563;
+    color: #f1f5f9;
+  }
+  .extra-fees-total span:last-child {
+    color: #34d399;
   }
 }

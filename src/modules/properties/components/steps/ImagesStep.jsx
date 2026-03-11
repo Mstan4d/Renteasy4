@@ -1,53 +1,54 @@
-// src/modules/properties/components/steps/ImagesStep.jsx - UPDATED FOR SUPABASE
+// src/modules/properties/components/steps/ImagesStep.jsx
 import React, { useCallback, useState } from 'react';
 import { Upload, Camera, Image as ImageIcon, X, Check, Plus } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { supabase } from '../../../../shared/lib/supabaseClient';
+import './ImagesStep.css';
 
 const ImagesStep = ({ formData, updateFormData }) => {
   const [uploading, setUploading] = useState(false);
 
-// In ImagesStep.jsx, update handleImageUpload function
-const handleImageUpload = async (files) => {
-  setUploading(true);
-  const uploadedImages = [];
-  
-  for (const file of files) {
-    try {
-      // Create a temporary object for preview
-      const objectUrl = URL.createObjectURL(file);
-      
-      uploadedImages.push({
-        file: file, // Keep the file object for upload
-        preview: objectUrl, // Temporary blob URL for preview
-        name: file.name,
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-        // Add a flag to indicate it needs to be uploaded
-        needsUpload: true
-      });
-      
-    } catch (error) {
-      console.error('Error processing image:', error);
-      alert(`Failed to process ${file.name}`);
+  const handleImageUpload = async (files) => {
+    setUploading(true);
+    const uploadedImages = [];
+    
+    for (const file of files) {
+      try {
+        // Create a temporary object for preview
+        const objectUrl = URL.createObjectURL(file);
+        
+        uploadedImages.push({
+          file: file,
+          preview: objectUrl,
+          name: file.name,
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          needsUpload: true
+        });
+        
+      } catch (error) {
+        console.error('Error processing image:', error);
+        alert(`Failed to process ${file.name}`);
+      }
     }
-  }
-  
-  // Update form data
-  updateFormData({
-    images: [...formData.images, ...uploadedImages]
-  });
-  
-  setUploading(false);
-};
-  // Remove image
+    
+    updateFormData({
+      images: [...formData.images, ...uploadedImages]
+    });
+    
+    setUploading(false);
+  };
+
   const removeImage = (index) => {
     const newImages = [...formData.images];
-    newImages.splice(index, 1);
+    const removed = newImages.splice(index, 1)[0];
+    // Revoke blob URL to free memory
+    if (removed.preview && removed.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(removed.preview);
+    }
     updateFormData({ images: newImages });
   };
 
-  // Drag and drop
   const onDrop = useCallback((acceptedFiles) => {
     handleImageUpload(acceptedFiles);
   }, [formData.images]);
@@ -57,7 +58,7 @@ const handleImageUpload = async (files) => {
     accept: {
       'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif']
     },
-    maxSize: 5 * 1024 * 1024, // 5MB
+    maxSize: 5 * 1024 * 1024,
     multiple: true
   });
 
@@ -114,7 +115,7 @@ const handleImageUpload = async (files) => {
               <div key={index} className="image-preview-card">
                 <div className="image-container">
                   <img 
-                    src={image.url} 
+                    src={image.url || image.preview} // Use uploaded URL or local preview
                     alt={`Property ${index + 1}`}
                     className="preview-image"
                   />

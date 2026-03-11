@@ -32,21 +32,48 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
   }, [user]);
 
   const loadProperties = async () => {
-    if (!user) return;
+  if (!user) return;
 
-    try {
-      setLoading(true);
-      
-      // Load properties from Supabase
-      const { data, error } = await supabase
-        .from('listings')
-        .select('*, landlord:profiles!landlord_id(name, email), tenant:profiles!tenant_id(name, email)')
-        .eq('estate_firm_id', user.id)
-        .order('created_at', { ascending: false });
+  try {
+    setLoading(true);
 
-      if (error) throw error;
+    // 1. Fetch all listings for this estate firm
+    const { data: listings, error } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('estate_firm_id', user.id)
+      .order('created_at', { ascending: false });
 
-      setProperties(data || []);
+    if (error) throw error;
+
+    // 2. Collect all unique landlord_id and tenant_id
+    const ids = new Set();
+    listings.forEach(listing => {
+      if (listing.landlord_id) ids.add(listing.landlord_id);
+      if (listing.tenant_id) ids.add(listing.tenant_id);
+    });
+
+    let profiles = [];
+    if (ids.size > 0) {
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', Array.from(ids));
+      if (profilesError) throw profilesError;
+      profiles = profilesData;
+    }
+
+    // 3. Create a lookup map
+    const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
+
+    // 4. Attach landlord and tenant to each listing
+    const enrichedData = listings.map(listing => ({
+      ...listing,
+      landlord: profileMap[listing.landlord_id] || null,
+      tenant: profileMap[listing.tenant_id] || null,
+    }));
+
+    setProperties(enrichedData);
 
       // Calculate portfolio stats
       const totalProperties = data?.length || 0;

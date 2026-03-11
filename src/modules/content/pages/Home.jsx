@@ -59,7 +59,7 @@ const Home = () => {
         .from('listings')
         .select(`
           *,
-          user:user_id (id, full_name, email, role, verified, phone, avatar_url, created_at)
+          user:user_id (id, name, email, role, verified, phone, avatar_url, created_at)
         `)
         .in('status', ['pending', 'approved'])
         .eq('is_active', true)
@@ -194,7 +194,7 @@ const Home = () => {
         .from('listings')
         .select(`
           *,
-          user:user_id (id, full_name, email, role, verified, phone, avatar_url, created_at)
+          user:user_id (id, name, email, role, verified, phone, avatar_url, created_at)
         `)
         .eq('is_active', true)
         .in('status', ['pending', 'approved'])
@@ -240,7 +240,7 @@ const Home = () => {
         lat: listing.lat,
         lng: listing.lng,
         userId: listing.user_id,
-        posterName: listing.user?.full_name || 'Unknown',
+        posterName: listing.user?.name || 'Unknown',
         userVerified: listing.user?.verified || false,
         verified: listing.is_verified || false,
         verificationLevel: listing.verification_level || 'standard',

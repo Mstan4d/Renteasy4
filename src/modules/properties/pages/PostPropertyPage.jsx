@@ -17,10 +17,111 @@ const PostPropertyPage = () => {
   const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [localProfile, setLocalProfile] = useState(null);
+  const [estateFirmId, setEstateFirmId] = useState(null);
+  const [freePostsRemaining, setFreePostsRemaining] = useState(0);
+  const [hasSubscription, setHasSubscription] = useState(false);
+  const [estateFirmLoaded, setEstateFirmLoaded] = useState(false);
   
   // Check if this is an estate firm post
   const isEstateFirm = searchParams.get('type') === 'estate-firm';
-  const estateFirmId = searchParams.get('estateFirmId');
+  const FirmId = searchParams.get('estateFirmId');
+
+useEffect(() => {
+  const loadOrCreateProfile = async () => {
+    if (!user) return;
+    
+    let activeProfile = profile;
+
+    if (!activeProfile) {
+      setLoadingProfile(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (error && error.code === 'PGRST116') {
+          // Create missing profile
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([{
+              id: user.id,
+              email: user.email,
+              role: 'tenant', // Default
+              full_name: user.user_metadata?.full_name || user.email,
+            }])
+            .select().single();
+          if (createError) throw createError;
+          activeProfile = newProfile;
+        } else {
+          activeProfile = data;
+        }
+      } catch (err) {
+        console.error('Profile Load Error:', err);
+      } finally {
+        setLoadingProfile(false);
+      }
+    }
+
+    if (activeProfile) {
+      setLocalProfile(activeProfile);
+      // SYNC FORM DATA IMMEDIATELY
+      setFormData(prev => ({
+        ...prev,
+        user_id: user.id,
+        user_role: activeProfile.role,
+        contact_email: activeProfile.email,
+        posted_by: activeProfile.role,
+        commission_rate: activeProfile.role === 'estate-firm' ? 0 : 7.5
+      }));
+    }
+  };
+
+  loadOrCreateProfile();
+}, [user, profile]);
+
+// In the useEffect that loads profile, also fetch estate firm data
+useEffect(() => {
+  const loadEstateFirmData = async () => {
+    if (profile?.role === 'estate-firm') {
+      // Use either the URL param or fetch by user_id
+      const firmId = estateFirmId || searchParams.get('estateFirmId');
+      if (!firmId) {
+        // Fallback: fetch by user_id
+        const { data, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('id, free_posts_remaining, subscription_status')
+          .eq('user_id', user.id)
+          .single();
+        if (!error && data) {
+          setEstateFirmId(data.id);
+          setFreePostsRemaining(data.free_posts_remaining);
+          setHasSubscription(data.subscription_status === 'active');
+        }
+      } else {
+        // Fetch by firm ID
+        const { data, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('id, free_posts_remaining, subscription_status')
+          .eq('id', firmId)
+          .single();
+        if (!error && data) {
+          setEstateFirmId(data.id);
+          setFreePostsRemaining(data.free_posts_remaining);
+          setHasSubscription(data.subscription_status === 'active');
+        }
+      }
+    }
+    setEstateFirmLoaded(true);
+  };
+
+  if (profile && !estateFirmLoaded) {
+    loadEstateFirmData();
+  }
+}, [profile, user, searchParams, estateFirmId, estateFirmLoaded]);
   
   // Initial form data
   const [formData, setFormData] = useState({
@@ -76,6 +177,7 @@ const PostPropertyPage = () => {
       }));
     }
   }, [user, profile]);
+  
 
   // Step navigation
   const nextStep = () => {
@@ -252,9 +354,23 @@ const debugFormData = () => {
 };
 
 
-  const submitListing = async () => {
+ const submitListing = async () => {
   if (!validateCurrentStep()) return;
   
+if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining <= 0) {
+  alert('You have no free posts remaining. Please subscribe to continue posting.');
+  navigate('/dashboard/estate-firm');
+  return;
+}
+  // Use localProfile as fallback if global profile is null
+  const currentProfile = profile || localProfile;
+
+  if (!currentProfile) {
+    alert('User profile not found. Please try refreshing the page.');
+    return;
+  }
+  
+
   const commission = calculateCommission();
   
   // Show commission confirmation for non-estate firms
@@ -270,34 +386,29 @@ const debugFormData = () => {
     const confirmed = window.confirm(confirmMessage);
     if (!confirmed) return;
   }
-  // Call this before submitting
-debugFormData();
+  
+  debugFormData();
   setIsSubmitting(true);
   
   try {
-    // ========== CORRECT LISTING DATA FOR SUPABASE ==========
     const listingData = {
-      // Basic Info (REQUIRED)
+      // Basic Info
       title: formData.title.trim(),
       description: formData.description.trim(),
       
-      // 💰 PRICE: Use 'price' column (numeric) - This is what shows in listings
+      // Price
       price: parseFloat(formData.rent_amount) || 0,
-      // Also store rent_amount for reference
       rent_amount: formData.rent_amount,
       
       // Property Type
       property_type: formData.property_type,
       
-      // Location (REQUIRED)
+      // Location
       address: formData.address.trim(),
       state: formData.state,
       city: formData.city,
       lga: formData.lga || '',
       landmark: formData.landmark || '',
-      
-      // Coordinates for manager notifications
-      //coordinates: formData.coordinates,
       
       // Property Details
       bedrooms: parseInt(formData.bedrooms) || 1,
@@ -309,21 +420,21 @@ debugFormData();
       contact_phone: formData.contact_phone || profile?.phone || '',
       contact_email: formData.contact_email || profile?.email || '',
       
-      // 💡 BUSINESS RULE: Who posted this? (Tenant, Landlord, Estate Firm)
-      poster_role: profile?.role || formData.user_role,
-      poster_name: profile?.full_name || user?.email,
-      poster_phone: formData.contact_phone || profile?.phone || '',
+      // 🟢 BUSINESS RULE: Who posted this?
+      poster_role: currentProfile.role, // ✅ Use profile.role directly (ensured not null)
+      poster_name: currentProfile.full_name || user?.email,
+      poster_phone: formData.contact_phone || currentProfile?.phone || '',
       
       // User Info
       user_id: user.id,
       
-      // Commission (CRITICAL BUSINESS RULE)
-      commission_rate: profile?.role === 'estate-firm' ? 0 : 7.5,
+      // Commission
+      commission_rate: currentProfile.role === 'estate-firm' ? 0 : 7.5,
       
-      // Rent frequency (Nigeria standard = yearly)
+      // Rent frequency (Nigeria standard)
       rent_frequency: 'yearly',
       
-      // Status (IMMEDIATELY VISIBLE AS PENDING)
+      // Status
       status: 'pending',
       is_verified: false,
       is_active: true,
@@ -335,17 +446,16 @@ debugFormData();
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       
-      // Images will be added after upload
+      // Images (will be added after upload)
       images: [],
 
-      // NEW FIELDS
-        landlord_phone: formData.landlord_phone || null,
-        verification_status: profile?.role === 'estate-firm' ? 'verified' : 'pending_manager',
-        extra_fees: formData.extra_fees || [], 
+      // New fields
+      landlord_phone: formData.landlord_phone || null,
+      verification_status: currentProfile.role === 'estate-firm' ? 'verified' : 'pending_manager',
     };
     
     // Add estate firm ID if applicable
-    if (profile?.role === 'estate-firm' && estateFirmId) {
+    if (currentProfile.role === 'estate-firm' && estateFirmId) {
       listingData.estate_firm_id = estateFirmId;
     }
     
@@ -409,6 +519,20 @@ debugFormData();
         console.log('📢 Notifying nearby managers...');
         await notifyNearbyManagers(listing.id, formData.coordinates);
       }
+
+      // After the listing is created and images uploaded, before navigation:
+if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining > 0) {
+  const { error: updateError } = await supabase
+    .from('estate_firm_profiles')
+    .update({
+      free_posts_remaining: freePostsRemaining - 1,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', estateFirmId);
+  if (updateError) {
+    console.error('Error decrementing free posts:', updateError);
+  }
+}
     
     // ========== STEP 5: NAVIGATE TO DASHBOARD ==========
     setTimeout(() => {
@@ -492,16 +616,12 @@ debugFormData();
     }
   };
 
-  if (!user) {
-    return (
-      <div className="auth-required">
-        <h2>Please log in to post a property</h2>
-        <button onClick={() => navigate('/login')} className="btn btn-primary">
-          Go to Login
-        </button>
-      </div>
-    );
-  }
+  if (!user) return <div>Please log in to Post a Property</div>;
+if (loadingProfile || (!profile && !localProfile)) {
+  return <div>Loading profile...</div>;
+}
+const effectiveProfile = profile || localProfile;
+console.log('Profile data:', effectiveProfile);
 
   return (
     <div className="post-property-container">
@@ -532,6 +652,7 @@ debugFormData();
           <CommissionNotice 
             price={formData.rent_amount}
             userRole={formData.user_role}
+            extraFees={formData.extra_fees}
             commission={calculateCommission()}
           />
           
