@@ -1,0 +1,224 @@
+/* src/modules/estate-firm/pages/EstateProperties.css */
+
+.estate-properties {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Page header with title and stats */
+.portfolio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.portfolio-header h2 {
+  font-size: 1.8rem;
+  color: #1e293b;
+  margin: 0;
+}
+
+.portfolio-header .stats {
+  display: flex;
+  gap: 20px;
+  background: #f8fafc;
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.portfolio-header .stats span {
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+.portfolio-header .stats span::before {
+  content: "•";
+  margin-right: 8px;
+  color: #94a3b8;
+}
+
+.portfolio-header .stats span:first-child::before {
+  content: "";
+  margin: 0;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  text-align: center;
+  color: #64748b;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .estate-properties {
+    padding: 16px;
+  }
+  .portfolio-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .portfolio-header .stats {
+    justify-content: space-around;
+    padding: 10px 16px;
+  }
+  .portfolio-header .stats span {
+    font-size: 0.85rem;
+  }
+}
+
+/* Portfolio Performance Section – for PortfolioManager.css */
+
+.portfolio-performance {
+  margin: 24px 0;
+}
+
+.performance-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #edf2f7;
+}
+
+.performance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.performance-header h4 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.performance-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 30px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.performance-change.negative {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.performance-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.metric svg {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.metric div {
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.metric-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .performance-card {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .performance-header h4 {
+    color: #f1f5f9;
+  }
+  .performance-change {
+    background: #166534;
+    color: #bbf7d0;
+  }
+  .performance-change.negative {
+    background: #7f1d1d;
+    color: #fecaca;
+  }
+  .metric {
+    background: #334155;
+    border-color: #475569;
+  }
+  .metric svg {
+    color: #60a5fa;
+  }
+  .metric-value {
+    color: #f1f5f9;
+  }
+  .metric-label {
+    color: #94a3b8;
+  }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .performance-card {
+    padding: 16px;
+  }
+  .performance-metrics {
+    grid-template-columns: 1fr;
+  }
+  .metric {
+    padding: 10px;
+  }
+  .metric-value {
+    font-size: 1.2rem;
+  }
+}

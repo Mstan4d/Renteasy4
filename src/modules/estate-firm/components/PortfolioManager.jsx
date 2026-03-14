@@ -1,3 +1,4 @@
+// src/modules/estate-firm/components/PortfolioManager.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   Building, PlusCircle, Upload, Filter, Download, 
@@ -32,71 +33,117 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
   }, [user]);
 
   const loadProperties = async () => {
-  if (!user) return;
+    if (!user) return;
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    // 1. Fetch all listings for this estate firm
-    const { data: listings, error } = await supabase
-      .from('listings')
-      .select('*')
-      .eq('estate_firm_id', user.id)
-      .order('created_at', { ascending: false });
+      // 1. Fetch external properties from the properties table
+      const { data: externalProps, error: externalError } = await supabase
+        .from('properties')
+        .select(`
+          *,
+          landlord:landlord_id (id, name, email, phone)
+        `)
+        .eq('estate_firm_id', user.id)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (externalError) throw externalError;
 
-    // 2. Collect all unique landlord_id and tenant_id
-    const ids = new Set();
-    listings.forEach(listing => {
-      if (listing.landlord_id) ids.add(listing.landlord_id);
-      if (listing.tenant_id) ids.add(listing.tenant_id);
-    });
+      // 2. Fetch RentEasy listings where this estate firm is the manager
+      const { data: listings, error: listingsError } = await supabase
+        .from('listings')
+        .select(`
+          *,
+          landlord:profiles!landlord_id (id, name, email, phone)
+        `)
+        .eq('estate_firm_id', user.id)
+        .order('created_at', { ascending: false });
 
-    let profiles = [];
-    if (ids.size > 0) {
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, name, email')
-        .in('id', Array.from(ids));
-      if (profilesError) throw profilesError;
-      profiles = profilesData;
-    }
+      if (listingsError) throw listingsError;
 
-    // 3. Create a lookup map
-    const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]));
+      // Transform listings into property-like objects
+      const rentEasyProps = (listings || []).map(listing => ({
+        id: listing.id,
+        estate_firm_id: listing.estate_firm_id,
+        name: listing.title,
+        address: listing.address,
+        city: listing.city,
+        state: listing.state,
+        description: listing.description,
+        landlord_id: listing.landlord_id,
+        landlord: listing.landlord,
+        source: 'rent-easy',
+        listing_id: listing.id,
+        created_at: listing.created_at,
+        // For a listing, we treat it as a single unit
+        units: [{
+          id: `unit-${listing.id}`,
+          property_id: listing.id,
+          unit_number: '1',
+          rent_amount: listing.price,
+          rent_frequency: listing.rent_frequency || 'yearly',
+          status: listing.status === 'rented' ? 'occupied' : 'vacant',
+          tenant_id: listing.tenant_id,
+        }],
+        // We'll compute these later
+        occupiedCount: listing.status === 'rented' ? 1 : 0,
+        monthlyRent: listing.price && listing.rent_frequency === 'yearly' ? listing.price / 12 : listing.price,
+      }));
 
-    // 4. Attach landlord and tenant to each listing
-    const enrichedData = listings.map(listing => ({
-      ...listing,
-      landlord: profileMap[listing.landlord_id] || null,
-      tenant: profileMap[listing.tenant_id] || null,
-    }));
+      // 3. Combine both sets
+      const allProperties = [
+        ...(externalProps || []).map(p => ({ ...p, source: 'external' })),
+        ...rentEasyProps
+      ];
 
-    setProperties(enrichedData);
+      // For each property, if it already has units (from external table) use them, else use the transformed ones
+      const enriched = await Promise.all(allProperties.map(async (property) => {
+        // If it's an external property, we already have units (if any) – we need to fetch them
+        // For simplicity, we'll assume external properties might have units already loaded from the join,
+        // but we didn't join units. So we need to fetch units for external properties.
+        let units = [];
+        if (property.source === 'external') {
+          const { data: unitData } = await supabase
+            .from('units')
+            .select('*')
+            .eq('property_id', property.id);
+          units = unitData || [];
+        } else {
+          // For rent-easy, we already created a pseudo unit
+          units = property.units || [];
+        }
 
-      // Calculate portfolio stats
-      const totalProperties = data?.length || 0;
-      const occupiedProperties = data?.filter(p => p.status === 'occupied').length || 0;
-      
-      const monthlyRevenue = (data || []).reduce((sum, property) => {
-        if (property.status !== 'occupied') return sum;
-        let multiplier = 1;
-        if (property.rent_frequency === 'yearly') multiplier = 1/12;
-        if (property.rent_frequency === 'quarterly') multiplier = 1/3;
-        if (property.rent_frequency === 'weekly') multiplier = 52/12;
-        return sum + ((property.price || 0) * multiplier);
-      }, 0);
+        const occupiedUnits = units.filter(u => u.status === 'occupied');
+        const monthlyRent = occupiedUnits.reduce((sum, u) => {
+          let multiplier = 1;
+          if (u.rent_frequency === 'yearly') multiplier = 1/12;
+          if (u.rent_frequency === 'quarterly') multiplier = 1/3;
+          return sum + (u.rent_amount * multiplier);
+        }, 0);
 
-      const totalValue = (data || []).reduce((sum, property) => {
-        // Estimate property value as 5 years of rent
-        return sum + ((property.price || 0) * 5);
-      }, 0);
+        return {
+          ...property,
+          units,
+          occupiedCount: occupiedUnits.length,
+          monthlyRent,
+        };
+      }));
+
+      setProperties(enriched);
+
+      // Calculate stats
+      const totalProperties = enriched.length;
+      const rentEasyCount = enriched.filter(p => p.source === 'rent-easy').length;
+      const externalCount = totalProperties - rentEasyCount;
+      const occupiedProperties = enriched.reduce((sum, p) => sum + p.occupiedCount, 0);
+      const monthlyRevenue = enriched.reduce((sum, p) => sum + p.monthlyRent, 0);
+      const totalValue = enriched.reduce((sum, p) => sum + (p.units?.reduce((acc, u) => acc + (u.rent_amount || 0), 0) * 5 || 0), 0);
 
       setPortfolioStats({
         totalProperties,
-        rentEasyListings: totalProperties, // All are Rent Easy listings for estate firms
-        externalProperties: 0,
+        rentEasyListings: rentEasyCount,
+        externalProperties: externalCount,
         managedProperties: totalProperties,
         occupiedProperties,
         totalValue,
@@ -110,25 +157,28 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     }
   };
 
-  const handleDeleteProperty = async (propertyId, propertyName) => {
+  const handleDeleteProperty = async (propertyId, propertyName, source) => {
     if (!window.confirm(`Are you sure you want to delete "${propertyName}"?`)) return;
 
     try {
-      const { error } = await supabase
-        .from('listings')
-        .delete()
-        .eq('id', propertyId)
-        .eq('estate_firm_id', user.id);
+      if (source === 'external') {
+        // Delete from properties table
+        const { error } = await supabase
+          .from('properties')
+          .delete()
+          .eq('id', propertyId)
+          .eq('estate_firm_id', user.id);
+        if (error) throw error;
+      } else {
+        // Delete from listings? Actually, you might want to just remove from portfolio, not delete the listing.
+        // For now, we'll just skip or maybe mark as inactive. We'll handle later.
+        alert('RentEasy properties cannot be deleted directly from portfolio. You can archive them.');
+        return;
+      }
 
-      if (error) throw error;
-
-      // Remove from selected properties
       setSelectedProperties(selectedProperties.filter(id => id !== propertyId));
-      
-      // Refresh properties list
       await loadProperties();
 
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'property',
@@ -138,7 +188,6 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
       });
 
       alert('Property deleted successfully!');
-
     } catch (error) {
       console.error('Error deleting property:', error);
       alert('Failed to delete property. Please try again.');
@@ -149,31 +198,40 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     if (!window.confirm(`Delete ${selectedProperties.length} selected properties?`)) return;
 
     try {
-      const { error } = await supabase
-        .from('listings')
-        .delete()
-        .in('id', selectedProperties)
-        .eq('estate_firm_id', user.id);
+      // Separate external and rent-easy IDs
+      const externalIds = properties
+        .filter(p => selectedProperties.includes(p.id) && p.source === 'external')
+        .map(p => p.id);
 
-      if (error) throw error;
+      if (externalIds.length > 0) {
+        const { error } = await supabase
+          .from('properties')
+          .delete()
+          .in('id', externalIds)
+          .eq('estate_firm_id', user.id);
+        if (error) throw error;
+      }
 
-      // Refresh properties list
+      // For rent-easy, we might just skip or mark inactive
+      const rentEasyIds = selectedProperties.filter(id => 
+        properties.find(p => p.id === id)?.source === 'rent-easy'
+      );
+      if (rentEasyIds.length > 0) {
+        alert('RentEasy properties cannot be bulk deleted. They will be ignored.');
+      }
+
       await loadProperties();
-      
-      // Clear selection
       setSelectedProperties([]);
 
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'property',
         action: 'bulk_delete',
-        description: `Deleted ${selectedProperties.length} properties`,
+        description: `Deleted ${externalIds.length} external properties`,
         created_at: new Date().toISOString()
       });
 
-      alert(`${selectedProperties.length} properties deleted successfully!`);
-
+      alert(`${externalIds.length} properties deleted successfully!`);
     } catch (error) {
       console.error('Error bulk deleting properties:', error);
       alert('Failed to delete properties. Please try again.');
@@ -182,17 +240,15 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
 
   const handleExportCSV = () => {
     const csvContent = [
-      ['ID', 'Name', 'Address', 'Type', 'Rent Amount', 'Frequency', 'Status', 'Client', 'Tenant', 'Created Date'],
+      ['ID', 'Name', 'Address', 'Units', 'Occupied Units', 'Monthly Revenue', 'Landlord', 'Created Date'],
       ...filteredProperties.map(p => [
         p.id.substring(0, 8),
-        `"${p.title}"`,
+        `"${p.name}"`,
         `"${p.address}"`,
-        p.property_type,
-        `₦${p.price?.toLocaleString() || 0}`,
-        p.rent_frequency,
-        p.status,
-        p.landlord?.name || 'Owner',
-        p.tenant?.name || 'Vacant',
+        p.units?.length || 0,
+        p.occupiedCount,
+        `₦${p.monthlyRent.toLocaleString()}`,
+        p.landlord?.name || 'None',
         new Date(p.created_at).toLocaleDateString()
       ])
     ].map(row => row.join(',')).join('\n');
@@ -207,7 +263,6 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
 
   const propertyTypes = [
     { id: 'all', label: 'All Properties', count: portfolioStats.totalProperties, color: 'blue' },
-    { id: 'rent-easy', label: 'Rent Easy Listings', count: portfolioStats.rentEasyListings, color: 'green' },
     { id: 'occupied', label: 'Occupied', count: portfolioStats.occupiedProperties, color: 'purple' },
     { id: 'vacant', label: 'Vacant', count: portfolioStats.totalProperties - portfolioStats.occupiedProperties, color: 'orange' },
   ];
@@ -216,48 +271,20 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
-      property.title.toLowerCase().includes(query) ||
+      property.name.toLowerCase().includes(query) ||
       property.address.toLowerCase().includes(query) ||
       (property.landlord?.name || '').toLowerCase().includes(query)
     );
   }).sort((a, b) => {
     if (sortBy === 'recent') return new Date(b.created_at) - new Date(a.created_at);
-    if (sortBy === 'rent-high') return (b.price || 0) - (a.price || 0);
-    if (sortBy === 'rent-low') return (a.price || 0) - (b.price || 0);
-    if (sortBy === 'name') return a.title.localeCompare(b.title);
+    if (sortBy === 'rent-high') return (b.monthlyRent || 0) - (a.monthlyRent || 0);
+    if (sortBy === 'rent-low') return (a.monthlyRent || 0) - (b.monthlyRent || 0);
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
     return 0;
   });
 
-  const getPropertyTypeColor = (type) => {
-    switch(type) {
-      case 'residential': return '#10b981';
-      case 'commercial': return '#8b5cf6';
-      case 'industrial': return '#f59e0b';
-      case 'land': return '#6366f1';
-      default: return '#6b7280';
-    }
-  };
-
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount || 0);
-  };
-
-  const calculateRentFrequency = (property) => {
-    const amount = property.price || 0;
-    let frequency = property.rent_frequency || 'monthly';
-    
-    switch(frequency) {
-      case 'yearly': return formatCurrency(amount) + '/year';
-      case 'monthly': return formatCurrency(amount) + '/month';
-      case 'quarterly': return formatCurrency(amount) + '/quarter';
-      case 'weekly': return formatCurrency(amount) + '/week';
-      default: return formatCurrency(amount);
-    }
+    return `₦${(amount || 0).toLocaleString()}`;
   };
 
   if (loading) {
@@ -286,7 +313,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
         <div className="header-actions">
           <button 
             className="btn btn-primary" 
-            onClick={() => onAddProperty && onAddProperty('rent-easy')}
+            onClick={() => onAddProperty && onAddProperty('new-property')}
           >
             <PlusCircle size={18} />
             Add Property
@@ -352,7 +379,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                 <span className="metric-value">
                   {portfolioStats.totalProperties - portfolioStats.occupiedProperties}
                 </span>
-                <span className="metric-label">Vacant Properties</span>
+                <span className="metric-label">Vacant Units</span>
               </div>
             </div>
             <div className="metric">
@@ -377,7 +404,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
           <Search size={18} />
           <input
             type="text"
-            placeholder="Search properties by name, address, or client..."
+            placeholder="Search properties by name, address, or landlord..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
@@ -409,7 +436,6 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
             <option value="rent-high">Rent: High to Low</option>
             <option value="rent-low">Rent: Low to High</option>
             <option value="name">Name: A to Z</option>
-            <option value="status">Status</option>
           </select>
         </div>
       </div>
@@ -460,20 +486,18 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                     }
                   }}
                 />
-                <span 
-                  className="property-type-badge"
-                  style={{ backgroundColor: getPropertyTypeColor(property.property_type) }}
-                >
-                  {property.property_type}
-                </span>
-                <span className={`property-status ${property.status}`}>
-                  {property.status}
+                <span className="property-status-badge">
+                  {property.units?.some(u => u.status === 'occupied') ? (
+                    <span className="status occupied">Occupied</span>
+                  ) : (
+                    <span className="status vacant">Vacant</span>
+                  )}
                 </span>
               </div>
 
               <div className="property-body">
                 <div className="property-title-section">
-                  <h4 title={property.title}>{property.title}</h4>
+                  <h4 title={property.name}>{property.name}</h4>
                   <div className="property-location">
                     <MapPin size={14} />
                     <span title={property.address}>{property.address}</span>
@@ -482,40 +506,32 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
 
                 <div className="property-details">
                   <div className="detail-row">
-                    <span className="label">Client:</span>
-                    <span className="value" title={property.landlord?.name || 'Owner'}>
-                      {property.landlord?.name || 'Owner'}
-                    </span>
+                    <span className="label">Units:</span>
+                    <span className="value">{property.units?.length || 0}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="label">Rent:</span>
-                    <span className="value highlight">
-                      {calculateRentFrequency(property)}
-                    </span>
+                    <span className="label">Occupied:</span>
+                    <span className="value">{property.occupiedCount}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="label">Commission:</span>
-                    <span className="value">{property.commission_rate || 0}%</span>
+                    <span className="label">Monthly Rent:</span>
+                    <span className="value highlight">{formatCurrency(property.monthlyRent)}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="label">Tenant:</span>
-                    <span className="value">
-                      {property.tenant?.name || (property.status === 'occupied' ? 'Tenant' : 'Vacant')}
-                    </span>
+                    <span className="label">Landlord:</span>
+                    <span className="value">{property.landlord?.name || 'None'}</span>
                   </div>
-                </div>
-
-                <div className="property-tags">
-                  <span className="tag">{property.property_type}</span>
-                  <span className="tag">{property.bedrooms || 0} Beds</span>
-                  <span className="tag">{property.bathrooms || 0} Baths</span>
-                  {property.area_sqm && (
-                    <span className="tag">{property.area_sqm} sqm</span>
-                  )}
                 </div>
               </div>
 
               <div className="property-footer">
+                <button 
+                  className="btn-icon"
+                  onClick={() => window.location.href = `/dashboard/estate-firm/properties/${property.id}`}
+                  title="View Details"
+                >
+                  <Eye size={16} />
+                </button>
                 <button 
                   className="btn-icon"
                   onClick={() => onEditProperty && onEditProperty(property)}
@@ -524,26 +540,9 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                   <Edit size={16} />
                 </button>
                 <button 
-                  className="btn-icon"
-                  onClick={() => window.open(`/listings/${property.id}`, '_blank')}
-                  title="View Details"
-                >
-                  <Eye size={16} />
-                </button>
-                <button 
-                  className="btn-icon"
-                  onClick={() => {
-                    // Collect rent functionality
-                    alert(`Collect rent for ${property.title}`);
-                  }}
-                  title="Collect Rent"
-                >
-                  <DollarSign size={16} />
-                </button>
-                <button 
                   className="btn-icon danger"
-                  onClick={() => handleDeleteProperty(property.id, property.title)}
-                  title="Delete Property"
+                  onClick={() => handleDeleteProperty(property.id, property.name)}
+                  title="Delete"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -570,11 +569,11 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                   />
                 </th>
                 <th>Property Name</th>
-                <th>Type</th>
-                <th>Client</th>
-                <th>Rent Amount</th>
-                <th>Status</th>
-                <th>Tenant</th>
+                <th>Address</th>
+                <th>Units</th>
+                <th>Occupied</th>
+                <th>Monthly Rent</th>
+                <th>Landlord</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -596,40 +595,26 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                   </td>
                   <td>
                     <div className="list-property-info">
-                      <strong>{property.title}</strong>
+                      <strong>{property.name}</strong>
                       <small>{property.address}</small>
                     </div>
                   </td>
-                  <td>
-                    <span 
-                      className="type-badge"
-                      style={{ backgroundColor: getPropertyTypeColor(property.property_type) }}
-                    >
-                      {property.property_type}
-                    </span>
-                  </td>
-                  <td>{property.landlord?.name || 'Owner'}</td>
-                  <td>
-                    <strong>{calculateRentFrequency(property)}</strong>
-                    <small>Commission: {property.commission_rate || 0}%</small>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${property.status}`}>
-                      {property.status}
-                    </span>
-                  </td>
-                  <td>{property.tenant?.name || (property.status === 'occupied' ? 'Tenant' : 'Vacant')}</td>
+                  <td>{property.address}</td>
+                  <td>{property.units?.length || 0}</td>
+                  <td>{property.occupiedCount}</td>
+                  <td>{formatCurrency(property.monthlyRent)}</td>
+                  <td>{property.landlord?.name || 'None'}</td>
                   <td>
                     <div className="list-actions">
-                      <button className="btn-icon-sm">
-                        <Edit size={14} />
-                      </button>
-                      <button className="btn-icon-sm">
+                      <button className="btn-icon-sm" onClick={() => window.location.href = `/dashboard/estate-firm/properties/${property.id}`}>
                         <Eye size={14} />
+                      </button>
+                      <button className="btn-icon-sm" onClick={() => onEditProperty && onEditProperty(property)}>
+                        <Edit size={14} />
                       </button>
                       <button 
                         className="btn-icon-sm danger"
-                        onClick={() => handleDeleteProperty(property.id, property.title)}
+                        onClick={() => handleDeleteProperty(property.id, property.name)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -650,7 +635,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
           <p>Try adjusting your search or add a new property</p>
           <button 
             className="btn btn-primary"
-            onClick={() => onAddProperty && onAddProperty('rent-easy')}
+            onClick={() => onAddProperty && onAddProperty('new-property')}
           >
             <PlusCircle size={18} />
             Add Your First Property
@@ -661,15 +646,11 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
       {/* Pagination */}
       {filteredProperties.length > 0 && (
         <div className="pagination">
-          <button className="pagination-btn" disabled>
-            Previous
-          </button>
+          <button className="pagination-btn" disabled>Previous</button>
           <span className="pagination-info">
             Showing {filteredProperties.length} of {properties.length} properties
           </span>
-          <button className="pagination-btn">
-            Next
-          </button>
+          <button className="pagination-btn">Next</button>
         </div>
       )}
     </div>

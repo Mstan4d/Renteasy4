@@ -1,71 +1,142 @@
 // src/modules/providers/pages/ProviderSubscribe.jsx
-import React, { useState } from 'react';
-import { 
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { paymentService } from '../../../shared/lib/paymentService';
+import {
   CheckCircle, XCircle, Zap, Shield,
   Star, Users, TrendingUp, Award,
   CreditCard, Clock, Gift, BadgeCheck
 } from 'lucide-react';
+import './ProviderSubscribe.css';
 
 const ProviderSubscribe = () => {
-  const [selectedPlan, setSelectedPlan] = useState('pro');
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [plans, setPlans] = useState([]);
+  const [selectedPlan, setSelectedPlan] = useState(null);
   const [billingCycle, setBillingCycle] = useState('monthly');
-  
-  const subscriptionPlans = [
-    {
-      id: 'free',
-      name: 'Free',
-      price: { monthly: 0, yearly: 0 },
-      description: 'Perfect for getting started',
-      features: [
-        { text: '10 free bookings per month', included: true },
-        { text: 'Basic profile listing', included: true },
-        { text: 'Marketplace visibility', included: true },
-        { text: 'Customer messaging', included: true },
-        { text: 'Priority support', included: false },
-        { text: 'Advanced analytics', included: false },
-        { text: 'Profile boosting', included: false },
-        { text: 'Zero commission after 10 bookings', included: false }
-      ],
-      cta: 'Current Plan',
-      popular: false
-    },
-    {
-      id: 'pro',
-      name: 'Professional',
-      price: { monthly: 3000, yearly: 30000 },
-      description: 'For growing your service business',
-      features: [
-        { text: 'Unlimited bookings', included: true },
-        { text: 'Verified badge', included: true },
-        { text: 'Priority marketplace ranking', included: true },
-        { text: 'Advanced analytics dashboard', included: true },
-        { text: 'Priority support', included: true },
-        { text: 'Profile boosting credits', included: true },
-        { text: 'Custom service packages', included: true },
-        { text: 'Zero RentEasy commission', included: false }
-      ],
-      cta: 'Upgrade Now',
-      popular: true
-    },
-    {
-      id: 'business',
-      name: 'Business',
-      price: { monthly: 10000, yearly: 100000 },
-      description: 'For established service providers',
-      features: [
-        { text: 'Everything in Professional', included: true },
-        { text: 'Zero RentEasy commission', included: true },
-        { text: 'Dedicated account manager', included: true },
-        { text: 'Custom contract templates', included: true },
-        { text: 'Bulk service management', included: true },
-        { text: 'API access', included: true },
-        { text: 'White-label reports', included: true },
-        { text: 'Training & onboarding', included: true }
-      ],
-      cta: 'Contact Sales',
-      popular: false
+  const [currentSubscription, setCurrentSubscription] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [step, setStep] = useState('select'); // select, payment
+  const [paymentRecord, setPaymentRecord] = useState(null);
+  const [file, setFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
     }
-  ];
+    fetchData();
+  }, [user]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch all subscription plans
+      const { data: plansData, error: plansError } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .order('price', { ascending: true });
+      if (plansError) throw plansError;
+      setPlans(plansData || []);
+
+      // Fetch current subscription for this provider (if any)
+      const { data: subData, error: subError } = await supabase
+        .from('provider_subscriptions')
+        .select('*, plan:plan_id(*)')
+        .eq('provider_id', user.id)
+        .maybeSingle();
+      if (subError) throw subError;
+      setCurrentSubscription(subData);
+
+      // If user already has an active subscription, maybe redirect? We'll allow viewing but not subscribing again.
+    } catch (err) {
+      console.error('Error fetching subscription data:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectPlan = (plan) => {
+    setSelectedPlan(plan);
+  };
+
+  const handleProceedToPayment = async () => {
+    if (!selectedPlan) return;
+    setSubmitting(true);
+    try {
+      const reference = paymentService.generateReference('SUB');
+      const amount = billingCycle === 'monthly' ? selectedPlan.price : selectedPlan.price * 10; // yearly discount placeholder
+
+      // Create payment record
+      const payment = await paymentService.createPayment({
+        userId: user.id,
+        amount,
+        type: 'subscription',
+        reference,
+        metadata: {
+          plan_id: selectedPlan.id,
+          plan_name: selectedPlan.name,
+          billing_cycle: billingCycle,
+        },
+      });
+
+      setPaymentRecord(payment);
+      setStep('payment');
+    } catch (err) {
+      console.error(err);
+      setError('Failed to initiate payment. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const selected = e.target.files[0];
+    if (!selected) return;
+    if (selected.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
+      return;
+    }
+    if (!selected.type.startsWith('image/')) {
+      setError('Only image files are allowed');
+      return;
+    }
+    setFile(selected);
+    setError(null);
+  };
+
+  const handleUploadProof = async () => {
+    if (!file) {
+      setError('Please select a file');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await paymentService.uploadProof({
+        paymentId: paymentRecord.id,
+        userId: user.id,
+        file,
+      });
+
+      alert('Payment proof uploaded! Your subscription will be activated once verified by admin.');
+      // Optionally refresh data or navigate
+      navigate('/dashboard/provider/subscription');
+    } catch (err) {
+      console.error(err);
+      setError('Failed to upload proof. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const bankDetails = paymentService.getBankDetails();
 
   const benefits = [
     { icon: <TrendingUp size={20} />, title: '5x More Visibility', description: 'Get seen by more clients' },
@@ -74,461 +145,192 @@ const ProviderSubscribe = () => {
     { icon: <Award size={20} />, title: 'Higher Earnings', description: 'More bookings, more income' }
   ];
 
-  const styles = {
-    container: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      padding: '1rem',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    },
-    header: {
-      textAlign: 'center',
-      marginBottom: '3rem'
-    },
-    title: {
-      fontSize: '2.5rem',
-      fontWeight: '800',
-      color: '#1f2937',
-      marginBottom: '1rem',
-      background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent'
-    },
-    subtitle: {
-      fontSize: '1.125rem',
-      color: '#6b7280',
-      maxWidth: '600px',
-      margin: '0 auto',
-      lineHeight: '1.6'
-    },
-    billingToggle: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '1rem',
-      marginBottom: '2rem',
-      background: '#f3f4f6',
-      borderRadius: '2rem',
-      padding: '0.25rem',
-      width: 'fit-content',
-      margin: '0 auto 3rem'
-    },
-    toggleButton: {
-      padding: '0.75rem 2rem',
-      border: 'none',
-      background: 'transparent',
-      borderRadius: '1.5rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease'
-    },
-    activeToggle: {
-      background: 'white',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-      color: '#2563eb'
-    },
-    plansGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-      gap: '2rem',
-      marginBottom: '4rem'
-    },
-    planCard: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '2px solid #e5e7eb',
-      padding: '2rem',
-      position: 'relative',
-      transition: 'all 0.3s ease',
-      display: 'flex',
-      flexDirection: 'column'
-    },
-    popularBadge: {
-      position: 'absolute',
-      top: '-12px',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-      color: 'white',
-      padding: '0.5rem 1.5rem',
-      borderRadius: '1rem',
-      fontSize: '0.875rem',
-      fontWeight: '600'
-    },
-    planHeader: {
-      marginBottom: '1.5rem'
-    },
-    planName: {
-      fontSize: '1.5rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    planDescription: {
-      color: '#6b7280',
-      fontSize: '0.875rem'
-    },
-    priceSection: {
-      marginBottom: '2rem'
-    },
-    price: {
-      fontSize: '3rem',
-      fontWeight: '800',
-      color: '#1f2937',
-      lineHeight: '1'
-    },
-    pricePeriod: {
-      color: '#6b7280',
-      fontSize: '1rem',
-      marginLeft: '0.25rem'
-    },
-    yearlyNote: {
-      fontSize: '0.875rem',
-      color: '#10b981',
-      marginTop: '0.5rem'
-    },
-    featuresList: {
-      flex: 1,
-      marginBottom: '2rem'
-    },
-    featureItem: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      marginBottom: '0.75rem'
-    },
-    featureIcon: {
-      flexShrink: 0
-    },
-    featureText: {
-      color: '#374151',
-      fontSize: '0.875rem'
-    },
-    ctaButton: {
-      width: '100%',
-      padding: '1rem',
-      border: 'none',
-      borderRadius: '0.75rem',
-      fontSize: '1rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease'
-    },
-    freeButton: {
-      background: '#f3f4f6',
-      color: '#374151'
-    },
-    proButton: {
-      background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-      color: 'white'
-    },
-    businessButton: {
-      background: '#1f2937',
-      color: 'white'
-    },
-    benefitsSection: {
-      background: 'linear-gradient(135deg, #f0f9ff, #e0f2fe)',
-      borderRadius: '1.5rem',
-      padding: '3rem 2rem',
-      marginBottom: '3rem'
-    },
-    benefitsTitle: {
-      textAlign: 'center',
-      fontSize: '2rem',
-      fontWeight: '700',
-      color: '#0369a1',
-      marginBottom: '2rem'
-    },
-    benefitsGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-      gap: '2rem',
-      maxWidth: '1000px',
-      margin: '0 auto'
-    },
-    benefitCard: {
-      textAlign: 'center',
-      padding: '1.5rem'
-    },
-    benefitIcon: {
-      width: '4rem',
-      height: '4rem',
-      background: 'white',
-      borderRadius: '50%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      margin: '0 auto 1rem',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-    },
-    benefitTitle: {
-      fontSize: '1.125rem',
-      fontWeight: '600',
-      color: '#0369a1',
-      marginBottom: '0.5rem'
-    },
-    benefitDescription: {
-      color: '#0c4a6e',
-      fontSize: '0.875rem'
-    },
-    faqSection: {
-      marginBottom: '3rem'
-    },
-    faqTitle: {
-      fontSize: '2rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      textAlign: 'center',
-      marginBottom: '2rem'
-    },
-    faqGrid: {
-      maxWidth: '800px',
-      margin: '0 auto',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '1rem'
-    },
-    faqItem: {
-      background: 'white',
-      borderRadius: '0.75rem',
-      border: '1px solid #e5e7eb',
-      padding: '1.5rem',
-      cursor: 'pointer'
-    },
-    faqQuestion: {
-      fontSize: '1rem',
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '0.5rem'
-    },
-    faqAnswer: {
-      color: '#6b7280',
-      fontSize: '0.875rem',
-      lineHeight: '1.5'
-    },
-    paymentSection: {
-      background: 'white',
-      borderRadius: '1rem',
-      border: '1px solid #e5e7eb',
-      padding: '2rem',
-      maxWidth: '500px',
-      margin: '0 auto'
-    },
-    paymentTitle: {
-      fontSize: '1.5rem',
-      fontWeight: '600',
-      color: '#1f2937',
-      marginBottom: '1.5rem',
-      textAlign: 'center'
-    },
-    paymentMethod: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '1rem',
-      padding: '1rem',
-      border: '1px solid #e5e7eb',
-      borderRadius: '0.75rem',
-      marginBottom: '1rem',
-      cursor: 'pointer'
-    },
-    paymentIcon: {
-      width: '2.5rem',
-      height: '2.5rem',
-      background: '#f3f4f6',
-      borderRadius: '0.5rem',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    },
-    paymentInfo: {
-      flex: 1
-    },
-    paymentName: {
-      fontWeight: '600',
-      color: '#1f2937'
-    },
-    paymentDescription: {
-      fontSize: '0.875rem',
-      color: '#6b7280'
-    },
-    totalSection: {
-      marginTop: '2rem',
-      paddingTop: '1.5rem',
-      borderTop: '2px solid #e5e7eb'
-    },
-    totalRow: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      marginBottom: '0.5rem'
-    },
-    totalLabel: {
-      color: '#6b7280'
-    },
-    totalValue: {
-      fontWeight: '600',
-      color: '#1f2937'
-    },
-    finalTotal: {
-      fontSize: '1.5rem',
-      fontWeight: '700',
-      color: '#10b981'
-    },
-    confirmButton: {
-      width: '100%',
-      padding: '1rem',
-      background: 'linear-gradient(135deg, #10b981, #059669)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '0.75rem',
-      fontSize: '1.125rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      marginTop: '2rem'
-    }
-  };
+  if (loading) {
+    return <div className="subscribe-loading">Loading subscription plans...</div>;
+  }
 
-  const handleSubscribe = () => {
-    const plan = subscriptionPlans.find(p => p.id === selectedPlan);
-    alert(`Subscribing to ${plan.name} plan (${billingCycle}) for ₦${plan.price[billingCycle].toLocaleString()}`);
-    // In real app, this would process payment
-  };
+  // If user already has an active subscription, show a message and link to manage
+  if (currentSubscription?.status === 'active') {
+    return (
+      <div className="subscribe-container">
+        <div className="active-subscription-message">
+          <h2>You already have an active subscription</h2>
+          <p>Your current plan: <strong>{currentSubscription.plan?.name}</strong></p>
+          <button className="btn-primary" onClick={() => navigate('/dashboard/provider/subscription')}>
+            Manage Subscription
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={styles.container}>
+    <div className="subscribe-container">
       {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>Upgrade Your Service Business</h1>
-        <p style={styles.subtitle}>
+      <div className="subscribe-header">
+        <h1 className="subscribe-title">Upgrade Your Service Business</h1>
+        <p className="subscribe-subtitle">
           Choose the perfect plan to grow your service business on RentEasy. 
           Get more visibility, more bookings, and higher earnings.
         </p>
       </div>
 
-      {/* Billing Toggle */}
-      <div style={styles.billingToggle}>
-        <button
-          onClick={() => setBillingCycle('monthly')}
-          style={{
-            ...styles.toggleButton,
-            ...(billingCycle === 'monthly' ? styles.activeToggle : {})
-          }}
-        >
-          Monthly Billing
-        </button>
-        <button
-          onClick={() => setBillingCycle('yearly')}
-          style={{
-            ...styles.toggleButton,
-            ...(billingCycle === 'yearly' ? styles.activeToggle : {})
-          }}
-        >
-          Yearly Billing
-          <span style={{color: '#10b981', marginLeft: '0.5rem'}}>
-            Save 16%
-          </span>
-        </button>
-      </div>
+      {error && <div className="error-banner">{error}</div>}
 
-      {/* Subscription Plans */}
-      <div style={styles.plansGrid}>
-        {subscriptionPlans.map((plan) => (
-          <div
-            key={plan.id}
-            style={{
-              ...styles.planCard,
-              borderColor: plan.popular ? '#2563eb' : '#e5e7eb',
-              boxShadow: plan.popular ? '0 20px 40px rgba(37, 99, 235, 0.1)' : 'none',
-              transform: plan.popular ? 'translateY(-8px)' : 'none'
-            }}
-          >
-            {plan.popular && (
-              <div style={styles.popularBadge}>
-                Most Popular
-              </div>
-            )}
-            
-            <div style={styles.planHeader}>
-              <h3 style={styles.planName}>{plan.name}</h3>
-              <p style={styles.planDescription}>{plan.description}</p>
-            </div>
-
-            <div style={styles.priceSection}>
-              <div>
-                <span style={styles.price}>
-                  ₦{plan.price[billingCycle].toLocaleString()}
-                </span>
-                <span style={styles.pricePeriod}>
-                  /{billingCycle === 'monthly' ? 'month' : 'year'}
-                </span>
-              </div>
-              {billingCycle === 'yearly' && plan.price.yearly > 0 && (
-                <div style={styles.yearlyNote}>
-                  <Gift size={14} style={{marginRight: '0.25rem'}} />
-                  Save ₦{(plan.price.monthly * 12 - plan.price.yearly).toLocaleString()} yearly
-                </div>
-              )}
-            </div>
-
-            <div style={styles.featuresList}>
-              {plan.features.map((feature, index) => (
-                <div key={index} style={styles.featureItem}>
-                  <div style={styles.featureIcon}>
-                    {feature.included ? (
-                      <CheckCircle size={18} color="#10b981" />
-                    ) : (
-                      <XCircle size={18} color="#ef4444" />
-                    )}
-                  </div>
-                  <span style={styles.featureText}>{feature.text}</span>
-                </div>
-              ))}
-            </div>
-
+      {step === 'select' && (
+        <>
+          {/* Billing Toggle */}
+          <div className="billing-toggle">
             <button
-              onClick={() => plan.id === 'free' ? null : handleSubscribe()}
-              style={{
-                ...styles.ctaButton,
-                ...styles[`${plan.id}Button`]
-              }}
-              onMouseEnter={(e) => {
-                if (plan.id !== 'free') {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.15)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (plan.id !== 'free') {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }
-              }}
+              onClick={() => setBillingCycle('monthly')}
+              className={`toggle-button ${billingCycle === 'monthly' ? 'active' : ''}`}
             >
-              {plan.cta}
+              Monthly Billing
+            </button>
+            <button
+              onClick={() => setBillingCycle('yearly')}
+              className={`toggle-button ${billingCycle === 'yearly' ? 'active' : ''}`}
+            >
+              Yearly Billing
+              <span className="saving-badge">Save 16%</span>
             </button>
           </div>
-        ))}
-      </div>
+
+          {/* Subscription Plans */}
+          <div className="plans-grid">
+            {plans.map((plan) => {
+              const isCurrentPlan = currentSubscription?.plan_id === plan.id;
+              const isSelected = selectedPlan?.id === plan.id;
+              const price = billingCycle === 'monthly' ? plan.price : plan.price * 10; // yearly discount placeholder
+              const yearlyPrice = plan.price * 10; // 2 months free
+              const monthlyEquivalent = yearlyPrice / 12;
+
+              return (
+                <div
+                  key={plan.id}
+                  className={`plan-card ${plan.popular ? 'popular' : ''} ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleSelectPlan(plan)}
+                >
+                  {plan.popular && (
+                    <div className="popular-badge">
+                      Most Popular
+                    </div>
+                  )}
+                  
+                  <div className="plan-header">
+                    <h3 className="plan-name">{plan.name}</h3>
+                    <p className="plan-description">{plan.description}</p>
+                  </div>
+
+                  <div className="price-section">
+                    <div>
+                      <span className="price">
+                        ₦{price.toLocaleString()}
+                      </span>
+                      <span className="price-period">
+                        /{billingCycle === 'monthly' ? 'month' : 'year'}
+                      </span>
+                    </div>
+                    {billingCycle === 'yearly' && plan.price > 0 && (
+                      <div className="yearly-note">
+                        <Gift size={14} />
+                        Save ₦{(plan.price * 12 - yearlyPrice).toLocaleString()} yearly
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="features-list">
+                    {plan.features?.map((feature, index) => (
+                      <div key={index} className="feature-item">
+                        <div className="feature-icon">
+                          <CheckCircle size={18} color="#10b981" />
+                        </div>
+                        <span className="feature-text">{feature}</span>
+                      </div>
+                    ))}
+                    {plan.limitations?.map((limitation, index) => (
+                      <div key={`lim-${index}`} className="feature-item">
+                        <div className="feature-icon">
+                          <XCircle size={18} color="#ef4444" />
+                        </div>
+                        <span className="feature-text">{limitation}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {isCurrentPlan && (
+                    <div className="current-plan-badge">Current Plan</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Proceed Button */}
+          {selectedPlan && selectedPlan.price > 0 && (
+            <div className="proceed-bar">
+              <p>Selected: {selectedPlan.name} – ₦{selectedPlan.price}/month</p>
+              <button className="btn-primary" onClick={handleProceedToPayment} disabled={submitting}>
+                {submitting ? 'Processing...' : 'Proceed to Payment'}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {step === 'payment' && paymentRecord && (
+        <div className="payment-step">
+          <h2>Payment Instructions</h2>
+          <div className="payment-details">
+            <div className="reference-box">
+              <strong>Payment Reference:</strong> {paymentRecord.reference}
+              <p className="small">Use this reference when making your transfer</p>
+            </div>
+
+            <div className="bank-details">
+              <h4>Bank Transfer Details</h4>
+              <p><strong>Bank:</strong> {bankDetails.bankName}</p>
+              <p><strong>Account Number:</strong> {bankDetails.accountNumber}</p>
+              <p><strong>Account Name:</strong> {bankDetails.accountName}</p>
+              <p><strong>Amount:</strong> ₦{paymentRecord.amount.toLocaleString()}</p>
+            </div>
+
+            <div className="upload-proof">
+              <h4>Upload Proof of Payment</h4>
+              <input type="file" accept="image/*" onChange={handleFileChange} />
+              {file && <p>Selected: {file.name}</p>}
+              {error && <p className="error">{error}</p>}
+              <div className="action-buttons">
+                <button onClick={handleUploadProof} disabled={submitting} className="btn-primary">
+                  {submitting ? 'Uploading...' : 'Submit Proof'}
+                </button>
+                <button onClick={() => setStep('select')} className="btn-secondary">Back</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Benefits Section */}
-      <div style={styles.benefitsSection}>
-        <h2 style={styles.benefitsTitle}>Why Upgrade to Professional?</h2>
-        <div style={styles.benefitsGrid}>
+      <div className="benefits-section">
+        <h2 className="benefits-title">Why Upgrade to Professional?</h2>
+        <div className="benefits-grid">
           {benefits.map((benefit, index) => (
-            <div key={index} style={styles.benefitCard}>
-              <div style={styles.benefitIcon}>
+            <div key={index} className="benefit-card">
+              <div className="benefit-icon">
                 {benefit.icon}
               </div>
-              <h4 style={styles.benefitTitle}>{benefit.title}</h4>
-              <p style={styles.benefitDescription}>{benefit.description}</p>
+              <h4 className="benefit-title">{benefit.title}</h4>
+              <p className="benefit-description">{benefit.description}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* FAQ Section */}
-      <div style={styles.faqSection}>
-        <h2 style={styles.faqTitle}>Frequently Asked Questions</h2>
-        <div style={styles.faqGrid}>
+      <div className="faq-section">
+        <h2 className="faq-title">Frequently Asked Questions</h2>
+        <div className="faq-grid">
           {[
             {
               q: 'Can I cancel my subscription anytime?',
@@ -547,81 +349,13 @@ const ProviderSubscribe = () => {
               a: 'You can upgrade or downgrade your plan at any time from your account settings. Changes take effect immediately.'
             }
           ].map((item, index) => (
-            <div key={index} style={styles.faqItem}>
-              <div style={styles.faqQuestion}>{item.q}</div>
-              <div style={styles.faqAnswer}>{item.a}</div>
+            <div key={index} className="faq-item">
+              <div className="faq-question">{item.q}</div>
+              <div className="faq-answer">{item.a}</div>
             </div>
           ))}
         </div>
       </div>
-
-      {/* Payment Section */}
-      {selectedPlan !== 'free' && (
-        <div style={styles.paymentSection}>
-          <h3 style={styles.paymentTitle}>Complete Your Subscription</h3>
-          
-          <div style={styles.paymentMethod}>
-            <div style={styles.paymentIcon}>
-              <CreditCard size={24} color="#2563eb" />
-            </div>
-            <div style={styles.paymentInfo}>
-              <div style={styles.paymentName}>Credit/Debit Card</div>
-              <div style={styles.paymentDescription}>Pay securely with your card</div>
-            </div>
-          </div>
-
-          <div style={styles.paymentMethod}>
-            <div style={styles.paymentIcon}>
-              <Shield size={24} color="#10b981" />
-            </div>
-            <div style={styles.paymentInfo}>
-              <div style={styles.paymentName}>Bank Transfer</div>
-              <div style={styles.paymentDescription}>Transfer directly to our bank account</div>
-            </div>
-          </div>
-
-          <div style={styles.totalSection}>
-            <div style={styles.totalRow}>
-              <span style={styles.totalLabel}>Plan Price</span>
-              <span style={styles.totalValue}>
-                ₦{subscriptionPlans.find(p => p.id === selectedPlan)?.price[billingCycle].toLocaleString()}
-              </span>
-            </div>
-            <div style={styles.totalRow}>
-              <span style={styles.totalLabel}>VAT (7.5%)</span>
-              <span style={styles.totalValue}>
-                ₦{(subscriptionPlans.find(p => p.id === selectedPlan)?.price[billingCycle] * 0.075).toLocaleString()}
-              </span>
-            </div>
-            <div style={{...styles.totalRow, marginTop: '1rem'}}>
-              <span style={styles.totalLabel}>Total Amount</span>
-              <span style={{...styles.totalValue, ...styles.finalTotal}}>
-                ₦{(
-                  subscriptionPlans.find(p => p.id === selectedPlan)?.price[billingCycle] * 1.075
-                ).toLocaleString()}
-              </span>
-            </div>
-          </div>
-
-          <button style={styles.confirmButton} onClick={handleSubscribe}>
-            Subscribe Now
-          </button>
-
-          <div style={{
-            textAlign: 'center',
-            marginTop: '1rem',
-            fontSize: '0.875rem',
-            color: '#6b7280',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.5rem'
-          }}>
-            <Shield size={14} />
-            Secure payment • 256-bit encryption
-          </div>
-        </div>
-      )}
     </div>
   );
 };

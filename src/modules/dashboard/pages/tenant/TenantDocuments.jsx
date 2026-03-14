@@ -1,86 +1,50 @@
 // src/modules/dashboard/pages/tenant/TenantDocuments.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../shared/context/AuthContext';
+import { supabase } from '../../../../shared/lib/supabaseClient';
 import './TenantDocuments.css';
 
 const TenantDocuments = () => {
   const { user } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadCategory, setUploadCategory] = useState('identification');
+  const [uploading, setUploading] = useState(false);
+
+  // Categories for document classification
+  const categories = [
+    'identification',
+    'income',
+    'agreements',
+    'utility_bills',
+    'references',
+    'other'
+  ];
 
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    if (user) loadDocuments();
+  }, [user]);
 
-  const loadDocuments = () => {
+  const loadDocuments = async () => {
     setLoading(true);
-    
-    // Mock documents data
-    const mockDocuments = [
-      {
-        id: '1',
-        name: 'National ID Card',
-        category: 'identification',
-        uploadedDate: '2024-12-01',
-        size: '2.4 MB',
-        type: 'pdf',
-        status: 'verified',
-        downloadUrl: '#'
-      },
-      {
-        id: '2',
-        name: 'Proof of Income - December 2024',
-        category: 'income',
-        uploadedDate: '2024-12-05',
-        size: '1.8 MB',
-        type: 'pdf',
-        status: 'pending',
-        downloadUrl: '#'
-      },
-      {
-        id: '3',
-        name: 'Tenant-Landlord Agreement',
-        category: 'agreements',
-        uploadedDate: '2024-11-15',
-        size: '3.2 MB',
-        type: 'pdf',
-        status: 'verified',
-        downloadUrl: '#'
-      },
-      {
-        id: '4',
-        name: 'Utility Bill - November 2024',
-        category: 'utility_bills',
-        uploadedDate: '2024-12-10',
-        size: '1.5 MB',
-        type: 'jpg',
-        status: 'verified',
-        downloadUrl: '#'
-      },
-      {
-        id: '5',
-        name: 'Reference Letter - Previous Landlord',
-        category: 'references',
-        uploadedDate: '2024-11-20',
-        size: '2.1 MB',
-        type: 'pdf',
-        status: 'verified',
-        downloadUrl: '#'
-      }
-    ];
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from('estate_documents')
+        .select('*')
+        .eq('client_id', user.id)
+        .order('created_at', { ascending: false });
 
-    const savedDocs = JSON.parse(localStorage.getItem(`tenant_documents_${user?.id}`) || 'null');
-    
-    if (savedDocs) {
-      setDocuments(savedDocs);
-    } else {
-      setDocuments(mockDocuments);
-      localStorage.setItem(`tenant_documents_${user?.id}`, JSON.stringify(mockDocuments));
+      if (error) throw error;
+      setDocuments(data || []);
+    } catch (err) {
+      console.error('Error loading documents:', err);
+      setError('Failed to load documents. Please refresh.');
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const getCategoryIcon = (category) => {
@@ -117,58 +81,122 @@ const TenantDocuments = () => {
     return badges[status] || { label: status, class: 'badge-secondary' };
   };
 
-  const handleUpload = (e) => {
+  const handleUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const newDoc = {
-      id: `doc_${Date.now()}`,
-      name: file.name,
-      category: uploadCategory,
-      uploadedDate: new Date().toISOString().split('T')[0],
-      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      type: file.name.split('.').pop(),
-      status: 'pending',
-      downloadUrl: '#'
-    };
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB');
+      return;
+    }
 
-    const updatedDocs = [newDoc, ...documents];
-    setDocuments(updatedDocs);
-    localStorage.setItem(`tenant_documents_${user?.id}`, JSON.stringify(updatedDocs));
-    
-    setShowUploadModal(false);
-    alert('Document uploaded successfully! It will be reviewed soon.');
-  };
+    // Validate file type
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Only PDF, JPG, and PNG files are allowed');
+      return;
+    }
 
-  const deleteDocument = (docId) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      const updated = documents.filter(doc => doc.id !== docId);
-      setDocuments(updated);
-      localStorage.setItem(`tenant_documents_${user?.id}`, JSON.stringify(updated));
+    setUploading(true);
+    setError(null);
+
+    try {
+      // 1. Upload file to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `tenant-documents/${user.id}/${fileName}`; // Organized by user ID
+
+      const { error: uploadError } = await supabase.storage
+        .from('estate-documents')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get public URL
+      const { data: urlData } = supabase.storage
+        .from('estate-documents')
+        .getPublicUrl(filePath);
+
+      // 3. Create database record
+      const { data: newDoc, error: insertError } = await supabase
+        .from('estate_documents')
+        .insert({
+          client_id: user.id,
+          name: file.name,
+          file_url: urlData.publicUrl,
+          file_type: file.type,
+          file_size: file.size,
+          category: uploadCategory,
+          status: 'pending',
+          storage_path: filePath, // Save for later deletion
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 4. Update local state
+      setDocuments(prev => [newDoc, ...prev]);
+      setShowUploadModal(false);
+      setUploadCategory('identification');
+      alert('Document uploaded successfully! It will be reviewed soon.');
+    } catch (err) {
+      console.error('Upload error:', err);
+      setError('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
     }
   };
 
-  const tableHeaders = [
-    { key: 'name', label: 'Document Name' },
-    { key: 'category', label: 'Category' },
-    { key: 'uploadedDate', label: 'Uploaded Date' },
-    { key: 'size', label: 'Size' },
-    { key: 'status', label: 'Status' },
-    { key: 'actions', label: 'Actions' }
-  ];
+  const deleteDocument = async (docId) => {
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
 
-  const downloadDocument = (docId) => {
-    alert(`Downloading document ${docId}`);
+    try {
+      const docToDelete = documents.find(d => d.id === docId);
+      if (!docToDelete) return;
+
+      // 1. Delete from storage if we have the path
+      if (docToDelete.storage_path) {
+        const { error: storageError } = await supabase.storage
+          .from('estate-documents')
+          .remove([docToDelete.storage_path]);
+
+        if (storageError) throw storageError;
+      }
+
+      // 2. Delete database record
+      const { error: deleteError } = await supabase
+        .from('estate_documents')
+        .delete()
+        .eq('id', docId)
+        .eq('client_id', user.id); // Extra safety
+
+      if (deleteError) throw deleteError;
+
+      // 3. Update local state
+      setDocuments(prev => prev.filter(doc => doc.id !== docId));
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('Failed to delete document. Please try again.');
+    }
   };
 
-  const categories = [
-    'identification',
-    'income', 
-    'agreements',
-    'utility_bills',
-    'references',
-    'other'
-  ];
+  const downloadDocument = (doc) => {
+    // Open in new tab (if PDF) or trigger download
+    window.open(doc.file_url, '_blank');
+  };
+
+  // Stats calculation
+  const totalDocs = documents.length;
+  const verifiedCount = documents.filter(d => d.status === 'verified').length;
+  const pendingCount = documents.filter(d => d.status === 'pending').length;
+  // Profile completeness: for now a simple placeholder
+  const completeness = Math.min(85, Math.round((verifiedCount / 3) * 100)); // Just an example
 
   if (loading) {
     return (
@@ -181,6 +209,7 @@ const TenantDocuments = () => {
 
   return (
     <div className="tenant-documents">
+      {/* Header */}
       <div className="documents-header">
         <div className="header-content">
           <h1>My Documents</h1>
@@ -194,37 +223,41 @@ const TenantDocuments = () => {
         </button>
       </div>
 
+      {/* Error display */}
+      {error && (
+        <div className="error-banner">
+          <p>{error}</p>
+          <button onClick={loadDocuments}>Retry</button>
+        </div>
+      )}
+
       {/* Document Stats */}
       <div className="document-stats">
         <div className="stat-card">
           <div className="stat-icon">📄</div>
           <div className="stat-info">
-            <span className="stat-value">{documents.length}</span>
+            <span className="stat-value">{totalDocs}</span>
             <span className="stat-label">Total Documents</span>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon">✅</div>
           <div className="stat-info">
-            <span className="stat-value">
-              {documents.filter(d => d.status === 'verified').length}
-            </span>
+            <span className="stat-value">{verifiedCount}</span>
             <span className="stat-label">Verified</span>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon">⏳</div>
           <div className="stat-info">
-            <span className="stat-value">
-              {documents.filter(d => d.status === 'pending').length}
-            </span>
+            <span className="stat-value">{pendingCount}</span>
             <span className="stat-label">Pending Review</span>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon">📊</div>
           <div className="stat-info">
-            <span className="stat-value">85%</span>
+            <span className="stat-value">{completeness}%</span>
             <span className="stat-label">Profile Completeness</span>
           </div>
         </div>
@@ -290,64 +323,71 @@ const TenantDocuments = () => {
               </tr>
             </thead>
             <tbody>
-  {documents.length > 0 ? (
-    documents.map(doc => {
-      const statusBadge = getStatusBadge(doc.status);
-      return (
-        <tr key={doc.id}>
-          <td data-label="Document Name">
-            <div className="document-name">
-              <span className="doc-icon">
-                {doc.type === 'pdf' ? '📕' : 
-                 doc.type === 'jpg' || doc.type === 'png' ? '🖼️' : '📄'}
-              </span>
-              <span>{doc.name}</span>
-            </div>
-          </td>
-          <td data-label="Category">
-            <span className="category-label">
-              {getCategoryIcon(doc.category)} {getCategoryLabel(doc.category)}
-            </span>
-          </td>
-          <td data-label="Uploaded Date">{doc.uploadedDate}</td>
-          <td data-label="Size">{doc.size}</td>
-          <td data-label="Status">
-          <span className={`status-badge ${statusBadge.class}`}>
-              {statusBadge.label}
-            </span>
-          </td>
-          <td data-label="Actions">
-            <div className="document-actions">
-              <button 
-                className="btn-action download"
-                onClick={() => downloadDocument(doc.id)}
-              >
-                Download
-              </button>
-              <button 
-                className="btn-action delete"
-                onClick={() => deleteDocument(doc.id)}
-              >
-                Delete
-              </button>
-            </div>
-          </td>
-        </tr>
-      );
-    })
-  ) : (
-    <tr>
-      <td colSpan="6" className="empty-table">
-        No documents found. Upload your first document to get started.
-      </td>
-    </tr>
-  )}
-</tbody>
+              {documents.length > 0 ? (
+                documents.map(doc => {
+                  const statusBadge = getStatusBadge(doc.status);
+                  // Format date
+                  const uploadedDate = new Date(doc.created_at).toLocaleDateString();
+                  // Format size
+                  const size = doc.file_size 
+                    ? (doc.file_size / 1024).toFixed(1) + ' KB'
+                    : '—';
+
+                  return (
+                    <tr key={doc.id}>
+                      <td data-label="Document Name">
+                        <div className="document-name">
+                          <span className="doc-icon">
+                            {doc.file_type?.includes('pdf') ? '📕' : 
+                             doc.file_type?.includes('image') ? '🖼️' : '📄'}
+                          </span>
+                          <span>{doc.name}</span>
+                        </div>
+                      </td>
+                      <td data-label="Category">
+                        <span className="category-label">
+                          {getCategoryIcon(doc.category)} {getCategoryLabel(doc.category)}
+                        </span>
+                      </td>
+                      <td data-label="Uploaded Date">{uploadedDate}</td>
+                      <td data-label="Size">{size}</td>
+                      <td data-label="Status">
+                        <span className={`status-badge ${statusBadge.class}`}>
+                          {statusBadge.label}
+                        </span>
+                      </td>
+                      <td data-label="Actions">
+                        <div className="document-actions">
+                          <button 
+                            className="btn-action download"
+                            onClick={() => downloadDocument(doc)}
+                          >
+                            Download
+                          </button>
+                          <button 
+                            className="btn-action delete"
+                            onClick={() => deleteDocument(doc.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan="6" className="empty-table">
+                    No documents found. Upload your first document to get started.
+                  </td>
+                </tr>
+              )}
+            </tbody>
           </table>
         </div>
       </div>
 
-      {/* Required Documents */}
+      {/* Required Documents (static guidance) */}
       <div className="required-documents">
         <h3>Required Documents for Verification</h3>
         <div className="requirements-list">
@@ -424,11 +464,18 @@ const TenantDocuments = () => {
                     onChange={handleUpload}
                     accept=".pdf,.jpg,.jpeg,.png"
                     className="file-input"
+                    disabled={uploading}
                   />
                   <div className="upload-placeholder">
                     <span className="upload-icon">📤</span>
-                    <p>Click to browse or drag & drop files</p>
-                    <small>PDF, JPG, PNG up to 10MB</small>
+                    {uploading ? (
+                      <p>Uploading...</p>
+                    ) : (
+                      <>
+                        <p>Click to browse or drag & drop files</p>
+                        <small>PDF, JPG, PNG up to 10MB</small>
+                      </>
+                    )}
                   </div>
                 </label>
               </div>
@@ -437,6 +484,7 @@ const TenantDocuments = () => {
                 <button 
                   className="btn btn-outline"
                   onClick={() => setShowUploadModal(false)}
+                  disabled={uploading}
                 >
                   Cancel
                 </button>

@@ -1,3 +1,4 @@
+// src/modules/estate-firm/components/ServicePostForm.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -5,6 +6,8 @@ import {
   FileText, Clock, Image, CheckCircle,
   X, Upload, Save, Globe
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { nigerianStates } from '../../../shared/data/nigerianLocations';
 import './ServicePostForm.css';
 
 const ServicePostForm = ({ firmDetails, onSuccess }) => {
@@ -13,19 +16,18 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
     title: '',
     description: '',
     category: 'property-management',
-    serviceType: 'professional', // professional, maintenance, legal, etc.
-    priceModel: 'fixed', // fixed, hourly, percentage, quote
+    serviceType: 'professional',
+    priceModel: 'fixed',
     price: '',
     hourlyRate: '',
     percentage: '',
     location: '',
-    coverage: 'lagos', // specific city, state, nationwide
+    coverage: 'lagos',
     serviceAreas: [],
-    duration: '', // estimated time to complete
+    duration: '',
     features: [],
     benefits: [],
     requirements: [],
-    images: [],
     contactEmail: firmDetails?.contact?.email || '',
     contactPhone: firmDetails?.contact?.phone || '',
     website: firmDetails?.contact?.website || '',
@@ -40,67 +42,22 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [imageFiles, setImageFiles] = useState([]); // array of { file, previewUrl }
 
-  // Service categories for marketplace
+  // Service categories (unchanged)
   const serviceCategories = [
-    {
-      id: 'property-management',
-      name: 'Property Management',
-      description: 'Full property management services',
-      icon: '🏢'
-    },
-    {
-      id: 'valuation',
-      name: 'Property Valuation',
-      description: 'Professional property appraisal',
-      icon: '💰'
-    },
-    {
-      id: 'tenant-screening',
-      name: 'Tenant Screening',
-      description: 'Background checks & verification',
-      icon: '🔍'
-    },
-    {
-      id: 'legal-services',
-      name: 'Legal Services',
-      description: 'Documentation & legal support',
-      icon: '⚖️'
-    },
-    {
-      id: 'maintenance',
-      name: 'Maintenance & Repairs',
-      description: 'Property maintenance services',
-      icon: '🔧'
-    },
-    {
-      id: 'property-marketing',
-      name: 'Property Marketing',
-      description: 'Marketing & advertising services',
-      icon: '📢'
-    },
-    {
-      id: 'consultation',
-      name: 'Consultation',
-      description: 'Professional advice & planning',
-      icon: '💼'
-    },
-    {
-      id: 'rent-collection',
-      name: 'Rent Collection',
-      description: 'Rent payment management',
-      icon: '💳'
-    }
+    { id: 'property-management', name: 'Property Management', description: 'Full property management services', icon: '🏢' },
+    { id: 'valuation', name: 'Property Valuation', description: 'Professional property appraisal', icon: '💰' },
+    { id: 'tenant-screening', name: 'Tenant Screening', description: 'Background checks & verification', icon: '🔍' },
+    { id: 'legal-services', name: 'Legal Services', description: 'Documentation & legal support', icon: '⚖️' },
+    { id: 'maintenance', name: 'Maintenance & Repairs', description: 'Property maintenance services', icon: '🔧' },
+    { id: 'property-marketing', name: 'Property Marketing', description: 'Marketing & advertising services', icon: '📢' },
+    { id: 'consultation', name: 'Consultation', description: 'Professional advice & planning', icon: '💼' },
+    { id: 'rent-collection', name: 'Rent Collection', description: 'Rent payment management', icon: '💳' }
   ];
 
-  // Nigerian states for coverage
-  const nigerianStates = [
-    'Lagos', 'Abuja', 'Rivers', 'Oyo', 'Kano', 'Edo', 'Delta',
-    'Ogun', 'Kaduna', 'Plateau', 'Akwa Ibom', 'Cross River',
-    'Imo', 'Enugu', 'Anambra', 'Abia', 'Nationwide'
-  ];
-
-  // Common service features
+  // Common service features (unchanged)
   const commonFeatures = [
     '24/7 Support', 'Online Tracking', 'Detailed Reports',
     'Fast Response', 'Certified Professionals', 'Guaranteed Service',
@@ -109,24 +66,18 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleCategorySelect = (categoryId) => {
-    setFormData(prev => ({
-      ...prev,
-      category: categoryId
-    }));
+    setFormData(prev => ({ ...prev, category: categoryId }));
   };
 
-  const handleServiceAreaToggle = (area) => {
+  const handleServiceAreaToggle = (areaValue) => {
     setFormData(prev => {
-      const areas = prev.serviceAreas.includes(area)
-        ? prev.serviceAreas.filter(a => a !== area)
-        : [...prev.serviceAreas, area];
+      const areas = prev.serviceAreas.includes(areaValue)
+        ? prev.serviceAreas.filter(a => a !== areaValue)
+        : [...prev.serviceAreas, areaValue];
       return { ...prev, serviceAreas: areas };
     });
   };
@@ -162,11 +113,20 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
 
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
-    const imageUrls = files.map(file => URL.createObjectURL(file));
-    setFormData(prev => ({
-      ...prev,
-      images: [...prev.images, ...imageUrls]
+    const newImages = files.map(file => ({
+      file,
+      previewUrl: URL.createObjectURL(file)
     }));
+    setImageFiles(prev => [...prev, ...newImages]);
+  };
+
+  const removeImage = (index) => {
+    setImageFiles(prev => {
+      const newImages = [...prev];
+      URL.revokeObjectURL(newImages[index].previewUrl);
+      newImages.splice(index, 1);
+      return newImages;
+    });
   };
 
   const validateForm = () => {
@@ -203,54 +163,71 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsSubmitting(true);
+    setUploadingImages(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Upload images (if any)
+      const uploadedUrls = [];
+      for (const img of imageFiles) {
+        if (img.file) {
+          const fileExt = img.file.name.split('.').pop();
+          const fileName = `${firmDetails.id}/${Date.now()}-${Math.random()}.${fileExt}`;
+          const filePath = `service-images/${fileName}`;
 
-      const serviceData = {
-        ...formData,
-        id: `svc_${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        views: 0,
-        inquiries: 0,
-        rating: 0,
-        reviews: 0,
-        // Add firm branding
-        firmBranding: {
-          name: firmDetails.name,
-          logo: firmDetails.logo,
-          verified: firmDetails.verified,
-          yearsExperience: firmDetails.yearsExperience || 0
+          const { error: uploadError } = await supabase.storage
+            .from('service-images')
+            .upload(filePath, img.file);
+
+          if (uploadError) throw uploadError;
+
+          const { data: urlData } = supabase.storage
+            .from('service-images')
+            .getPublicUrl(filePath);
+
+          uploadedUrls.push(urlData.publicUrl);
         }
-      };
-
-      console.log('Service posted:', serviceData);
-
-      // Save to localStorage (mock API)
-      const existingServices = JSON.parse(localStorage.getItem('estateServices') || '[]');
-      existingServices.push(serviceData);
-      localStorage.setItem('estateServices', JSON.stringify(existingServices));
-
-      // Also save to marketplace services
-      const marketplaceServices = JSON.parse(localStorage.getItem('marketplaceServices') || '[]');
-      marketplaceServices.push(serviceData);
-      localStorage.setItem('marketplaceServices', JSON.stringify(marketplaceServices));
-
-      if (onSuccess) {
-        onSuccess(serviceData);
       }
 
+      // Prepare data for Supabase
+      const serviceData = {
+        estate_firm_id: firmDetails.id,
+        title: formData.title,
+        description: formData.description,
+        category: formData.category,
+        service_type: formData.serviceType,
+        price_model: formData.priceModel,
+        price: formData.priceModel === 'fixed' ? parseFloat(formData.price) : null,
+        hourly_rate: formData.priceModel === 'hourly' ? parseFloat(formData.hourlyRate) : null,
+        percentage: formData.priceModel === 'percentage' ? parseFloat(formData.percentage) : null,
+        location: formData.location,
+        coverage: formData.coverage,
+        service_areas: formData.serviceAreas,
+        duration: formData.duration || null,
+        features: formData.features,
+        benefits: formData.benefits,
+        requirements: formData.requirements,
+        images: uploadedUrls,
+        contact_phone: formData.contactPhone,
+        contact_email: formData.contactEmail,
+        website: formData.website || null,
+        status: 'active'
+      };
+
+      const { data, error } = await supabase
+        .from('estate_services')
+        .insert([serviceData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
       alert('Service successfully posted to marketplace!');
-      
-      // Navigate to services page or dashboard
-      navigate('/services');
-      
+      if (onSuccess) onSuccess(data);
+
       // Reset form
       setFormData({
         title: '',
@@ -268,7 +245,6 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
         features: [],
         benefits: [],
         requirements: [],
-        images: [],
         contactEmail: firmDetails?.contact?.email || '',
         contactPhone: firmDetails?.contact?.phone || '',
         website: firmDetails?.contact?.website || '',
@@ -280,18 +256,19 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
           rating: firmDetails?.rating || 0
         }
       });
+      setImageFiles([]);
       setCurrentStep(1);
-
     } catch (error) {
       console.error('Error posting service:', error);
       alert('Failed to post service. Please try again.');
     } finally {
       setIsSubmitting(false);
+      setUploadingImages(false);
     }
   };
 
   const renderStep = () => {
-    switch(currentStep) {
+    switch (currentStep) {
       case 1:
         return (
           <div className="form-step">
@@ -426,6 +403,7 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
               </div>
             </div>
 
+            {/* Price inputs based on model */}
             {formData.priceModel === 'fixed' && (
               <div className="form-group">
                 <label>Price (₦) *</label>
@@ -439,7 +417,6 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
                 />
               </div>
             )}
-
             {formData.priceModel === 'hourly' && (
               <div className="form-group">
                 <label>Hourly Rate (₦) *</label>
@@ -453,7 +430,6 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
                 />
               </div>
             )}
-
             {formData.priceModel === 'percentage' && (
               <div className="form-group">
                 <label>Percentage (%) *</label>
@@ -493,8 +469,8 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
               >
                 <option value="">Select Location</option>
                 {nigerianStates.map(state => (
-                  <option key={state} value={state.toLowerCase()}>
-                    {state}
+                  <option key={state.value} value={state.value}>
+                    {state.label}
                   </option>
                 ))}
               </select>
@@ -505,11 +481,11 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
               <div className="service-areas">
                 {nigerianStates.map(state => (
                   <div
-                    key={state}
-                    className={`area-tag ${formData.serviceAreas.includes(state.toLowerCase()) ? 'selected' : ''}`}
-                    onClick={() => handleServiceAreaToggle(state.toLowerCase())}
+                    key={state.value}
+                    className={`area-tag ${formData.serviceAreas.includes(state.value) ? 'selected' : ''}`}
+                    onClick={() => handleServiceAreaToggle(state.value)}
                   >
-                    {state}
+                    {state.label}
                   </div>
                 ))}
               </div>
@@ -618,11 +594,18 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
                   <small>Showcase your work or office</small>
                 </label>
                 
-                {formData.images.length > 0 && (
+                {imageFiles.length > 0 && (
                   <div className="image-preview">
-                    {formData.images.map((img, index) => (
+                    {imageFiles.map((img, index) => (
                       <div key={index} className="preview-image">
-                        <img src={img} alt={`Service ${index + 1}`} />
+                        <img src={img.previewUrl} alt={`Service ${index + 1}`} />
+                        <button
+                          type="button"
+                          className="remove-image"
+                          onClick={() => removeImage(index)}
+                        >
+                          <X size={16} />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -668,7 +651,6 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
               />
             </div>
 
-            {/* Posting as Firm */}
             <div className="posting-as-firm">
               <div className="firm-badge">
                 <Briefcase size={20} />
@@ -698,11 +680,10 @@ const ServicePostForm = ({ firmDetails, onSuccess }) => {
         <p className="subtitle">Offer your professional services to clients</p>
       </div>
 
-      {/* Progress Steps */}
       <div className="progress-steps">
         {[1, 2, 3, 4].map(step => (
           <div key={step} className="step-container">
-            <div 
+            <div
               className={`step-circle ${currentStep >= step ? 'active' : ''}`}
               onClick={() => currentStep > step && setCurrentStep(step)}
             >

@@ -1,0 +1,10 @@
+.estate-firm-layout {
+  min-height: 100vh;
+  background: #f8fafc;
+}
+
+.estate-firm-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}

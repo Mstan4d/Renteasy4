@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Home, PlusCircle, Upload, Filter, Download, 
-  Edit, Trash2, Eye, DollarSign, MapPin,
-  CheckCircle, XCircle, MoreVertical, Search,
-  Users, TrendingUp, ArrowUpRight, Building
-} from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import PortfolioManager from '../components/PortfolioManager'; // ✅ import the component
 import './EstateProperties.css';
 
 const EstateProperties = () => {
@@ -15,10 +10,6 @@ const EstateProperties = () => {
   const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
   const [externalProperties, setExternalProperties] = useState([]);
-  const [viewMode, setViewMode] = useState('grid');
-  const [selectedProperties, setSelectedProperties] = useState([]);
-  const [sortBy, setSortBy] = useState('recent');
-  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -81,68 +72,31 @@ const EstateProperties = () => {
     }
   };
 
-  const allProperties = [...properties, ...externalProperties];
-
-  const handleDeleteProperty = async (propertyId, isExternal = false) => {
-    if (!window.confirm('Are you sure you want to delete this property?')) return;
-
-    try {
-      if (isExternal) {
-        // Delete external property
-        const { error } = await supabase
-          .from('external_properties')
-          .update({ status: 'terminated' })
-          .eq('id', propertyId);
-
-        if (error) throw error;
-      } else {
-        // Delete RentEasy property
-        const { error } = await supabase
-          .from('listings')
-          .delete()
-          .eq('id', propertyId)
-          .eq('estate_firm_id', user.id);
-
-        if (error) throw error;
-      }
-
-      // Update estate firm stats
-      await supabase.rpc('update_estate_firm_stats', { user_id: user.id });
-
-      // Log activity
-      await supabase.from('activities').insert({
-        user_id: user.id,
-        type: 'property',
-        action: 'delete',
-        description: `Deleted property from portfolio`,
-        created_at: new Date().toISOString()
-      });
-
-      alert('Property deleted successfully!');
-      loadProperties();
-
-    } catch (error) {
-      console.error('Error deleting property:', error);
-      alert('Failed to delete property. Please try again.');
+  // Handlers for PortfolioManager props
+  const handleAddProperty = (type) => {
+    if (type === 'rent-easy') {
+      navigate('/post-property?type=estate-firm');
+    } else {
+      // For external properties, open a modal or navigate to external property form
+      alert('Add external property – feature coming soon');
     }
   };
 
-  const filteredProperties = allProperties.filter(property => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      property.title.toLowerCase().includes(query) ||
-      property.address.toLowerCase().includes(query) ||
-      (property.client?.name || '').toLowerCase().includes(query)
-    );
-  }).sort((a, b) => {
-    if (sortBy === 'recent') return new Date(b.created_at) - new Date(a.created_at);
-    if (sortBy === 'rent-high') return (b.price || 0) - (a.price || 0);
-    if (sortBy === 'rent-low') return (a.price || 0) - (b.price || 0);
-    if (sortBy === 'name') return a.title.localeCompare(b.title);
-    return 0;
-  });
+  const handleBulkUpload = () => {
+    navigate('/dashboard/estate-firm/bulk-upload');
+  };
 
+  const handleEditProperty = (property) => {
+    // For now, just navigate to the listing detail page (if it's a RentEasy property)
+    if (property.source === 'external') {
+      alert('Edit external property – feature coming soon');
+    } else {
+      navigate(`/listings/${property.id}`);
+    }
+  };
+
+  // Calculate stats (optional, for page header)
+  const allProperties = [...properties, ...externalProperties];
   const portfolioStats = {
     totalProperties: allProperties.length,
     rentEasyListings: properties.length,
@@ -169,13 +123,26 @@ const EstateProperties = () => {
       </div>
     );
   }
+
   return (
     <div className="estate-properties">
+      {/* Optional: display stats header */}
+      <div className="portfolio-header">
+        <h2>Property Portfolio</h2>
+        <div className="stats">
+          <span>Total: {portfolioStats.totalProperties}</span>
+          <span>RentEasy: {portfolioStats.rentEasyListings}</span>
+          <span>External: {portfolioStats.externalProperties}</span>
+        </div>
+      </div>
+
       <PortfolioManager 
-        properties={properties}
         onAddProperty={handleAddProperty}
         onBulkUpload={handleBulkUpload}
         onEditProperty={handleEditProperty}
+        // You could also pass the pre‑loaded properties if you want to avoid duplicate fetching,
+        // but PortfolioManager currently fetches its own data. If you prefer to pass them,
+        // you'd need to modify PortfolioManager to accept a `properties` prop.
       />
     </div>
   );

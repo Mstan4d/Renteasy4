@@ -1,4 +1,4 @@
-// src/shared/services/messagesService.js - CORRECTED VERSION
+// src/shared/services/messagesService.js
 import { supabase } from '../lib/supabaseClient';
 
 export const messagesService = {
@@ -25,7 +25,6 @@ export const messagesService = {
         managedById: listing.managed_by
       });
 
-      // ✅ FIXED: Allow these listing types (matching your database)
       const validPosterRoles = ['tenant', 'landlord', 'estate-firm'];
       if (!validPosterRoles.includes(listing.poster_role)) {
         throw new Error(`Invalid listing type: "${listing.poster_role}". Must be one of: ${validPosterRoles.join(', ')}`);
@@ -33,33 +32,28 @@ export const messagesService = {
 
       let chatType, otherPartyId, monitoringManagerId = null;
 
-      // BUSINESS RULE: Determine chat type based on who posted
       switch (listing.poster_role) {
         case 'tenant': // Outgoing tenant
-          // Chat goes to RentEasy manager (not the tenant)
           if (!listing.managed_by) {
-            // If no manager assigned yet, create chat with system
             chatType = 'tenant_manager_pending';
-            otherPartyId = null; // Will be assigned when manager accepts
+            otherPartyId = null;
           } else {
             chatType = 'tenant_manager';
-            otherPartyId = listing.managed_by; // Manager ID
+            otherPartyId = listing.managed_by;
             monitoringManagerId = listing.managed_by;
           }
           break;
 
         case 'landlord':
-          // Chat goes directly to landlord, manager monitors
           chatType = 'tenant_landlord';
-          otherPartyId = listing.user_id; // Landlord ID
-          monitoringManagerId = listing.managed_by; // Manager monitors
+          otherPartyId = listing.user_id;
+          monitoringManagerId = listing.managed_by;
           break;
 
         case 'estate-firm':
-          // Chat goes directly to estate firm
           chatType = 'tenant_estate_firm';
-          otherPartyId = listing.user_id; // Estate firm ID
-          monitoringManagerId = null; // No manager monitoring for estate firms
+          otherPartyId = listing.user_id;
+          monitoringManagerId = null;
           break;
 
         default:
@@ -78,12 +72,10 @@ export const messagesService = {
         return { chatId: existingChat.id, existing: true };
       }
 
-      // BUSINESS RULE: Prevent users from contacting themselves
       if (userId === listing.user_id) {
         throw new Error('You cannot contact yourself for your own listing');
       }
 
-      // Create new chat
       const chatData = {
         property_id: listingId,
         tenant_id: userId,
@@ -93,11 +85,7 @@ export const messagesService = {
         status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        
-        // For tenant-manager chats, set initial system message
-        ...(chatType === 'tenant_manager_pending' && {
-          needs_manager: true
-        })
+        ...(chatType === 'tenant_manager_pending' && { needs_manager: true })
       };
 
       const { data: newChat, error: chatError } = await supabase
@@ -108,9 +96,7 @@ export const messagesService = {
 
       if (chatError) throw chatError;
 
-      // Create initial system message
       let initialMessage = '';
-      
       if (chatType === 'tenant_manager_pending') {
         initialMessage = `👋 Hello! You've expressed interest in this property. A RentEasy manager will be assigned shortly to assist you.`;
       } else if (chatType === 'tenant_manager') {
@@ -121,7 +107,6 @@ export const messagesService = {
         initialMessage = `👋 Hello! You've contacted the estate firm for "${listing.title}". They will respond to your inquiry shortly.`;
       }
 
-      // Insert initial message
       if (initialMessage) {
         await supabase
           .from('messages')
@@ -135,12 +120,10 @@ export const messagesService = {
           }]);
       }
 
-      // If it's a landlord chat and has a manager, notify manager
       if (chatType === 'tenant_landlord' && monitoringManagerId) {
         await this.notifyManager(monitoringManagerId, listingId, newChat.id);
       }
 
-      // If it's a tenant chat without manager, notify available managers
       if (chatType === 'tenant_manager_pending') {
         await this.notifyAvailableManagers(listingId, newChat.id);
       }
@@ -177,7 +160,6 @@ export const messagesService = {
 
   async notifyAvailableManagers(listingId, chatId) {
     try {
-      // Get listing location
       const { data: listing } = await supabase
         .from('listings')
         .select('state, city, lga')
@@ -186,7 +168,6 @@ export const messagesService = {
 
       if (!listing) return;
 
-      // Find verified managers in the same area
       const { data: managers } = await supabase
         .from('profiles')
         .select('id, full_name')
@@ -246,7 +227,6 @@ export const messagesService = {
 
       if (error) throw error;
 
-      // Update chat's updated_at timestamp
       await supabase
         .from('chats')
         .update({ updated_at: new Date().toISOString() })
@@ -277,6 +257,52 @@ export const messagesService = {
       return data;
     } catch (error) {
       console.error('Error fetching user chats:', error);
+      throw error;
+    }
+  },
+
+  // ✅ NEW METHOD: Initiate chat with a provider (estate firm or service provider)
+  async initiateProviderChat(providerId, userId, userRole) {
+    try {
+      // Check if a chat already exists between these two users
+      const { data: existingChat, error: checkError } = await supabase
+        .from('chats')
+        .select('id')
+        .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
+        .or(`participant1_id.eq.${providerId},participant2_id.eq.${providerId}`)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+      if (existingChat) {
+        return { chatId: existingChat.id };
+      }
+
+      // Create new chat
+      const { data: newChat, error: insertError } = await supabase
+        .from('chats')
+        .insert({
+          participant1_id: userId,
+          participant2_id: providerId,
+          state: 'active',
+          chat_type: 'provider',
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Add a system message
+      await supabase.from('messages').insert({
+        chat_id: newChat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        content: 'Chat started',
+        is_system: true
+      });
+
+      return { chatId: newChat.id };
+    } catch (error) {
+      console.error('Error initiating provider chat:', error);
       throw error;
     }
   }

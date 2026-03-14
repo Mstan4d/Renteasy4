@@ -1,13 +1,63 @@
-/* Additional styles for LGAs section */
+.admin-states {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header h1 {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
+.header p {
+  color: #64748b;
+  margin-bottom: 24px;
+}
+
+.permission-warning {
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.add-state {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+}
+
+.state-input, .state-value-input {
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  flex: 1 1 200px;
+}
+
+.btn-add {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .states-list {
-  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .state-item {
-  background: white;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  margin-bottom: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  background: white;
   overflow: hidden;
 }
 
@@ -15,78 +65,118 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 20px;
+  padding: 16px;
   cursor: pointer;
-  transition: background 0.2s;
-}
-
-.state-header:hover {
-  background: #f9f9f9;
+  background: #f8fafc;
 }
 
 .state-title {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
+  flex-wrap: wrap;
 }
 
 .state-name {
   font-weight: 600;
-  color: #333;
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status-badge.active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-badge.small {
+  font-size: 0.7rem;
+  padding: 2px 8px;
 }
 
 .state-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.action-btn.delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.edit-input {
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  width: 150px;
 }
 
 .lgas-section {
-  padding: 15px 20px;
-  background: #f9f9f9;
-  border-top: 1px solid #eee;
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
 }
 
 .lgas-header {
-  margin-bottom: 15px;
+  margin-bottom: 16px;
 }
 
 .lgas-header h4 {
   margin: 0;
-  color: #1a237e;
-  font-size: 16px;
+  font-size: 1rem;
+  color: #475569;
 }
 
 .add-lga {
   display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .lga-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
   border-radius: 4px;
-  font-size: 14px;
+  flex: 1 1 250px;
 }
 
 .btn-add-lga {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 16px;
-  background: #1a237e;
+  background: #10b981;
   color: white;
   border: none;
+  padding: 8px 16px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.btn-add-lga:hover {
-  background: #283593;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .lgas-list {
@@ -98,57 +188,50 @@
 .lga-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px 12px;
-  background: white;
-  border-radius: 4px;
-  border: 1px solid #eee;
+  background: #f9fafb;
+  border-radius: 6px;
+  flex-wrap: wrap;
 }
 
 .lga-icon {
-  color: #1a237e;
+  color: #6b7280;
 }
 
 .lga-name {
   flex: 1;
-  font-size: 14px;
-  color: #333;
+  font-weight: 500;
 }
 
 .lga-action-btn {
-  background: transparent;
+  background: none;
   border: none;
   cursor: pointer;
-  color: #666;
   padding: 4px;
   border-radius: 4px;
+  color: #64748b;
 }
 
 .lga-action-btn:hover {
-  background: #f0f0f0;
-  color: #1a237e;
-}
-
-.lga-action-btn.save {
-  color: #28a745;
-}
-
-.lga-action-btn.cancel {
-  color: #dc3545;
+  background: #e2e8f0;
 }
 
 .lga-action-btn.delete:hover {
-  color: #dc3545;
-}
-
-.status-badge.small {
-  font-size: 11px;
-  padding: 2px 6px;
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .no-lgas {
-  color: #999;
+  color: #94a3b8;
   font-style: italic;
+  padding: 12px;
   text-align: center;
-  padding: 10px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.2rem;
+  color: #64748b;
 }

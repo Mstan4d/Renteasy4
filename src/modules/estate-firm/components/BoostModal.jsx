@@ -1,72 +1,57 @@
-// src/modules/estate-firm/components/SubscriptionModal.jsx
+// src/modules/estate-firm/components/BoostModal.jsx
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
-import { Crown, Check, X, CreditCard, Building, Clock, Upload } from 'lucide-react';
+import { Zap, Check, X, CreditCard, Building, Clock, Upload, Crown } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { paymentService } from '../../../shared/lib/paymentService';
 import { useAuth } from '../../../shared/context/AuthContext';
 
-const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
+const BoostModal = ({ show, onHide, onBoostSuccess }) => {
   const { user } = useAuth();
-  const [plans, setPlans] = useState([]);
-  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [packages, setPackages] = useState([]);
+  const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [step, setStep] = useState('select_plan');
+  const [step, setStep] = useState('select_package'); // select_package, payment
   const [paymentRecord, setPaymentRecord] = useState(null);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
     if (show) {
-      loadPlans();
-      setSelectedPlan(null);
-      setStep('select_plan');
+      loadPackages();
+      // Reset state when modal opens
+      setSelectedPackage(null);
+      setStep('select_package');
       setPaymentRecord(null);
       setFile(null);
       setError(null);
     }
   }, [show]);
 
-  const loadPlans = async () => {
-    setFetchError(null);
+  const loadPackages = async () => {
     try {
-      console.log('Fetching subscription plans...');
       const { data, error } = await supabase
-        .from('subscription_plans')
+        .from('boost_packages')
         .select('*')
         .eq('is_active', true)
         .order('price', { ascending: true });
-      
-      console.log('Supabase response:', { data, error });
-      
       if (error) throw error;
-      
-      if (data && data.length > 0) {
-        console.log('Plans loaded:', data.length, 'items');
-        data.forEach((plan, idx) => {
-          console.log(`Plan ${idx + 1}:`, { name: plan.name, price: plan.price });
-        });
-        setPlans(data);
-        setSelectedPlan(data[0]);
-      } else {
-        setFetchError('No subscription plans found. Please contact support.');
-      }
+      setPackages(data || []);
+      if (data && data.length > 0) setSelectedPackage(data[0]);
     } catch (err) {
-      console.error('Error loading plans:', err);
-      setFetchError(err.message);
+      console.error('Error loading boost packages:', err);
     }
   };
 
-  const handleSelectPlan = (plan) => {
-    setSelectedPlan(plan);
+  const handleSelectPackage = (pkg) => {
+    setSelectedPackage(pkg);
     setError(null);
   };
 
   const handleProceedToPayment = async () => {
-    if (!selectedPlan) {
-      setError('Please select a plan');
+    if (!selectedPackage) {
+      setError('Please select a boost package');
       return;
     }
 
@@ -74,22 +59,22 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
     setError(null);
 
     try {
-      const reference = paymentService.generateReference('SUB');
-      const amount = selectedPlan.price;
+      const reference = paymentService.generateReference('BST');
+      const amount = selectedPackage.price;
 
+      // Create payment record
       const payment = await paymentService.createPayment({
         userId: user.id,
         amount,
-        type: 'subscription',
+        type: 'boost',
         reference,
-        metadata: { plan_id: selectedPlan.id, plan_name: selectedPlan.name },
+        metadata: { package_id: selectedPackage.id, package_name: selectedPackage.name },
       });
 
-      await paymentService.createSubscription({
-        userId: user.id,
-        plan: selectedPlan,
-        paymentId: payment.id,
-      });
+      // Create a pending boost record (active_boosts will be updated by admin after verification)
+      // We create a record in the payments table; the boost will be activated upon admin verification.
+      // Optionally, you could insert into active_boosts with status 'pending' here.
+      // For simplicity, we rely on admin to insert/activate after verifying payment.
 
       setPaymentRecord(payment);
       setStep('payment');
@@ -132,8 +117,8 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
         file,
       });
 
-      alert('Payment proof submitted successfully! Your subscription will be activated once verified by admin.');
-      if (onSubscriptionSuccess) onSubscriptionSuccess();
+      alert('Payment proof uploaded successfully! Your boost will be activated once verified by admin.');
+      if (onBoostSuccess) onBoostSuccess();
       onHide();
     } catch (err) {
       console.error(err);
@@ -146,70 +131,50 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
   const bankDetails = paymentService.getBankDetails();
 
   const renderStep = () => {
-    if (fetchError) {
-      return (
-        <>
-          <Modal.Header closeButton>
-            <Modal.Title>Error</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Alert variant="danger">{fetchError}</Alert>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={onHide}>Close</Button>
-          </Modal.Footer>
-        </>
-      );
-    }
-
     switch (step) {
-      case 'select_plan':
+      case 'select_package':
         return (
           <>
             <Modal.Header closeButton>
               <Modal.Title>
-                <Crown size={24} className="me-2 text-warning" />
-                Subscribe to Premium
+                <Zap size={24} className="me-2 text-warning" />
+                Boost Your Profile
               </Modal.Title>
             </Modal.Header>
-            <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            <Modal.Body>
               <p className="text-muted mb-4">
-                Choose a subscription plan to unlock unlimited property posts and 0% commission
+                Choose a boost package to increase your visibility in the marketplace and get more bookings.
               </p>
               <Row className="g-3">
-                {plans.map((plan) => (
-                  <Col xs={12} key={plan.id}>
+                {packages.map((pkg) => (
+                  <Col xs={12} key={pkg.id}>
                     <Card
-                      className={`cursor-pointer ${selectedPlan?.id === plan.id ? 'border-primary border-2' : ''}`}
-                      onClick={() => handleSelectPlan(plan)}
+                      className={`cursor-pointer ${selectedPackage?.id === pkg.id ? 'border-warning border-2' : ''}`}
+                      onClick={() => handleSelectPackage(pkg)}
                     >
                       <Card.Body>
                         <div className="d-flex justify-content-between align-items-start">
                           <div>
-                            <h5 className="mb-1">{plan.name}</h5>
-                            <p className="text-muted small mb-2">{plan.description}</p>
+                            <h5 className="mb-1">{pkg.name}</h5>
+                            <p className="text-muted small mb-2">{pkg.description}</p>
                             <div className="d-flex align-items-center">
-                              <h3 className="text-primary mb-0">₦{plan.price.toLocaleString()}</h3>
-                              <span className="text-muted ms-2">/{plan.duration_days} days</span>
+                              <h3 className="text-warning mb-0">₦{pkg.price.toLocaleString()}</h3>
+                              <span className="text-muted ms-2">/{pkg.duration_days} days</span>
                             </div>
                           </div>
-                          {selectedPlan?.id === plan.id && (
-                            <Badge bg="primary">
+                          {selectedPackage?.id === pkg.id && (
+                            <Badge bg="warning">
                               <Check size={16} />
                             </Badge>
                           )}
                         </div>
                         <div className="mt-3">
-                          {Array.isArray(plan.features) 
-                            ? plan.features.map((feature, idx) => (
-                                <div key={idx} className="d-flex align-items-center mb-1">
-                                  <Check size={16} className="text-success me-2" />
-                                  <small>{feature}</small>
-                                </div>
-                              ))
-                            : typeof plan.features === 'string' && (
-                              <div className="text-muted small">{plan.features}</div>
-                            )}
+                          {pkg.features?.map((feature, idx) => (
+                            <div key={idx} className="d-flex align-items-center mb-1">
+                              <Zap size={16} className="text-warning me-2" />
+                              <small>{feature}</small>
+                            </div>
+                          ))}
                         </div>
                       </Card.Body>
                     </Card>
@@ -223,9 +188,9 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
                 Cancel
               </Button>
               <Button
-                variant="primary"
+                variant="warning"
                 onClick={handleProceedToPayment}
-                disabled={!selectedPlan || loading}
+                disabled={!selectedPackage || loading}
               >
                 {loading ? 'Processing...' : 'Proceed to Payment'}
               </Button>
@@ -300,11 +265,11 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
               {error && <Alert variant="danger">{error}</Alert>}
             </Modal.Body>
             <Modal.Footer>
-              <Button variant="secondary" onClick={() => setStep('select_plan')}>
+              <Button variant="secondary" onClick={() => setStep('select_package')}>
                 Back
               </Button>
               <Button
-                variant="primary"
+                variant="warning"
                 onClick={handleUploadProof}
                 disabled={!file || uploading}
               >
@@ -326,4 +291,4 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
   );
 };
 
-export default SubscriptionModal;
+export default BoostModal;

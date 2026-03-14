@@ -1,0 +1,243 @@
+.write-review {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.write-review .header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.write-review .back-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.write-review .back-btn:hover {
+  background: #f1f5f9;
+}
+
+.write-review h1 {
+  font-size: 2rem;
+  color: #1e293b;
+  margin: 0;
+}
+
+.write-review .provider-info {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 32px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.write-review .provider-info h2 {
+  font-size: 1.5rem;
+  color: #1e293b;
+  margin: 0;
+}
+
+.write-review form {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.write-review .rating-section {
+  margin-bottom: 24px;
+}
+
+.write-review .rating-section label {
+  display: block;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 12px;
+}
+
+.write-review .stars {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 16px 0;
+}
+
+.write-review .star {
+  cursor: pointer;
+  transition: transform 0.1s, color 0.2s;
+  color: #d1d5db;
+}
+
+.write-review .star.filled {
+  color: #fbbf24;
+  fill: #fbbf24;
+}
+
+.write-review .star:hover {
+  transform: scale(1.1);
+}
+
+.write-review .form-group {
+  margin-bottom: 24px;
+}
+
+.write-review .form-group label {
+  display: block;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.write-review .form-group textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border 0.2s, box-shadow 0.2s;
+}
+
+.write-review .form-group textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.write-review .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.write-review .btn-primary,
+.write-review .btn-outline {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  border: none;
+  font-size: 1rem;
+}
+
+.write-review .btn-primary {
+  background: #2563eb;
+  color: white;
+}
+
+.write-review .btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.write-review .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.write-review .btn-outline {
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+.write-review .btn-outline:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .write-review .provider-info,
+  .write-review form {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  .write-review h1,
+  .write-review .provider-info h2,
+  .write-review .rating-section label,
+  .write-review .form-group label {
+    color: #f1f5f9;
+  }
+
+  .write-review .form-group textarea {
+    background: #334155;
+    border-color: #475569;
+    color: #e2e8f0;
+  }
+
+  .write-review .form-group textarea:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+  }
+
+  .write-review .btn-outline {
+    background: #334155;
+    border-color: #475569;
+    color: #e2e8f0;
+  }
+
+  .write-review .btn-outline:hover {
+    background: #475569;
+    border-color: #64748b;
+  }
+
+  .write-review .back-btn:hover {
+    background: #334155;
+  }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .write-review {
+    padding: 16px;
+  }
+
+  .write-review .header {
+    margin-bottom: 24px;
+  }
+
+  .write-review h1 {
+    font-size: 1.5rem;
+  }
+
+  .write-review form {
+    padding: 20px;
+  }
+
+  .write-review .stars {
+    gap: 4px;
+  }
+
+  .write-review .star {
+    width: 28px;
+    height: 28px;
+  }
+
+  .write-review .actions {
+    flex-direction: column;
+  }
+
+  .write-review .btn-primary,
+  .write-review .btn-outline {
+    width: 100%;
+  }
+}

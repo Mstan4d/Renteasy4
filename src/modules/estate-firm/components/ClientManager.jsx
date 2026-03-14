@@ -12,6 +12,7 @@ import {
   ArrowUpRight, ArrowDownRight, BarChart3
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import './ClientManager.css';
 
 const ClientManager = ({ estateFirmData }) => {
   const [clients, setClients] = useState([]);
@@ -46,14 +47,17 @@ const ClientManager = ({ estateFirmData }) => {
   });
 
   useEffect(() => {
-    loadClients();
-  }, []);
+    if (estateFirmData?.id) {
+      loadClients();
+    }
+  }, [estateFirmData]);
 
   useEffect(() => {
     filterClients();
   }, [clients, searchTerm, clientType, clientStatus]);
 
   const loadClients = async () => {
+    if (!estateFirmData?.id) return;
     setLoading(true);
     try {
       const user = (await supabase.auth.getUser()).data.user;
@@ -65,7 +69,7 @@ const ClientManager = ({ estateFirmData }) => {
         supabase
           .from('listings')
           .select('landlord_id, landlord:profiles!landlord_id(*)')
-          .eq('estate_firm_id', user.id)
+          .eq('estate_firm_id', estateFirmData.id) // use estate firm ID
           .not('landlord_id', 'is', null),
 
         // Get clients from messages
@@ -78,7 +82,7 @@ const ClientManager = ({ estateFirmData }) => {
         supabase
           .from('contacts')
           .select('*')
-          .eq('estate_firm_id', user.id)
+          .eq('estate_firm_id', estateFirmData.id) // use estate firm ID
       ]);
 
       const allClients = new Map();
@@ -211,12 +215,10 @@ const ClientManager = ({ estateFirmData }) => {
 
     setLoading(true);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
-      
       const { data, error } = await supabase
         .from('contacts')
         .insert({
-          estate_firm_id: user.id,
+          estate_firm_id: estateFirmData.id,
           name: newClient.name,
           email: newClient.email,
           phone: newClient.phone,
@@ -283,6 +285,10 @@ const ClientManager = ({ estateFirmData }) => {
           .eq('id', clientId.replace('contact_', ''));
 
         await loadClients();
+        const { data: contactsData, error: contactsError } = await supabase
+  .from('contacts')
+  .select('*')
+  .eq('estate_firm_id', estateFirmData.id);
         alert('Client deleted successfully');
       } catch (err) {
         console.error('Error deleting client:', err);
@@ -332,6 +338,7 @@ const ClientManager = ({ estateFirmData }) => {
     }
   };
 
+
   return (
     <div>
       {/* Header with Stats */}
@@ -360,7 +367,7 @@ const ClientManager = ({ estateFirmData }) => {
         {/* Stats Cards */}
         <Row className="g-3 mb-4">
           <Col xs={6} md={3}>
-            <Card className="border-0 shadow-sm h-100">
+            <Card className="border-0 shadow-sm h-100 stat-card">
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
@@ -380,7 +387,7 @@ const ClientManager = ({ estateFirmData }) => {
           </Col>
 
           <Col xs={6} md={3}>
-            <Card className="border-0 shadow-sm h-100">
+            <Card className="border-0 shadow-sm h-100 stat-card">
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
@@ -404,7 +411,7 @@ const ClientManager = ({ estateFirmData }) => {
           </Col>
 
           <Col xs={6} md={3}>
-            <Card className="border-0 shadow-sm h-100">
+            <Card className="border-0 shadow-sm h-100 stat-card">
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
@@ -425,7 +432,7 @@ const ClientManager = ({ estateFirmData }) => {
           </Col>
 
           <Col xs={6} md={3}>
-            <Card className="border-0 shadow-sm h-100">
+            <Card className="border-0 shadow-sm h-100 stat-card">
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
@@ -540,8 +547,8 @@ const ClientManager = ({ estateFirmData }) => {
                       <td>
                         <div className="d-flex align-items-center">
                           <div className="me-3">
-                            <div className="bg-primary bg-opacity-10 rounded-circle p-2">
-                              <Users size={16} className="text-primary" />
+                            <div className="client-avatar">
+                              <Users size={16} />
                             </div>
                           </div>
                           <div>
@@ -568,7 +575,17 @@ const ClientManager = ({ estateFirmData }) => {
                           )}
                         </div>
                       </td>
-                      <td>{getClientTypeBadge(client.type)}</td>
+                      <td>
+                        <Badge 
+                          bg={client.type === 'landlord' ? 'primary' : 
+                              client.type === 'tenant' ? 'success' : 
+                              client.type === 'buyer' ? 'info' : 
+                              client.type === 'seller' ? 'warning' : 'secondary'}
+                          className="badge-client"
+                        >
+                          {client.type}
+                        </Badge>
+                      </td>
                       <td>
                         <div className="text-center">
                           <div className="fw-medium">{client.propertyCount || 0}</div>
@@ -579,8 +596,25 @@ const ClientManager = ({ estateFirmData }) => {
                           )}
                         </div>
                       </td>
-                      <td>{getStatusBadge(client.status)}</td>
-                      <td>{getSourceBadge(client.source)}</td>
+                      <td>
+                        <Badge 
+                          bg={client.status === 'active' ? 'success' : 
+                              client.status === 'inactive' ? 'secondary' : 'warning'}
+                          className="status-badge"
+                        >
+                          {client.status}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Badge 
+                          bg={client.source === 'properties' ? 'info' : 
+                              client.source === 'messages' ? 'success' : 'light'}
+                          text={client.source === 'manual' ? 'dark' : 'white'}
+                          className="source-badge"
+                        >
+                          {client.source}
+                        </Badge>
+                      </td>
                       <td>
                         <div className="small">
                           {client.lastContact 
@@ -594,13 +628,9 @@ const ClientManager = ({ estateFirmData }) => {
                             <MoreVertical size={14} />
                           </Dropdown.Toggle>
                           <Dropdown.Menu>
-                            <Dropdown.Item onClick={() => handleViewClient(client)}>
+                            <Dropdown.Item onClick={() => setSelectedClient(client) || setShowClientDetails(true)}>
                               <Eye size={14} className="me-2" />
                               View Details
-                            </Dropdown.Item>
-                            <Dropdown.Item onClick={() => handleEditClient(client)}>
-                              <Edit size={14} className="me-2" />
-                              Edit
                             </Dropdown.Item>
                             <Dropdown.Item>
                               <MessageSquare size={14} className="me-2" />
@@ -787,8 +817,8 @@ const ClientManager = ({ estateFirmData }) => {
           <Modal.Header closeButton>
             <Modal.Title>
               <div className="d-flex align-items-center">
-                <div className="bg-primary bg-opacity-10 rounded-circle p-2 me-3">
-                  <Users size={24} className="text-primary" />
+                <div className="client-avatar me-3">
+                  <Users size={24} />
                 </div>
                 <div>
                   <div>{selectedClient.name}</div>
@@ -809,13 +839,13 @@ const ClientManager = ({ estateFirmData }) => {
                     <strong>Address:</strong> {selectedClient.address || 'Not provided'}
                   </div>
                   <div className="mb-2">
-                    <strong>Type:</strong> {getClientTypeBadge(selectedClient.type)}
+                    <strong>Type:</strong> <Badge bg={selectedClient.type === 'landlord' ? 'primary' : 'secondary'}>{selectedClient.type}</Badge>
                   </div>
                   <div className="mb-2">
-                    <strong>Status:</strong> {getStatusBadge(selectedClient.status)}
+                    <strong>Status:</strong> <Badge bg={selectedClient.status === 'active' ? 'success' : 'secondary'}>{selectedClient.status}</Badge>
                   </div>
                   <div>
-                    <strong>Source:</strong> {getSourceBadge(selectedClient.source)}
+                    <strong>Source:</strong> <Badge bg="light" text="dark">{selectedClient.source}</Badge>
                   </div>
                 </div>
 
@@ -871,16 +901,16 @@ const ClientManager = ({ estateFirmData }) => {
                 <div>
                   <h6 className="text-muted mb-3">Quick Actions</h6>
                   <div className="d-grid gap-2">
-                    <Button variant="outline-primary" className="d-flex align-items-center justify-content-start">
-                      <MessageSquare size={16} className="me-2" />
+                    <Button variant="outline-primary" className="quick-action-btn">
+                      <MessageSquare size={16} />
                       Send Message
                     </Button>
-                    <Button variant="outline-secondary" className="d-flex align-items-center justify-content-start">
-                      <Edit size={16} className="me-2" />
+                    <Button variant="outline-secondary" className="quick-action-btn">
+                      <Edit size={16} />
                       Edit Client
                     </Button>
-                    <Button variant="outline-info" className="d-flex align-items-center justify-content-start">
-                      <Home size={16} className="me-2" />
+                    <Button variant="outline-info" className="quick-action-btn">
+                      <Home size={16} />
                       View Properties
                     </Button>
                   </div>

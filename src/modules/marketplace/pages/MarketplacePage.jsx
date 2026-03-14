@@ -8,10 +8,13 @@ import {
   DollarSign, Sparkles, AlertCircle, Zap, Crown, Settings, ToolCase
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { messagesService } from '../../../shared/services/messagesService';
 import './Marketplace.css';
 
 const MarketplacePage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -21,7 +24,7 @@ const MarketplacePage = () => {
   const [providerPlans, setProviderPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
 
-  // Filters – exactly as per business rules
+  // Filters
   const [filters, setFilters] = useState({
     state: '',
     lga: '',
@@ -30,7 +33,7 @@ const MarketplacePage = () => {
     boostOnly: false,
     serviceType: '',
     category: '',
-    sortBy: 'relevance' // relevance, rating, boosted, newest
+    sortBy: 'relevance'
   });
 
   const [marketplaceData, setMarketplaceData] = useState({
@@ -44,257 +47,357 @@ const MarketplacePage = () => {
     fetchMarketplaceData();
   }, []);
 
- // ---------- Updated fetchMarketplaceData ----------
-const fetchMarketplaceData = async () => {
-  setIsLoading(true);
-  setError(null);
-  try {
-    // 1. Fetch Estate Firms (unchanged)
-    const { data: estateFirms, error: efError } = await supabase
-      .from('profiles')
-      .select(`
-        id,
-        full_name,
-        email,
-        phone,
-        avatar_url,
-        location,
-        state,
-        lga,
-        rating,
-        reviews_count,
-        kyc_status,
-        is_kyc_verified,
-        created_at,
-        subscriptions!user_id (
+  const fetchMarketplaceData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // 1. Fetch Estate Firms
+      const { data: estateFirms, error: efError } = await supabase
+        .from('profiles')
+        .select(`
           id,
-          plan_type,
-          status,
-          expires_at
-        ),
-        active_boosts!user_id (
-          id,
-          started_at,
-          expires_at,
-          package:boost_packages!inner (
-            priority_level
+          full_name,
+          email,
+          phone,
+          avatar_url,
+          location,
+          state,
+          lga,
+          rating,
+          reviews_count,
+          kyc_status,
+          is_kyc_verified,
+          created_at,
+          subscriptions!user_id (
+            id,
+            plan_type,
+            status,
+            expires_at
+          ),
+          active_boosts!user_id (
+            id,
+            started_at,
+            expires_at,
+            package:boost_packages!inner (
+              priority_level
+            )
           )
-        )
-      `)
-      .or('role.eq.estate-firm,role.eq.estate_firm')
-      .order('created_at', { ascending: false });
-    if (efError) throw efError;
+        `)
+        .or('role.eq.estate-firm,role.eq.estate_firm')
+        .order('created_at', { ascending: false });
+      if (efError) throw efError;
 
-    // 2. Fetch Service Provider profiles (no embedding of service_providers)
-    const { data: serviceProviderProfiles, error: spError } = await supabase
-      .from('profiles')
-      .select(`
-        id,
-        full_name,
-        email,
-        phone,
-        avatar_url,
-        rating,
-        reviews_count,
-        kyc_status,
-        is_kyc_verified,
-        free_booking_used,
-        total_bookings,
-        created_at,
-        subscriptions!user_id (
+      // 2. Fetch Service Provider profiles
+      const { data: serviceProviderProfiles, error: spError } = await supabase
+        .from('profiles')
+        .select(`
           id,
-          plan_type,
-          status,
-          expires_at
-        ),
-        active_boosts!user_id (
-          id,
-          started_at,
-          expires_at,
-          package:boost_packages!inner (
-            priority_level
+          full_name,
+          email,
+          phone,
+          avatar_url,
+          rating,
+          reviews_count,
+          kyc_status,
+          is_kyc_verified,
+          free_booking_used,
+          total_bookings,
+          created_at,
+          subscriptions!user_id (
+            id,
+            plan_type,
+            status,
+            expires_at
+          ),
+          active_boosts!user_id (
+            id,
+            started_at,
+            expires_at,
+            package:boost_packages!inner (
+              priority_level
+            )
           )
-        )
-      `)
-      .eq('role', 'service-provider')
-      .order('created_at', { ascending: false });
-    if (spError) throw spError;
+        `)
+        .eq('role', 'service-provider')
+        .order('created_at', { ascending: false });
+      if (spError) throw spError;
 
-    // 3. Fetch all service_providers details separately
-    let providerDetailsMap = {};
-    if (serviceProviderProfiles && serviceProviderProfiles.length > 0) {
-      const providerIds = serviceProviderProfiles.map(p => p.id);
-      const { data: spDetails, error: spDetailsError } = await supabase
-        .from('service_providers')
-        .select('*')
-        .in('user_id', providerIds);
-      if (spDetailsError) throw spDetailsError;
+      // 3. Fetch estate firm profiles for visibility (subscription/free posts)
+      const estateFirmIds = estateFirms.map(f => f.id);
+      const { data: estateFirmProfiles } = await supabase
+        .from('estate_firm_profiles')
+        .select('id, free_posts_remaining, subscription_status, subscription_expiry')
+        .in('id', estateFirmIds);
 
-      // Group by user_id (assuming one service_provider per user)
-      providerDetailsMap = (spDetails || []).reduce((acc, detail) => {
-        acc[detail.user_id] = detail;
-        return acc;
-      }, {});
-    }
+      const profileMap = {};
+      estateFirmProfiles?.forEach(p => profileMap[p.id] = p);
 
-    // 4. Fetch services for these providers (unchanged)
-    let servicesByProvider = {};
-    if (serviceProviderProfiles && serviceProviderProfiles.length > 0) {
-      const providerIds = serviceProviderProfiles.map(p => p.id);
-      const { data: servicesData, error: srvError } = await supabase
-        .from('services')
-        .select('provider_id, service_title')
-        .in('provider_id', providerIds);
-      if (srvError) throw srvError;
-      if (servicesData) {
-        servicesByProvider = servicesData.reduce((acc, srv) => {
+      // 4. Fetch service_providers details
+      let providerDetailsMap = {};
+      if (serviceProviderProfiles?.length) {
+        const providerIds = serviceProviderProfiles.map(p => p.id);
+        const { data: spDetails, error: spDetailsError } = await supabase
+          .from('service_providers')
+          .select('*')
+          .in('user_id', providerIds);
+        if (spDetailsError) throw spDetailsError;
+        providerDetailsMap = (spDetails || []).reduce((acc, detail) => {
+          acc[detail.user_id] = detail;
+          return acc;
+        }, {});
+      }
+
+      // 5. Fetch services for providers
+      let servicesByProvider = {};
+      if (serviceProviderProfiles?.length) {
+        const providerIds = serviceProviderProfiles.map(p => p.id);
+        const { data: servicesData, error: srvError } = await supabase
+          .from('services')
+          .select('provider_id, service_title')
+          .in('provider_id', providerIds);
+        if (srvError) throw srvError;
+        servicesByProvider = (servicesData || []).reduce((acc, srv) => {
           if (!acc[srv.provider_id]) acc[srv.provider_id] = [];
           acc[srv.provider_id].push(srv.service_title);
           return acc;
         }, {});
       }
+
+      // 6. Fetch estate services
+      const { data: estateServices, error: esError } = await supabase
+        .from('estate_services')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+      if (esError) throw esError;
+
+      // 7. Fetch review stats for all providers
+      const allProviderIds = [
+        ...estateFirms.map(f => f.id),
+        ...serviceProviderProfiles.map(p => p.id)
+      ];
+      const { data: reviewStats } = await supabase
+        .from('reviews')
+        .select('provider_id, rating')
+        .in('provider_id', allProviderIds);
+
+      const reviewMap = {};
+      reviewStats?.forEach(r => {
+        if (!reviewMap[r.provider_id]) {
+          reviewMap[r.provider_id] = { total: 0, count: 0 };
+        }
+        reviewMap[r.provider_id].total += r.rating;
+        reviewMap[r.provider_id].count += 1;
+      });
+
+      // 8. Transform estate firms with visibility filter
+      const transformedEstateFirms = (estateFirms || [])
+        .filter(firm => {
+          const profile = profileMap[firm.id];
+          if (!profile) return true;
+          const hasActiveSub = profile.subscription_status === 'active' && new Date(profile.subscription_expiry) > new Date();
+          const hasFreePosts = (profile.free_posts_remaining || 0) > 0;
+          return hasActiveSub || hasFreePosts;
+        })
+        .map(firm => {
+          const activeBoost = firm.active_boosts?.find(b => 
+            b.started_at && new Date(b.expires_at) > new Date()
+          );
+          const isBoosted = !!activeBoost;
+          const boostPriority = activeBoost?.package?.priority_level || 0;
+          const isVerified = firm.is_kyc_verified === true || firm.kyc_status === 'approved';
+          const subscription = firm.subscriptions?.[0];
+          const isSubscribed = subscription?.status === 'active' && 
+            (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+          const stats = reviewMap[firm.id] || { total: 0, count: 0 };
+          const avgRating = stats.count > 0 ? stats.total / stats.count : 0;
+
+          return {
+            id: firm.id,
+            type: 'estate-firm',
+            name: firm.full_name || 'Estate Firm',
+            description: 'Professional real estate services',
+            logo: firm.avatar_url || '🏢',
+            location: firm.location || `${firm.state || ''} ${firm.lga || ''}`.trim() || 'Nigeria',
+            rating: avgRating,
+            reviews: stats.count,
+            services: ['Property Management', 'Sales & Rentals', 'Valuation'],
+            verificationState: isVerified ? 'verified' : 'unverified',
+            boostState: isBoosted ? 'boosted' : 'not-boosted',
+            subscriptionState: isSubscribed ? 'subscribed' : 'unsubscribed',
+            badges: [
+              ...(isVerified ? ['verified'] : []),
+              ...(isBoosted ? ['boosted'] : []),
+              ...(!isVerified ? ['unverified'] : [])
+            ],
+            yearsExperience: firm.years_experience ?? 5,
+            propertiesManaged: firm.properties_managed ?? 120,
+            responseTime: firm.response_time ?? '2-4 hours',
+            contact: {
+              phone: firm.phone,
+              email: firm.email
+            },
+            boostPriority,
+            createdAt: firm.created_at || new Date().toISOString()
+          };
+        });
+
+      // 9. Transform estate services into marketplace items
+      const transformedEstateServices = (estateServices || [])
+  .map(service => {
+    const firm = estateFirms.find(f => f.id === service.estate_firm_id);
+    const profile = profileMap[service.estate_firm_id];
+    const firmVisible = profile 
+      ? (profile.subscription_status === 'active' && new Date(profile.subscription_expiry) > new Date()) 
+        || (profile.free_posts_remaining || 0) > 0
+      : true;
+    if (!firmVisible || !firm) return null; // skip if firm not found or not visible
+
+    const isFirmVerified = firm?.is_kyc_verified || firm?.kyc_status === 'approved';
+    const isFirmBoosted = firm?.active_boosts?.some(b => b.started_at && new Date(b.expires_at) > new Date());
+
+    return {
+      id: service.id,
+      type: 'service',
+      serviceType: 'estate',
+      name: service.title,
+      description: service.description,
+      providerName: firm?.full_name || 'Estate Firm',
+      providerId: firm?.id, // ✅ use the firm's profiles.id
+      category: service.category,
+      priceModel: service.price_model,
+      price: service.price,
+      hourlyRate: service.hourly_rate,
+      percentage: service.percentage,
+      location: service.location,
+      serviceAreas: service.service_areas,
+      features: service.features,
+      benefits: service.benefits,
+      requirements: service.requirements,
+      images: service.images,
+      contactPhone: service.contact_phone,
+      contactEmail: service.contact_email,
+      website: service.website,
+      rating: 0,
+      reviews: 0,
+      verificationState: isFirmVerified ? 'verified' : 'unverified',
+      boostState: isFirmBoosted ? 'boosted' : 'not-boosted',
+      badges: [
+        ...(isFirmVerified ? ['verified'] : []),
+        ...(isFirmBoosted ? ['boosted'] : []),
+        ...(!isFirmVerified ? ['unverified'] : [])
+      ],
+      createdAt: service.created_at
+    };
+  })
+  .filter(Boolean);
+      // 10. Transform service providers
+      const transformedServiceProviders = (serviceProviderProfiles || []).map(profile => {
+        const providerDetails = providerDetailsMap[profile.id] || {};
+        const activeBoost = profile.active_boosts?.find(b => 
+          b.started_at && new Date(b.expires_at) > new Date()
+        );
+        const isBoosted = !!activeBoost;
+        const boostPriority = activeBoost?.package?.priority_level || 0;
+        const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
+        const subscription = profile.subscriptions?.[0];
+        const isSubscribed = subscription?.status === 'active' && 
+          (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+
+        const freeBookingUsed = profile.free_booking_used || 0;
+        const freeBookingLimit = 10;
+        const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
+        const subscriptionState = freeBookingUsed >= freeBookingLimit 
+          ? (isSubscribed ? 'subscribed' : 'requires_subscription') 
+          : 'free';
+
+        const priceLow = providerDetails.price_range_low || 0;
+        const priceHigh = providerDetails.price_range_high || 0;
+        const priceRange = priceLow && priceHigh 
+          ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
+          : 'Contact for pricing';
+
+        const providerServicesFromSP = providerDetails.services || [];
+        const providerServicesFromTable = servicesByProvider[profile.id] || [];
+        const allServices = [...new Set([...providerServicesFromSP, ...providerServicesFromTable])];
+
+        const stats = reviewMap[profile.id] || { total: 0, count: 0 };
+        const avgRating = stats.count > 0 ? stats.total / stats.count : 0;
+
+        return {
+          id: profile.id,
+          providerId: providerDetails.id || profile.id,
+          type: 'service-provider',
+          name: providerDetails.business_name || profile.full_name || 'Service Provider',
+          title: providerDetails.title || '',
+          description: providerDetails.description || 'Experienced professional',
+          profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
+          location: providerDetails.location || profile.location || 
+                    `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
+          rating: avgRating,
+          reviews: stats.count,
+          services: allServices,
+          category: providerDetails.category || '',
+          priceRange,
+          verificationState: isVerified ? 'verified' : 'unverified',
+          boostState: isBoosted ? 'boosted' : 'not-boosted',
+          subscriptionState,
+          badges: [
+            ...(isVerified ? ['verified'] : []),
+            ...(isBoosted ? ['boosted'] : []),
+            ...(!isVerified ? ['unverified'] : [])
+          ],
+          bookingsCount: freeBookingUsed,
+          freeBookingsLeft,
+          totalBookings: profile.total_bookings || 0,
+          yearsExperience: providerDetails.years_experience || 0,
+          successRate: providerDetails.success_rate || 95,
+          responseTime: providerDetails.response_time || 'Within 2-4 hours',
+          areasServed: providerDetails.areas_served || [],
+          boostPriority,
+          createdAt: profile.created_at || new Date().toISOString()
+        };
+      });
+
+      // 11. Combine all items
+      const allItems = [
+        ...transformedEstateFirms,
+        ...transformedEstateServices,
+        ...transformedServiceProviders
+      ].filter(Boolean);
+
+      // 12. Sort items
+      const sortedItems = allItems.sort((a, b) => {
+        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
+          return (b.boostPriority || 0) - (a.boostPriority || 0);
+        }
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      setMarketplaceData({
+        estateFirms: transformedEstateFirms,
+        serviceProviders: transformedServiceProviders,
+        allItems: sortedItems
+      });
+
+    } catch (err) {
+      console.error('Error fetching marketplace data:', err);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
-
-    // 5. Transform estate firms (unchanged)
-    const transformedEstateFirms = (estateFirms || []).map(firm => {
-      const activeBoost = firm.active_boosts?.find(b => 
-        b.started_at && new Date(b.expires_at) > new Date()
-      );
-      const isBoosted = !!activeBoost;
-      const boostPriority = activeBoost?.package?.priority_level || 0;
-      const isVerified = firm.is_kyc_verified === true || firm.kyc_status === 'approved';
-      const subscription = firm.subscriptions?.[0];
-      const isSubscribed = subscription?.status === 'active' && 
-        (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
-
-      return {
-        id: firm.id,
-        type: 'estate-firm',
-        name: firm.full_name || 'Estate Firm',
-        description: 'Professional real estate services',
-        logo: firm.avatar_url || '🏢',
-        location: firm.location || `${firm.state || ''} ${firm.lga || ''}`.trim() || 'Nigeria',
-        rating: firm.rating ?? 4.0,
-        reviews: firm.reviews_count ?? 0,
-        services: ['Property Management', 'Sales & Rentals', 'Valuation'],
-        verificationState: isVerified ? 'verified' : 'unverified',
-        boostState: isBoosted ? 'boosted' : 'not-boosted',
-        subscriptionState: isSubscribed ? 'subscribed' : 'unsubscribed',
-        badges: [
-          ...(isVerified ? ['verified'] : []),
-          ...(isBoosted ? ['boosted'] : []),
-          ...(!isVerified ? ['unverified'] : [])
-        ],
-        yearsExperience: firm.years_experience ?? 5,
-        propertiesManaged: firm.properties_managed ?? 120,
-        responseTime: firm.response_time ?? '2-4 hours',
-        contact: {
-          phone: firm.phone,
-          email: firm.email
-        },
-        boostPriority,
-        createdAt: firm.created_at || new Date().toISOString()
-      };
-    });
-
-    // 6. Transform service providers using the separate details map
-    const transformedServiceProviders = (serviceProviderProfiles || []).map(profile => {
-      const providerDetails = providerDetailsMap[profile.id] || {};
-      const activeBoost = profile.active_boosts?.find(b => 
-        b.started_at && new Date(b.expires_at) > new Date()
-      );
-      const isBoosted = !!activeBoost;
-      const boostPriority = activeBoost?.package?.priority_level || 0;
-      const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
-      const subscription = profile.subscriptions?.[0];
-      const isSubscribed = subscription?.status === 'active' && 
-        (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
-
-      const freeBookingUsed = profile.free_booking_used || 0;
-      const freeBookingLimit = 10;
-      const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
-      const subscriptionState = freeBookingUsed >= freeBookingLimit 
-        ? (isSubscribed ? 'subscribed' : 'requires_subscription') 
-        : 'free';
-
-      const priceLow = providerDetails.price_range_low || 0;
-      const priceHigh = providerDetails.price_range_high || 0;
-      const priceRange = priceLow && priceHigh 
-        ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
-        : 'Contact for pricing';
-
-      // Merge services from service_providers and services table
-      const providerServicesFromSP = providerDetails.services || [];
-      const providerServicesFromTable = servicesByProvider[profile.id] || [];
-      const allServices = [...new Set([...providerServicesFromSP, ...providerServicesFromTable])];
-
-      return {
-        id: profile.id,
-        providerId: providerDetails.id || profile.id,
-        type: 'service-provider',
-        name: providerDetails.business_name || profile.full_name || 'Service Provider',
-        title: providerDetails.title || '',
-        description: providerDetails.description || 'Experienced professional',
-        profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
-        location: providerDetails.location || profile.location || 
-                  `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
-        rating: profile.rating ?? 4.5,
-        reviews: profile.reviews_count ?? 0,
-        services: allServices,
-        category: providerDetails.category || '',
-        priceRange,
-        verificationState: isVerified ? 'verified' : 'unverified',
-        boostState: isBoosted ? 'boosted' : 'not-boosted',
-        subscriptionState,
-        badges: [
-          ...(isVerified ? ['verified'] : []),
-          ...(isBoosted ? ['boosted'] : []),
-          ...(!isVerified ? ['unverified'] : [])
-        ],
-        bookingsCount: freeBookingUsed,
-        freeBookingsLeft,
-        totalBookings: profile.total_bookings || 0,
-        yearsExperience: providerDetails.years_experience || 0,
-        successRate: providerDetails.success_rate || 95,
-        responseTime: providerDetails.response_time || 'Within 2-4 hours',
-        areasServed: providerDetails.areas_served || [],
-        boostPriority,
-        createdAt: profile.created_at || new Date().toISOString()
-      };
-    });
-
-    // 7. Combine all items and sort (unchanged)
-    const allItems = [...transformedEstateFirms, ...transformedServiceProviders].filter(Boolean);
-    const sortedItems = allItems.sort((a, b) => {
-      if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
-      if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-      if (a.boostState === 'boosted' && b.boostState === 'boosted') {
-        return (b.boostPriority || 0) - (a.boostPriority || 0);
-      }
-      if (b.rating !== a.rating) return b.rating - a.rating;
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-
-    setMarketplaceData({
-      estateFirms: transformedEstateFirms,
-      serviceProviders: transformedServiceProviders,
-      allItems: sortedItems
-    });
-
-  } catch (err) {
-    console.error('Error fetching marketplace data:', err);
-    setError(err.message);
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   // ---------- Filtering & Sorting (client-side) ----------
   const filteredItems = marketplaceData.allItems.filter(item => {
     if (!item) return false;
+
     // Tab filter
     if (activeTab === 'estate-firms' && item.type !== 'estate-firm') return false;
-    if (activeTab === 'services' && item.type !== 'service-provider') return false;
+    if (activeTab === 'services' && item.type !== 'service-provider' && item.type !== 'service') return false;
 
     // Search
     if (searchTerm.trim()) {
@@ -319,13 +422,12 @@ const fetchMarketplaceData = async () => {
     if (item.rating < filters.minRating) return false;
 
     // Service type / category
-    if (filters.serviceType && item.type === 'service-provider') {
-      if (!item.services.some(s => s.toLowerCase().includes(filters.serviceType.toLowerCase()))) {
+    if (filters.serviceType && (item.type === 'service-provider' || item.type === 'service')) {
+      if (!item.services?.some(s => s.toLowerCase().includes(filters.serviceType.toLowerCase()))) {
         return false;
       }
     }
-
-    if (filters.category && item.type === 'service-provider') {
+    if (filters.category && (item.type === 'service-provider' || item.type === 'service')) {
       if (item.category !== filters.category) return false;
     }
 
@@ -337,7 +439,6 @@ const fetchMarketplaceData = async () => {
     return true;
   });
 
-  // Apply sorting
   const sortedItems = [...filteredItems].sort((a, b) => {
     if (!a || !b) return 0;
     switch (filters.sortBy) {
@@ -352,7 +453,7 @@ const fetchMarketplaceData = async () => {
         return 0;
       case 'newest':
         return new Date(b.createdAt) - new Date(a.createdAt);
-      default: // relevance: boosted first, then rating
+      default: // relevance
         if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
         if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
         if (a.boostState === 'boosted' && b.boostState === 'boosted') {
@@ -364,70 +465,80 @@ const fetchMarketplaceData = async () => {
 
   // ---------- Action Handlers ----------
   const handleBookService = async (provider) => {
-  setSelectedProvider(provider);
-  setLoadingPlans(true);
-  setShowPricingModal(true);
+    setSelectedProvider(provider);
+    setLoadingPlans(true);
+    setShowPricingModal(true);
 
-  // Fetch active pricing plans for this provider
-  const { data, error } = await supabase
-    .from('pricing_plans')
-    .select('*')
-    .eq('provider_id', provider.id) // provider.id is the profile ID
-    .eq('active', true);
+    const { data, error } = await supabase
+      .from('pricing_plans')
+      .select('*')
+      .eq('provider_id', provider.id)
+      .eq('active', true);
 
-  if (error) {
-    console.error('Error fetching pricing plans:', error);
-    setProviderPlans([]);
-  } else {
-    setProviderPlans(data || []);
-  }
-  setLoadingPlans(false);
-};
-   
-  const handleBookWithPlan = async (plan) => {
-  if (!selectedProvider) return;
-
-  // Check free booking limit
-  if (selectedProvider.subscriptionState === 'free') {
-    const newCount = (selectedProvider.bookingsCount || 0) + 1;
-    if (newCount >= 10) {
-      alert(`${selectedProvider.name} has reached 10 free bookings. They now require a ₦3,000 monthly subscription to continue receiving bookings.`);
-      // Optionally redirect to subscription page
-      navigate('/dashboard/provider/subscription');
-      setShowPricingModal(false);
-      return;
+    if (error) {
+      console.error('Error fetching pricing plans:', error);
+      setProviderPlans([]);
     } else {
-      // Update free_booking_used in profiles
-      const { error } = await supabase
-        .from('profiles')
-        .update({ free_booking_used: newCount })
-        .eq('id', selectedProvider.id);
-      if (error) console.error('Failed to update free booking count:', error);
+      setProviderPlans(data || []);
     }
-  }
+    setLoadingPlans(false);
+  };
 
-  // Here you would typically create a booking record
-  // For now, just show a success message and navigate to a booking page
-  alert(`Booking initiated for ${plan.name} with ${selectedProvider.name}`);
-  // navigate to booking details page with plan and provider info
-  // navigate(`/booking/${selectedProvider.id}/${plan.id}`);
-  setShowPricingModal(false);
-};
+  const handleBookWithPlan = async (plan) => {
+    if (!selectedProvider) return;
 
-  const handleContactEstateFirm = (firm) => {
-    if (firm.verificationState === 'verified') {
-      // Open chat or show contact details
-      navigate(`/dashboard/messages?user=${firm.id}`);
-    } else {
-      alert(`${firm.name} is not yet verified. Please check back later or contact RentEasy support.`);
+    if (selectedProvider.subscriptionState === 'free') {
+      const newCount = (selectedProvider.bookingsCount || 0) + 1;
+      if (newCount >= 10) {
+        alert(`${selectedProvider.name} has reached 10 free bookings. They now require a ₦3,000 monthly subscription to continue receiving bookings.`);
+        navigate('/dashboard/provider/subscription');
+        setShowPricingModal(false);
+        return;
+      } else {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ free_booking_used: newCount })
+          .eq('id', selectedProvider.id);
+        if (error) console.error('Failed to update free booking count:', error);
+      }
+    }
+
+    // Here you would create a booking record
+    alert(`Booking initiated for ${plan.name} with ${selectedProvider.name}`);
+    setShowPricingModal(false);
+  };
+
+  const handleContactServiceProvider = async (provider) => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    const providerId = provider.providerId || provider.id;
+    try {
+      const result = await messagesService.initiateProviderChat(providerId, user.id, user.role);
+      if (result?.chatId) {
+        navigate(`/dashboard/messages/chat/${result.chatId}`);
+      } else {
+        alert('Failed to start chat. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error starting chat with provider:', error);
+      alert(error.message || 'Failed to start chat');
     }
   };
 
-  // ---------- Badge Rendering (independent states) ----------
+  const handleContactEstateFirm = (firm) => {
+    if (firm.verificationState !== 'verified') {
+      alert(`${firm.name} is not yet verified. Please check back later or contact RentEasy support.`);
+      return;
+    }
+    handleContactServiceProvider({ providerId: firm.id });
+  };
+
+  // ---------- Badge Rendering ----------
   const renderBadges = (item) => {
     const badges = [];
 
-    // Verification badge – ONLY for KYC approval
     if (item.verificationState === 'verified') {
       badges.push({
         type: 'verified',
@@ -444,7 +555,6 @@ const fetchMarketplaceData = async () => {
       });
     }
 
-    // Boost badge – independent of verification
     if (item.boostState === 'boosted') {
       badges.push({
         type: 'boosted',
@@ -454,7 +564,6 @@ const fetchMarketplaceData = async () => {
       });
     }
 
-    // Free bookings left (service providers only)
     if (item.type === 'service-provider' && item.subscriptionState === 'free') {
       badges.push({
         type: 'free-bookings',
@@ -489,7 +598,7 @@ const fetchMarketplaceData = async () => {
 
   return (
     <div className="marketplace-container">
-      {/* Header – same as before */}
+      {/* Header */}
       <div className="marketplace-header">
         <div className="header-content">
           <h1>Professional Services Marketplace</h1>
@@ -499,7 +608,7 @@ const fetchMarketplaceData = async () => {
         </div>
       </div>
 
-      {/* Search and Filter Bar – same UI, keep as is */}
+      {/* Search and Filter Bar */}
       <div className="search-filter-bar">
         <div className="search-container">
           <div className="search-input-wrapper">
@@ -598,6 +707,10 @@ const fetchMarketplaceData = async () => {
                       <span className="type-label">
                         <Building size={14} /> Estate Firm
                       </span>
+                    ) : item.type === 'service' ? (
+                      <span className="type-label">
+                        <Briefcase size={14} /> Service
+                      </span>
                     ) : (
                       <span className="type-label">
                         <ToolCase size={14} /> Service Provider
@@ -634,8 +747,11 @@ const fetchMarketplaceData = async () => {
                     </div>
                   </div>
 
-                  {/* Rating */}
-                  <div className="rating-container">
+                  {/* Rating (clickable) */}
+                  <div 
+                    className="rating-container"
+                    onClick={() => navigate(`/provider/${item.id}/reviews`)}
+                  >
                     <div className="stars">
                       {[...Array(5)].map((_, i) => (
                         <Star 
@@ -708,7 +824,7 @@ const fetchMarketplaceData = async () => {
                     <>
                       <button 
                         className="btn btn-outline"
-                        onClick={() => alert('View details coming soon')}
+                        onClick={() => navigate(`/services/${item.id}`)}
                       >
                         <Eye size={16} />
                         <span>View Details</span>
@@ -722,7 +838,29 @@ const fetchMarketplaceData = async () => {
                         <span>Contact</span>
                       </button>
                     </>
+                  ) : item.type === 'service' ? (
+                    <>
+                      {/* Only show View Details for services and service providers, not for estate firms */}
+{item.type !== 'estate-firm' && (
+  <button 
+    className="btn btn-outline"
+    onClick={() => navigate(`/services/${item.id}`)}
+  >
+    <Eye size={16} />
+    <span>View Details</span>
+  </button>
+)}
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => handleContactServiceProvider(item)}
+                        disabled={item.verificationState !== 'verified'}
+                      >
+                        <MessageSquare size={16} />
+                        <span>Contact</span>
+                      </button>
+                    </>
                   ) : (
+                    // service-provider
                     <>
                       <div className="price-info">
                         <DollarSign size={16} />
@@ -735,8 +873,28 @@ const fetchMarketplaceData = async () => {
                         <Calendar size={16} />
                         <span>Book Now</span>
                       </button>
+                      <button 
+                        className="btn btn-outline"
+                        onClick={() => handleContactServiceProvider(item)}
+                      >
+                        <MessageSquare size={16} />
+                        <span>Contact</span>
+                      </button>
                     </>
                   )}
+                  {/* Write Review button – visible for all types when user logged in */}
+                  {user && (
+  <button 
+    className="btn btn-outline btn-sm"
+    onClick={() => {
+      // For service items, use providerId; for others, use item.id
+      const reviewId = item.type === 'service' ? item.providerId : item.id;
+      navigate(`/write-review/${reviewId}`);
+    }}
+  >
+    <Star size={14} /> Write Review
+  </button>
+)}
                 </div>
               </div>
             );
@@ -783,87 +941,87 @@ const fetchMarketplaceData = async () => {
       </div>
 
       {/* Pricing Plan Modal */}
-{showPricingModal && selectedProvider && (
-  <div className="modal-overlay" onClick={() => setShowPricingModal(false)}>
-    <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
-      <div className="modal-header">
-        <h3>Select a Plan for {selectedProvider.name}</h3>
-        <button className="modal-close" onClick={() => setShowPricingModal(false)}>×</button>
-      </div>
-      <div className="modal-body">
-        {loadingPlans ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>Loading plans...</div>
-        ) : providerPlans.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <p>No active pricing plans available for this provider.</p>
-            <p>Please check back later or contact the provider directly.</p>
-          </div>
-        ) : (
-          <div className="plans-list" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {providerPlans.map(plan => (
-              <div key={plan.id} className="plan-card" style={{
-                border: '1px solid #e0e0e0',
-                borderRadius: '8px',
-                padding: '1rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <h4 style={{ margin: '0 0 0.5rem 0' }}>{plan.name}</h4>
-                  <p style={{ margin: '0 0 0.5rem 0', color: '#666' }}>{plan.description}</p>
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <span style={{ fontWeight: '600', color: '#1a237e' }}>
-                      {plan.currency}{plan.price.toLocaleString()}
-                      {plan.type === 'hourly' && '/hour'}
-                      {plan.type === 'per_unit' && `/${plan.unit}`}
-                      {plan.type === 'monthly' && '/month'}
-                    </span>
-                    {plan.popular && (
-                      <span style={{
-                        background: '#ff9800',
-                        color: 'white',
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem'
-                      }}>Popular</span>
-                    )}
-                  </div>
-                  <div style={{ marginTop: '0.5rem' }}>
-                    {plan.features && plan.features.slice(0, 3).map((f, i) => (
-                      <span key={i} style={{
-                        display: 'inline-block',
-                        background: '#f5f5f5',
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem',
-                        marginRight: '0.5rem',
-                        marginBottom: '0.3rem'
-                      }}>{f}</span>
-                    ))}
-                    {plan.features && plan.features.length > 3 && (
-                      <span style={{ fontSize: '0.8rem', color: '#666' }}>+{plan.features.length - 3} more</span>
-                    )}
-                  </div>
+      {showPricingModal && selectedProvider && (
+        <div className="modal-overlay" onClick={() => setShowPricingModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Select a Plan for {selectedProvider.name}</h3>
+              <button className="modal-close" onClick={() => setShowPricingModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              {loadingPlans ? (
+                <div style={{ textAlign: 'center', padding: '2rem' }}>Loading plans...</div>
+              ) : providerPlans.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                  <p>No active pricing plans available for this provider.</p>
+                  <p>Please check back later or contact the provider directly.</p>
                 </div>
-                <button
-                  className="btn btn-primary"
-                  style={{ padding: '0.5rem 1rem' }}
-                  onClick={() => handleBookWithPlan(plan)}
-                >
-                  Book Now
-                </button>
-              </div>
-            ))}
+              ) : (
+                <div className="plans-list" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {providerPlans.map(plan => (
+                    <div key={plan.id} className="plan-card" style={{
+                      border: '1px solid #e0e0e0',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <h4 style={{ margin: '0 0 0.5rem 0' }}>{plan.name}</h4>
+                        <p style={{ margin: '0 0 0.5rem 0', color: '#666' }}>{plan.description}</p>
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                          <span style={{ fontWeight: '600', color: '#1a237e' }}>
+                            {plan.currency}{plan.price.toLocaleString()}
+                            {plan.type === 'hourly' && '/hour'}
+                            {plan.type === 'per_unit' && `/${plan.unit}`}
+                            {plan.type === 'monthly' && '/month'}
+                          </span>
+                          {plan.popular && (
+                            <span style={{
+                              background: '#ff9800',
+                              color: 'white',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.8rem'
+                            }}>Popular</span>
+                          )}
+                        </div>
+                        <div style={{ marginTop: '0.5rem' }}>
+                          {plan.features && plan.features.slice(0, 3).map((f, i) => (
+                            <span key={i} style={{
+                              display: 'inline-block',
+                              background: '#f5f5f5',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.8rem',
+                              marginRight: '0.5rem',
+                              marginBottom: '0.3rem'
+                            }}>{f}</span>
+                          ))}
+                          {plan.features && plan.features.length > 3 && (
+                            <span style={{ fontSize: '0.8rem', color: '#666' }}>+{plan.features.length - 3} more</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        style={{ padding: '0.5rem 1rem' }}
+                        onClick={() => handleBookWithPlan(plan)}
+                      >
+                        Book Now
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowPricingModal(false)}>Cancel</button>
+            </div>
           </div>
-        )}
-      </div>
-      <div className="modal-footer">
-        <button className="btn btn-secondary" onClick={() => setShowPricingModal(false)}>Cancel</button>
-      </div>
-    </div>
-  </div>
-)}
+        </div>
+      )}
     </div>
   );
 };

@@ -194,3 +194,312 @@
     padding: 0.7rem;
   }
 }
+
+/* Add to existing AdminPaymentProofs.css */
+
+.admin-payment-proofs {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  font-size: 2rem;
+  margin: 0;
+}
+
+.btn-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-refresh:hover {
+  background: #f8fafc;
+}
+
+.tabs {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 8px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.tab.active {
+  background: #2563eb;
+  color: white;
+}
+
+.proofs-section,
+.payments-section {
+  margin-top: 24px;
+}
+
+.proofs-section h2,
+.payments-section h2 {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  color: #1e293b;
+}
+
+.proofs-grid,
+.payments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.proof-card,
+.payment-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.proof-card:hover,
+.payment-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+}
+
+.proof-header,
+.payment-header {
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.proof-type,
+.payment-type {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.payment-type.subscription {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.payment-type.boost {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.proof-date,
+.payment-date {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.proof-body,
+.payment-body {
+  padding: 16px;
+}
+
+.proof-body p,
+.payment-body p {
+  margin: 8px 0;
+  font-size: 0.95rem;
+  color: #334155;
+}
+
+.proof-body strong,
+.payment-body strong {
+  color: #1e293b;
+}
+
+.proof-file,
+.proof-link {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.proof-file a,
+.proof-link a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  color: #2563eb;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.proof-file a:hover,
+.proof-link a:hover {
+  background: #e2e8f0;
+}
+
+.proof-actions,
+.payment-actions {
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.btn-verify,
+.btn-reject {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-verify {
+  background: #10b981;
+  color: white;
+}
+
+.btn-verify:hover {
+  background: #059669;
+}
+
+.btn-reject {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-reject:hover {
+  background: #dc2626;
+}
+
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 12px;
+  border: 2px dashed #e2e8f0;
+  color: #64748b;
+}
+
+/* Add to AdminPaymentProofs.css */
+
+/* Commission Section */
+.commission-section {
+  margin-top: 24px;
+}
+
+.commission-section h2 {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  color: #1e293b;
+}
+
+.commission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.commission-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.commission-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+}
+
+.commission-header {
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.commission-type {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #8b5cf6;
+  color: white;
+}
+
+.commission-date {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.commission-body {
+  padding: 16px;
+}
+
+.commission-body p {
+  margin: 8px 0;
+  font-size: 0.95rem;
+  color: #334155;
+}
+
+.commission-body strong {
+  color: #1e293b;
+}
+
+.commission-actions {
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

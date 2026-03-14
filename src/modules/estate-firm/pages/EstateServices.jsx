@@ -175,7 +175,7 @@ const EstateServicesPage = () => {
         </div>
         
         <div className="header-actions">
-          <Link to="/dashboard/estate/post-service" className="btn btn-primary">
+          <Link to="/dashboard/estate-firm/post-service" className="btn btn-primary">
             <PlusCircle size={18} />
             Post New Service
           </Link>
@@ -367,7 +367,7 @@ const EstateServicesPage = () => {
           <Briefcase size={48} />
           <h3>No services found</h3>
           <p>{searchQuery ? 'Try a different search term' : 'Get started by posting your first service'}</p>
-          <Link to="/dashboard/estate/post-service" className="btn btn-primary">
+          <Link to="/dashboard/estate-firm/post-service" className="btn btn-primary">
             <PlusCircle size={18} />
             Post Your First Service
           </Link>

@@ -131,6 +131,8 @@ const EstateDocuments = lazy(() => import('../modules/estate-firm/pages/EstateDo
 const EstateServices = lazy(() => import('../modules/estate-firm/pages/EstateServices'));
 const EstatePostService = lazy(() => import('../modules/estate-firm/pages/EstatePostService'));
 const EstateAddExternalProperty = lazy(() => import('../modules/estate-firm/pages/EstateAddExternalProperty'));
+const PropertyDetail = lazy(() => import('../modules/estate-firm/pages/PropertyDetail'));
+const PaymentsList = lazy(() => import('../modules/estate-firm/pages/PaymentsList'));
 
 // === SUPER ADMIN IMPORTS ===
 const SuperAdminLayout = lazy(() => import('../modules/super-admin/components/SuperAdminLayout'));
@@ -198,6 +200,10 @@ const VerificationHub = lazy(() => import('../modules/verification/pages/Verific
 const VerificationForm = lazy(() => import('../modules/verification/pages/VerificationForm'));
 const VerificationStatus = lazy(() => import('../modules/verification/pages/VerificationStatus'));
 const ListingDetailsPage = lazy(() => import('../modules/listings/pages/ListingDetailsPage'));
+const ServiceDetailsPage = lazy(() => import('../modules/marketplace/pages/ServiceDetailsPage'));
+const ProviderReviews = lazy(() => import('../modules/reviews/pages/ProviderReviews'));
+const WriteReview = lazy(() => import('../modules/reviews/pages/WriteReview'));
+
 
 const AppRoutes = () => {
   return (
@@ -422,6 +428,8 @@ const AppRoutes = () => {
         <Route path="notifications" element={<ProviderNotifications />} />
       </Route>
 
+      <Route path="/services/:id" element={<ServiceDetailsPage />} />
+
       {/* ========== ESTATE FIRM ROUTES ========== */}
       <Route 
         path="/dashboard/estate-firm/*"
@@ -436,6 +444,7 @@ const AppRoutes = () => {
         <Route index element={<EstateDashboard />} />
         <Route path="profile" element={<EstateProfile />} />
         <Route path="properties" element={<EstateProperties />} />
+        <Route path="properties/:id" element={<PropertyDetail />} />
         <Route path="clients" element={<EstateClients />} />
         <Route path="analytics" element={<EstateAnalytics />} />
         <Route path="reports" element={<EstateReports />} />
@@ -444,6 +453,7 @@ const AppRoutes = () => {
         <Route path="verification" element={<EstateVerification />} />
         <Route path="documents" element={<EstateDocuments />} />
         <Route path="services" element={<EstateServices />} />
+        <Route path="payments" element={<PaymentsList />} />
         <Route path="post-service" element={<EstatePostService />} />
         <Route path="add-external-property" element={<EstateAddExternalProperty />} />
       </Route>
@@ -514,24 +524,50 @@ const AppRoutes = () => {
       />
 
       <Route 
-        path="/services" 
-        element={
-          <Suspense fallback={<DashboardLoading />}>
-            <MarketplacePage />
-          </Suspense>
-        } 
-      />
+  path="/services" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <MarketplacePage />
+    </Suspense>
+  } 
+/>
 
-      <Route 
-        path="/marketplace" 
-        element={
-          <Suspense fallback={<DashboardLoading />}>
-             <ErrorBoundary>
-            <MarketplacePage />
-             </ErrorBoundary>
-          </Suspense>
-        } 
-      />
+<Route 
+  path="/services/:id" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <ServiceDetailsPage />
+    </Suspense>
+  } 
+/>
+
+<Route 
+  path="/marketplace" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <ErrorBoundary>
+        <MarketplacePage />
+      </ErrorBoundary>
+    </Suspense>
+  } 
+/>
+
+<Route 
+  path="/provider/:providerId/reviews" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <ProviderReviews />
+    </Suspense>
+  } 
+/>
+<Route 
+  path="/write-review/:providerId" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <WriteReview />
+    </Suspense>
+  } 
+/>
       
       {/* =================== VERIFICATION ROUTES =================== */}
       <Route 

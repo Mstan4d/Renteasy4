@@ -19,7 +19,7 @@ import {
   Home as HomeIcon, TrendingDown, Filter as FilterIcon
 } from 'lucide-react';
 import { Container, Row, Col, Card, Button, Badge, Modal, Form, Table, ProgressBar, Alert, Dropdown } from 'react-bootstrap';
-import EstateNav from '../components/EstateNav';
+
 import SubscriptionModal from '../components/SubscriptionModal';
 import BoostManager from '../components/BoostManager';
 import PaymentProofModal from '../components/PaymentProofModal';
@@ -437,7 +437,7 @@ const EstateDashboard = () => {
   }
 };
 
-  // Handle subscription purchase
+ /* // Handle subscription purchase
   const handleSubscribe = async () => {
     try {
       // Create subscription record
@@ -484,7 +484,11 @@ const EstateDashboard = () => {
       console.error('Error subscribing:', error);
       alert('Failed to activate subscription. Please try again.');
     }
-  };
+  }; */
+
+  const handleSubscriptionSuccess = () => {
+  loadEstateFirmData(); // refresh dashboard
+};
 
   // Handle verification application
   const handleApplyVerification = async () => {
@@ -636,7 +640,7 @@ const EstateDashboard = () => {
   if (loading) {
     return (
       <div className="estate-dashboard-container">
-        <EstateNav />
+        
         <div className="estate-main-content">
           <div className="p-3 p-md-4 pt-5 pt-md-4 text-center">
             <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
@@ -654,7 +658,7 @@ const EstateDashboard = () => {
   if (error) {
     return (
       <div className="estate-dashboard-container">
-        <EstateNav />
+        
         <div className="estate-main-content">
           <div className="p-3 p-md-4 pt-5 pt-md-4">
             <Alert variant="danger">
@@ -676,7 +680,7 @@ const EstateDashboard = () => {
   // Main Render
   return (
     <div className="estate-dashboard-container">
-      <EstateNav />
+      
       
       <div className="estate-main-content">
         <div className="p-3 p-md-4 pt-5 pt-md-4">
@@ -1134,12 +1138,11 @@ const EstateDashboard = () => {
       </div>
 
       {/* Modals */}
-      <SubscriptionModal 
-        show={showSubscriptionModal}
-        onHide={() => setShowSubscriptionModal(false)}
-        onSubscribe={handleSubscribe}
-        freePostsRemaining={estateFirmData.freePostsRemaining}
-      />
+      <SubscriptionModal
+  show={showSubscriptionModal}
+  onHide={() => setShowSubscriptionModal(false)}
+  onSubscriptionSuccess={handleSubscriptionSuccess}
+/>
 
       {/* Add Property Modal */}
       <Modal show={showAddPropertyModal} onHide={() => setShowAddPropertyModal(false)} size="lg">
