@@ -1,80 +1,126 @@
 // src/shared/utils/listingUtils.js
-export const createNewListing = (listingData, user) => {
-    // Get existing listings
-    const existingListings = JSON.parse(localStorage.getItem('listings') || '[]');
-    
-    // Create new listing with proper structure
+import { supabase } from '../lib/supabaseClient';
+
+/**
+ * Create a new listing in Supabase (replaces localStorage version)
+ * @param {Object} listingData - The listing details (title, price, state, lga, etc.)
+ * @param {Object} user - The current user object (must include id, name, role, verified)
+ * @returns {Promise<Object>} The created listing record
+ */
+export async function createNewListing(listingData, user) {
+  try {
+    // 1. Construct the listing object for insertion
     const newListing = {
-      id: `listing_${Date.now()}`,
-      ...listingData,
-      verified: false, // NOT verified by admin yet
-      userVerified: user?.verified || false, // User verification status
-      rejected: false, // Not rejected
-      status: 'pending', // Pending admin approval
-      postedDate: new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-      posterName: user?.name || 'Anonymous User',
-      userRole: user?.role || 'user',
-      posterId: user?.id,
-      userId: user?.id,
+      title: listingData.title,
+      description: listingData.description || '',
+      address: listingData.address,
+      city: listingData.city,
+      state: listingData.state,
+      lga: listingData.lga,
+      price: listingData.price,
+      rent_frequency: listingData.rent_frequency || 'yearly',
+      bedrooms: listingData.bedrooms,
+      bathrooms: listingData.bathrooms,
+      area: listingData.area,
+      images: listingData.images || [],
+      status: 'pending',
+      verified: false,
+      user_verified: user?.verified || false,
+      rejected: false,
+      posted_date: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      poster_name: user?.name || 'Anonymous User',
+      user_role: user?.role || 'user',
+      poster_id: user?.id,
+      user_id: user?.id,
       views: 0,
       inquiries: 0,
-      needsAdminApproval: true, // Flag for admin dashboard
-      isManaged: false // Not yet managed by anyone
+      needs_admin_approval: true,
+      is_managed: false,
+      estate_firm_id: user?.role === 'estate_firm' ? user?.id : null,
+      landlord_id: user?.role === 'landlord' ? user?.id : null,
     };
-    
-    // Add to existing listings
-    const updatedListings = [...existingListings, newListing];
-    localStorage.setItem('listings', JSON.stringify(updatedListings));
-    
-    // Create admin notification
-    const notifications = JSON.parse(localStorage.getItem('adminNotifications') || '[]');
-    notifications.unshift({
-      id: Date.now(),
+
+    const { data, error } = await supabase
+      .from('listings')
+      .insert([newListing])
+      .select()
+      .single();
+
+    if (error) throw error;
+    const createdListing = data;
+
+    // 2. Create admin notification
+    await supabase.from('admin_activities').insert({
       title: 'New Listing Requires Approval',
       message: `${listingData.title} (₦${listingData.price?.toLocaleString()}) in ${listingData.state}`,
       type: 'listing',
       read: false,
       timestamp: new Date().toISOString(),
-      data: { listingId: newListing.id, userId: user?.id }
+      data: { listingId: createdListing.id, userId: user?.id }
     });
-    localStorage.setItem('adminNotifications', JSON.stringify(notifications));
-    
-    // Add to admin activities log
-    const activities = JSON.parse(localStorage.getItem('adminActivities') || '[]');
-    activities.unshift({
-      id: Date.now(),
+
+    // 3. Add to admin activities log
+    await supabase.from('admin_activities').insert({
       action: `New listing posted: ${listingData.title} by ${user?.name}`,
       type: 'listing',
       admin: 'System',
       timestamp: new Date().toISOString()
     });
-    localStorage.setItem('adminActivities', JSON.stringify(activities.slice(0, 100)));
-    
-    // Also notify managers in the area
-    const managers = JSON.parse(localStorage.getItem('managers') || '[]');
-    const areaManagers = managers.filter(manager => 
-      manager.assignedStates?.includes(listingData.state) || 
-      manager.assignedLGAs?.some(lga => lga === listingData.lga)
-    );
-    
-    if (areaManagers.length > 0) {
-      const managerNotifications = JSON.parse(localStorage.getItem('managerNotifications') || '[]');
-      areaManagers.forEach(manager => {
-        managerNotifications.unshift({
-          id: Date.now() + Math.random(),
-          title: 'New Listing in Your Area',
-          message: `${listingData.title} in ${listingData.lga}, ${listingData.state}`,
-          type: 'listing',
-          read: false,
-          timestamp: new Date().toISOString(),
-          managerId: manager.id,
-          listingId: newListing.id
-        });
-      });
-      localStorage.setItem('managerNotifications', JSON.stringify(managerNotifications));
+
+    // 4. Notify managers in the area
+    const { data: managers, error: managerError } = await supabase
+      .from('managers')
+      .select('id')
+      .or(`assigned_states.cs.{${listingData.state}},assigned_lgas.cs.{${listingData.lga}}`);
+
+    if (!managerError && managers && managers.length > 0) {
+      const managerNotifications = managers.map(manager => ({
+        manager_id: manager.id,
+        title: 'New Listing in Your Area',
+        message: `${listingData.title} in ${listingData.lga}, ${listingData.state}`,
+        type: 'listing',
+        read: false,
+        timestamp: new Date().toISOString(),
+        listing_id: createdListing.id
+      }));
+
+      await supabase
+        .from('manager_notifications')
+        .insert(managerNotifications);
     }
-    
-    return newListing;
+
+    return createdListing;
+  } catch (err) {
+    console.error('Error in createNewListing:', err);
+    throw err;
+  }
+}
+
+/**
+ * Create a listing directly from a unit (convenience wrapper for estate firms)
+ */
+export async function createListingFromUnit(unit, property, estateFirmId = null) {
+  const listingData = {
+    title: `${property.name} - Unit ${unit.unit_number}`,
+    description: property.description || `${unit.bedrooms} bedroom, ${unit.bathrooms} bathroom unit available.`,
+    address: property.address,
+    city: property.city,
+    state: property.state,
+    lga: property.lga,
+    price: unit.rent_amount,
+    rent_frequency: unit.rent_frequency,
+    bedrooms: unit.bedrooms,
+    bathrooms: unit.bathrooms,
+    area: unit.area_sqm,
+    images: property.images || [],
   };
+  // Create a user-like object for the poster (estate firm)
+  const user = {
+    id: estateFirmId,
+    role: 'estate_firm',
+    name: 'Estate Firm', // You might fetch the actual name from estate_firms table
+    verified: true,
+  };
+  return createNewListing(listingData, user);
+}

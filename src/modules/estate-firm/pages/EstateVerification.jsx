@@ -56,6 +56,45 @@ const EstateVerification = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingVerification, setExistingVerification] = useState(null);
 
+  // Constants needed for the component
+  const directorIdTypes = [
+    { value: 'national-id', label: 'National ID' },
+    { value: 'passport', label: 'International Passport' },
+    { value: 'drivers-license', label: "Driver's License" },
+    { value: 'voters-card', label: "Voter's Card" }
+  ];
+
+  const documentRequirements = [
+    {
+      title: 'CAC Certificate',
+      required: true,
+      description: 'Certificate of Incorporation from CAC',
+      format: 'PDF or Image',
+      size: 'Max 5MB'
+    },
+    {
+      title: 'Tax Clearance Certificate',
+      required: true,
+      description: 'Valid tax clearance certificate (last 3 years)',
+      format: 'PDF or Image',
+      size: 'Max 5MB'
+    },
+    {
+      title: 'Proof of Business Address',
+      required: true,
+      description: 'Utility bill or tenancy agreement (not older than 3 months)',
+      format: 'PDF or Image',
+      size: 'Max 5MB'
+    },
+    {
+      title: 'Business Plan',
+      required: false,
+      description: 'Optional business plan document',
+      format: 'PDF or Image',
+      size: 'Max 10MB'
+    }
+  ];
+
   useEffect(() => {
     if (user) {
       checkExistingVerification();
@@ -77,7 +116,6 @@ const EstateVerification = () => {
       if (data) {
         setExistingVerification(data);
         
-        // If already verified or under review, show status
         if (data.status !== 'pending') {
           navigate('/dashboard/estate-firm');
         } else {
@@ -109,13 +147,28 @@ const EstateVerification = () => {
             yearsInOperation: data.years_in_operation || '',
             numberOfEmployees: data.number_of_employees || '',
             annualTurnover: data.annual_turnover || '',
-            status: data.status || 'pending'
+            status: data.status || 'pending',
+            // These fields are not stored in DB but needed for form
+            cacDocument: null,
+            taxDocument: null,
+            proofOfAddress: null,
+            businessPlan: null
           });
         }
       }
     } catch (error) {
       console.error('Error checking verification:', error);
     }
+  };
+
+  const nextStep = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep(prev => Math.min(prev + 1, 6));
+    }
+  };
+
+  const prevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
   const handleInputChange = (e) => {
@@ -167,40 +220,39 @@ const EstateVerification = () => {
     }));
   };
 
-  const handleFileUpload = async (field, file) => {
-    if (!file || !user) return;
-
-    try {
-      // Check file size
-      const maxSize = field === 'businessPlan' ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
-      if (file.size > maxSize) {
-        alert(`File size must be less than ${maxSize / (1024 * 1024)}MB`);
-        return;
-      }
-
-      // Check file type
-      const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
-      if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
-        alert('Please upload PDF or image files only');
-        return;
-      }
-
-      // Create preview URL
-      const previewUrl = URL.createObjectURL(file);
-      setDocumentPreview(prev => ({
-        ...prev,
-        [field]: previewUrl
-      }));
-
-      setFormData(prev => ({
-        ...prev,
-        [field]: file
-      }));
-
-    } catch (error) {
-      console.error('Error handling file upload:', error);
-      alert('Failed to upload file. Please try again.');
+  const handleFileUpload = (field, file) => {
+    if (!file) {
+      // Remove file
+      setFormData(prev => ({ ...prev, [field]: null }));
+      setDocumentPreview(prev => ({ ...prev, [field]: null }));
+      return;
     }
+
+    // Validate file size
+    const maxSize = field === 'businessPlan' ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert(`File size must be less than ${maxSize / (1024 * 1024)}MB`);
+      return;
+    }
+
+    // Validate file type
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Please upload PDF or image files only');
+      return;
+    }
+
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file);
+    setDocumentPreview(prev => ({
+      ...prev,
+      [field]: previewUrl
+    }));
+
+    setFormData(prev => ({
+      ...prev,
+      [field]: file
+    }));
   };
 
   const handleServiceToggle = (service) => {
@@ -266,7 +318,6 @@ const EstateVerification = () => {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('estate-verification-docs')
         .getPublicUrl(filePath);
@@ -394,7 +445,7 @@ const EstateVerification = () => {
     }
   };
 
-   const renderStep = () => {
+  const renderStep = () => {
     switch(currentStep) {
       case 1:
         return (
@@ -1008,6 +1059,10 @@ const DocumentUpload = ({ label, name, file, preview, onUpload, error }) => {
     }
   };
 
+  const handleRemove = () => {
+    onUpload(name, null);
+  };
+
   return (
     <div className="document-upload">
       <label className="upload-label">
@@ -1024,7 +1079,7 @@ const DocumentUpload = ({ label, name, file, preview, onUpload, error }) => {
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => onUpload(name, null)}
+                onClick={handleRemove}
               >
                 Change
               </button>
@@ -1050,6 +1105,5 @@ const DocumentUpload = ({ label, name, file, preview, onUpload, error }) => {
     </div>
   );
 };
-
 
 export default EstateVerification;

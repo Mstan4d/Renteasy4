@@ -1,7 +1,7 @@
 // src/modules/estate-firm/components/BoostModal.jsx
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
-import { Zap, Check, X, CreditCard, Building, Clock, Upload, Crown } from 'lucide-react';
+import { Zap, Check, X, CreditCard, Upload } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { paymentService } from '../../../shared/lib/paymentService';
 import { useAuth } from '../../../shared/context/AuthContext';
@@ -12,7 +12,7 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [step, setStep] = useState('select_package'); // select_package, payment
+  const [step, setStep] = useState('select_package');
   const [paymentRecord, setPaymentRecord] = useState(null);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -20,7 +20,6 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
   useEffect(() => {
     if (show) {
       loadPackages();
-      // Reset state when modal opens
       setSelectedPackage(null);
       setStep('select_package');
       setPaymentRecord(null);
@@ -62,19 +61,18 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
       const reference = paymentService.generateReference('BST');
       const amount = selectedPackage.price;
 
-      // Create payment record
+      // Create payment record with metadata containing package info
       const payment = await paymentService.createPayment({
         userId: user.id,
         amount,
         type: 'boost',
         reference,
-        metadata: { package_id: selectedPackage.id, package_name: selectedPackage.name },
+        metadata: { 
+          package_id: selectedPackage.id, 
+          package_name: selectedPackage.name,
+          duration_days: selectedPackage.duration_days
+        },
       });
-
-      // Create a pending boost record (active_boosts will be updated by admin after verification)
-      // We create a record in the payments table; the boost will be activated upon admin verification.
-      // Optionally, you could insert into active_boosts with status 'pending' here.
-      // For simplicity, we rely on admin to insert/activate after verifying payment.
 
       setPaymentRecord(payment);
       setStep('payment');
@@ -111,13 +109,28 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
     setError(null);
 
     try {
+      // Upload proof and update payment metadata with proof URL
       await paymentService.uploadProof({
         paymentId: paymentRecord.id,
         userId: user.id,
         file,
       });
 
-      alert('Payment proof uploaded successfully! Your boost will be activated once verified by admin.');
+      // Create a pending boost record (status = 'pending')
+      const { error: boostError } = await supabase
+        .from('active_boosts')
+        .insert({
+          user_id: user.id,
+          package_id: selectedPackage.id,
+          payment_id: paymentRecord.id,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        });
+
+      if (boostError) throw boostError;
+
+      alert('Payment proof submitted! Your boost request is now pending admin approval. You will be notified once approved.');
+      
       if (onBoostSuccess) onBoostSuccess();
       onHide();
     } catch (err) {

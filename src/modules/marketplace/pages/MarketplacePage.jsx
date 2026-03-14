@@ -1,16 +1,21 @@
 // src/modules/marketplace/pages/MarketplacePage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Filter, Star, MapPin, Clock, CheckCircle, 
   Users, TrendingUp, Building, Home, Briefcase,
   Award, Shield, Eye, MessageSquare, Phone, Calendar,
-  DollarSign, Sparkles, AlertCircle, Zap, Crown, Settings, ToolCase
+  DollarSign, Sparkles, AlertCircle, Zap, Crown, Settings, ToolCase,
+  Navigation
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { messagesService } from '../../../shared/services/messagesService';
+import { locationService } from '../../../shared/services/locationService';
 import './Marketplace.css';
+
+const ITEMS_PER_PAGE = 10;
+const BOOST_RATIO = 0.8; // 80% boosted, 20% non-boosted
 
 const MarketplacePage = () => {
   const navigate = useNavigate();
@@ -23,6 +28,9 @@ const MarketplacePage = () => {
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [providerPlans, setProviderPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [userLocation, setUserLocation] = useState(null);
 
   // Filters
   const [filters, setFilters] = useState({
@@ -42,17 +50,48 @@ const MarketplacePage = () => {
     allItems: []
   });
 
-  // ---------- Fetch Data from Supabase ----------
+  const [boostedUserIds, setBoostedUserIds] = useState([]);
+
+  // Detect user location on mount
   useEffect(() => {
-    fetchMarketplaceData();
+    const detectLocation = async () => {
+      const location = await locationService.detectUserLocation();
+      if (location?.state) {
+        setUserLocation(location);
+        // Optionally pre‑fill filters with detected location
+        // setFilters(prev => ({ ...prev, state: location.state, lga: location.lga || '' }));
+      }
+    };
+    detectLocation();
   }, []);
 
-  const fetchMarketplaceData = async () => {
+  // Fetch boosted user IDs from active_boosts
+  useEffect(() => {
+    const fetchBoostedUsers = async () => {
+      const { data, error } = await supabase
+        .from('active_boosts')
+        .select('user_id')
+        .eq('status', 'active')
+        .gte('expires_at', new Date().toISOString());
+      if (!error && data) {
+        setBoostedUserIds(data.map(b => b.user_id));
+      }
+    };
+    fetchBoostedUsers();
+  }, []);
+
+  // Main data fetching with boost and location
+  useEffect(() => {
+    if (boostedUserIds === null) return;
+    loadMarketplaceWithBoost();
+  }, [activeTab, searchTerm, filters, page, userLocation, boostedUserIds]);
+
+  const loadMarketplaceWithBoost = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // 1. Fetch Estate Firms
-      const { data: estateFirms, error: efError } = await supabase
+      // Build base query for profiles (both estate firms and service providers)
+      let baseQuery = supabase
         .from('profiles')
         .select(`
           id,
@@ -67,42 +106,10 @@ const MarketplacePage = () => {
           reviews_count,
           kyc_status,
           is_kyc_verified,
+          role,
           created_at,
-          subscriptions!user_id (
-            id,
-            plan_type,
-            status,
-            expires_at
-          ),
-          active_boosts!user_id (
-            id,
-            started_at,
-            expires_at,
-            package:boost_packages!inner (
-              priority_level
-            )
-          )
-        `)
-        .or('role.eq.estate-firm,role.eq.estate_firm')
-        .order('created_at', { ascending: false });
-      if (efError) throw efError;
-
-      // 2. Fetch Service Provider profiles
-      const { data: serviceProviderProfiles, error: spError } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          phone,
-          avatar_url,
-          rating,
-          reviews_count,
-          kyc_status,
-          is_kyc_verified,
           free_booking_used,
           total_bookings,
-          created_at,
           subscriptions!user_id (
             id,
             plan_type,
@@ -117,45 +124,113 @@ const MarketplacePage = () => {
               priority_level
             )
           )
-        `)
-        .eq('role', 'service-provider')
-        .order('created_at', { ascending: false });
-      if (spError) throw spError;
+        `, { count: 'exact' });
 
-      // 3. Fetch estate firm profiles for visibility (subscription/free posts)
-      const estateFirmIds = estateFirms.map(f => f.id);
+      // Apply role filter based on active tab
+      if (activeTab === 'estate-firms') {
+        baseQuery = baseQuery.or('role.eq.estate-firm,role.eq.estate_firm');
+      } else if (activeTab === 'services') {
+        baseQuery = baseQuery.eq('role', 'service-provider');
+      } else {
+        // 'all' – include both roles
+        baseQuery = baseQuery.or('role.eq.estate-firm,role.eq.estate_firm,role.eq.service-provider');
+      }
+
+      // Apply location filter from detected location if not overridden by manual filter
+      const effectiveState = filters.state || (userLocation?.state || null);
+      const effectiveLga = filters.lga || (userLocation?.lga || null);
+      if (effectiveState) {
+        baseQuery = baseQuery.eq('state', effectiveState);
+        if (effectiveLga) baseQuery = baseQuery.eq('lga', effectiveLga);
+      }
+
+      // Apply other filters (search, rating, etc.) – we'll do after fetching because they are more complex
+
+      // Get total count (without pagination)
+      const { count, error: countError } = await baseQuery;
+      if (countError) throw countError;
+      setTotalCount(count || 0);
+
+      // Separate boosted and non-boosted queries
+      let boostedQuery = baseQuery;
+      let nonBoostedQuery = baseQuery;
+
+      if (boostedUserIds.length > 0) {
+        const boostedIds = boostedUserIds.join(',');
+        boostedQuery = boostedQuery.in('id', boostedUserIds);
+        nonBoostedQuery = nonBoostedQuery.not('id', 'in', `(${boostedIds})`);
+      } else {
+        boostedQuery = boostedQuery.filter('id', 'eq', '0'); // return none
+      }
+
+      // Pagination offsets
+      const boostedNeeded = Math.round(ITEMS_PER_PAGE * BOOST_RATIO); // 8
+      const nonBoostedNeeded = ITEMS_PER_PAGE - boostedNeeded; // 2
+
+      const boostedOffset = (page - 1) * boostedNeeded;
+      const nonBoostedOffset = (page - 1) * nonBoostedNeeded;
+
+      // Fetch boosted profiles
+      const { data: boostedProfiles, error: boostedError } = await boostedQuery
+        .order('created_at', { ascending: false })
+        .range(boostedOffset, boostedOffset + boostedNeeded - 1);
+
+      if (boostedError) throw boostedError;
+
+      // Fetch non-boosted profiles
+      const { data: nonBoostedProfiles, error: nonBoostedError } = await nonBoostedQuery
+        .order('created_at', { ascending: false })
+        .range(nonBoostedOffset, nonBoostedOffset + nonBoostedNeeded - 1);
+
+      if (nonBoostedError) throw nonBoostedError;
+
+      // Combine and shuffle
+      const shuffledBoosted = shuffleArray(boostedProfiles || []);
+      const shuffledNonBoosted = shuffleArray(nonBoostedProfiles || []);
+
+      const combined = [];
+      const maxLength = Math.max(shuffledBoosted.length, shuffledNonBoosted.length);
+      for (let i = 0; i < maxLength; i++) {
+        if (i < shuffledBoosted.length) combined.push(shuffledBoosted[i]);
+        if (i < shuffledNonBoosted.length) combined.push(shuffledNonBoosted[i]);
+      }
+
+      const pageProfiles = combined.slice(0, ITEMS_PER_PAGE);
+
+      // Now transform these profiles into marketplace items (estate firms and service providers)
+      // Also fetch related data (service_providers, estate_services, etc.) only for these IDs
+      const profileIds = pageProfiles.map(p => p.id);
+
+      // Fetch estate firm profiles for visibility
       const { data: estateFirmProfiles } = await supabase
         .from('estate_firm_profiles')
         .select('id, free_posts_remaining, subscription_status, subscription_expiry')
-        .in('id', estateFirmIds);
+        .in('id', profileIds);
 
       const profileMap = {};
       estateFirmProfiles?.forEach(p => profileMap[p.id] = p);
 
-      // 4. Fetch service_providers details
+      // Fetch service_providers details
       let providerDetailsMap = {};
-      if (serviceProviderProfiles?.length) {
-        const providerIds = serviceProviderProfiles.map(p => p.id);
-        const { data: spDetails, error: spDetailsError } = await supabase
+      const serviceProviderIds = pageProfiles.filter(p => p.role === 'service-provider').map(p => p.id);
+      if (serviceProviderIds.length > 0) {
+        const { data: spDetails } = await supabase
           .from('service_providers')
           .select('*')
-          .in('user_id', providerIds);
-        if (spDetailsError) throw spDetailsError;
+          .in('user_id', serviceProviderIds);
         providerDetailsMap = (spDetails || []).reduce((acc, detail) => {
           acc[detail.user_id] = detail;
           return acc;
         }, {});
       }
 
-      // 5. Fetch services for providers
+      // Fetch services for providers
       let servicesByProvider = {};
-      if (serviceProviderProfiles?.length) {
-        const providerIds = serviceProviderProfiles.map(p => p.id);
-        const { data: servicesData, error: srvError } = await supabase
+      if (serviceProviderIds.length > 0) {
+        const { data: servicesData } = await supabase
           .from('services')
           .select('provider_id, service_title')
-          .in('provider_id', providerIds);
-        if (srvError) throw srvError;
+          .in('provider_id', serviceProviderIds);
         servicesByProvider = (servicesData || []).reduce((acc, srv) => {
           if (!acc[srv.provider_id]) acc[srv.provider_id] = [];
           acc[srv.provider_id].push(srv.service_title);
@@ -163,23 +238,25 @@ const MarketplacePage = () => {
         }, {});
       }
 
-      // 6. Fetch estate services
-      const { data: estateServices, error: esError } = await supabase
-        .from('estate_services')
-        .select('*')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false });
-      if (esError) throw esError;
+      // Fetch estate services for this page (if needed)
+      // We'll limit to services related to the estate firms in this page
+      const estateFirmIds = pageProfiles.filter(p => p.role === 'estate-firm' || p.role === 'estate_firm').map(p => p.id);
+      let estateServices = [];
+      if (estateFirmIds.length > 0) {
+        const { data: esData } = await supabase
+          .from('estate_services')
+          .select('*')
+          .eq('status', 'active')
+          .in('estate_firm_id', estateFirmIds)
+          .order('created_at', { ascending: false });
+        estateServices = esData || [];
+      }
 
-      // 7. Fetch review stats for all providers
-      const allProviderIds = [
-        ...estateFirms.map(f => f.id),
-        ...serviceProviderProfiles.map(p => p.id)
-      ];
+      // Fetch review stats for these profiles
       const { data: reviewStats } = await supabase
         .from('reviews')
         .select('provider_id, rating')
-        .in('provider_id', allProviderIds);
+        .in('provider_id', profileIds);
 
       const reviewMap = {};
       reviewStats?.forEach(r => {
@@ -190,16 +267,16 @@ const MarketplacePage = () => {
         reviewMap[r.provider_id].count += 1;
       });
 
-      // 8. Transform estate firms with visibility filter
-      const transformedEstateFirms = (estateFirms || [])
-        .filter(firm => {
-          const profile = profileMap[firm.id];
-          if (!profile) return true;
-          const hasActiveSub = profile.subscription_status === 'active' && new Date(profile.subscription_expiry) > new Date();
-          const hasFreePosts = (profile.free_posts_remaining || 0) > 0;
-          return hasActiveSub || hasFreePosts;
-        })
+      // Transform profiles into marketplace items (estate firms)
+      const transformedEstateFirms = pageProfiles
+        .filter(p => p.role === 'estate-firm' || p.role === 'estate_firm')
         .map(firm => {
+          const profile = profileMap[firm.id];
+          const hasActiveSub = profile?.subscription_status === 'active' && new Date(profile.subscription_expiry) > new Date();
+          const hasFreePosts = (profile?.free_posts_remaining || 0) > 0;
+          const isVisible = hasActiveSub || hasFreePosts; // always true for marketplace appearance? The original logic used this to filter, but marketplace visibility is always on. We'll keep it for consistency.
+          if (!isVisible) return null;
+
           const activeBoost = firm.active_boosts?.find(b => 
             b.started_at && new Date(b.expires_at) > new Date()
           );
@@ -240,147 +317,197 @@ const MarketplacePage = () => {
             boostPriority,
             createdAt: firm.created_at || new Date().toISOString()
           };
+        })
+        .filter(Boolean);
+
+      // Transform estate services
+      const transformedEstateServices = estateServices
+        .map(service => {
+          const firm = pageProfiles.find(f => f.id === service.estate_firm_id);
+          if (!firm) return null;
+          const isFirmVerified = firm.is_kyc_verified || firm.kyc_status === 'approved';
+          const isFirmBoosted = firm.active_boosts?.some(b => b.started_at && new Date(b.expires_at) > new Date());
+
+          return {
+            id: service.id,
+            type: 'service',
+            serviceType: 'estate',
+            name: service.title,
+            description: service.description,
+            providerName: firm.full_name || 'Estate Firm',
+            providerId: firm.id,
+            category: service.category,
+            priceModel: service.price_model,
+            price: service.price,
+            hourlyRate: service.hourly_rate,
+            percentage: service.percentage,
+            location: service.location,
+            serviceAreas: service.service_areas,
+            features: service.features,
+            benefits: service.benefits,
+            requirements: service.requirements,
+            images: service.images,
+            contactPhone: service.contact_phone,
+            contactEmail: service.contact_email,
+            website: service.website,
+            rating: 0,
+            reviews: 0,
+            verificationState: isFirmVerified ? 'verified' : 'unverified',
+            boostState: isFirmBoosted ? 'boosted' : 'not-boosted',
+            badges: [
+              ...(isFirmVerified ? ['verified'] : []),
+              ...(isFirmBoosted ? ['boosted'] : []),
+              ...(!isFirmVerified ? ['unverified'] : [])
+            ],
+            createdAt: service.created_at
+          };
+        })
+        .filter(Boolean);
+
+      // Transform service providers
+      const transformedServiceProviders = pageProfiles
+        .filter(p => p.role === 'service-provider')
+        .map(profile => {
+          const providerDetails = providerDetailsMap[profile.id] || {};
+          const activeBoost = profile.active_boosts?.find(b => 
+            b.started_at && new Date(b.expires_at) > new Date()
+          );
+          const isBoosted = !!activeBoost;
+          const boostPriority = activeBoost?.package?.priority_level || 0;
+          const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
+          const subscription = profile.subscriptions?.[0];
+          const isSubscribed = subscription?.status === 'active' && 
+            (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
+
+          const freeBookingUsed = profile.free_booking_used || 0;
+          const freeBookingLimit = 10;
+          const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
+          const subscriptionState = freeBookingUsed >= freeBookingLimit 
+            ? (isSubscribed ? 'subscribed' : 'requires_subscription') 
+            : 'free';
+
+          const priceLow = providerDetails.price_range_low || 0;
+          const priceHigh = providerDetails.price_range_high || 0;
+          const priceRange = priceLow && priceHigh 
+            ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
+            : 'Contact for pricing';
+
+          const providerServicesFromSP = providerDetails.services || [];
+          const providerServicesFromTable = servicesByProvider[profile.id] || [];
+          const allServices = [...new Set([...providerServicesFromSP, ...providerServicesFromTable])];
+
+          const stats = reviewMap[profile.id] || { total: 0, count: 0 };
+          const avgRating = stats.count > 0 ? stats.total / stats.count : 0;
+
+          return {
+            id: profile.id,
+            providerId: providerDetails.id || profile.id,
+            type: 'service-provider',
+            name: providerDetails.business_name || profile.full_name || 'Service Provider',
+            title: providerDetails.title || '',
+            description: providerDetails.description || 'Experienced professional',
+            profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
+            location: providerDetails.location || profile.location || 
+                      `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
+            rating: avgRating,
+            reviews: stats.count,
+            services: allServices,
+            category: providerDetails.category || '',
+            priceRange,
+            verificationState: isVerified ? 'verified' : 'unverified',
+            boostState: isBoosted ? 'boosted' : 'not-boosted',
+            subscriptionState,
+            badges: [
+              ...(isVerified ? ['verified'] : []),
+              ...(isBoosted ? ['boosted'] : []),
+              ...(!isVerified ? ['unverified'] : [])
+            ],
+            bookingsCount: freeBookingUsed,
+            freeBookingsLeft,
+            totalBookings: profile.total_bookings || 0,
+            yearsExperience: providerDetails.years_experience || 0,
+            successRate: providerDetails.success_rate || 95,
+            responseTime: providerDetails.response_time || 'Within 2-4 hours',
+            areasServed: providerDetails.areas_served || [],
+            boostPriority,
+            createdAt: profile.created_at || new Date().toISOString()
+          };
         });
 
-      // 9. Transform estate services into marketplace items
-      const transformedEstateServices = (estateServices || [])
-  .map(service => {
-    const firm = estateFirms.find(f => f.id === service.estate_firm_id);
-    const profile = profileMap[service.estate_firm_id];
-    const firmVisible = profile 
-      ? (profile.subscription_status === 'active' && new Date(profile.subscription_expiry) > new Date()) 
-        || (profile.free_posts_remaining || 0) > 0
-      : true;
-    if (!firmVisible || !firm) return null; // skip if firm not found or not visible
-
-    const isFirmVerified = firm?.is_kyc_verified || firm?.kyc_status === 'approved';
-    const isFirmBoosted = firm?.active_boosts?.some(b => b.started_at && new Date(b.expires_at) > new Date());
-
-    return {
-      id: service.id,
-      type: 'service',
-      serviceType: 'estate',
-      name: service.title,
-      description: service.description,
-      providerName: firm?.full_name || 'Estate Firm',
-      providerId: firm?.id, // ✅ use the firm's profiles.id
-      category: service.category,
-      priceModel: service.price_model,
-      price: service.price,
-      hourlyRate: service.hourly_rate,
-      percentage: service.percentage,
-      location: service.location,
-      serviceAreas: service.service_areas,
-      features: service.features,
-      benefits: service.benefits,
-      requirements: service.requirements,
-      images: service.images,
-      contactPhone: service.contact_phone,
-      contactEmail: service.contact_email,
-      website: service.website,
-      rating: 0,
-      reviews: 0,
-      verificationState: isFirmVerified ? 'verified' : 'unverified',
-      boostState: isFirmBoosted ? 'boosted' : 'not-boosted',
-      badges: [
-        ...(isFirmVerified ? ['verified'] : []),
-        ...(isFirmBoosted ? ['boosted'] : []),
-        ...(!isFirmVerified ? ['unverified'] : [])
-      ],
-      createdAt: service.created_at
-    };
-  })
-  .filter(Boolean);
-      // 10. Transform service providers
-      const transformedServiceProviders = (serviceProviderProfiles || []).map(profile => {
-        const providerDetails = providerDetailsMap[profile.id] || {};
-        const activeBoost = profile.active_boosts?.find(b => 
-          b.started_at && new Date(b.expires_at) > new Date()
-        );
-        const isBoosted = !!activeBoost;
-        const boostPriority = activeBoost?.package?.priority_level || 0;
-        const isVerified = profile.is_kyc_verified === true || profile.kyc_status === 'approved';
-        const subscription = profile.subscriptions?.[0];
-        const isSubscribed = subscription?.status === 'active' && 
-          (!subscription.expires_at || new Date(subscription.expires_at) > new Date());
-
-        const freeBookingUsed = profile.free_booking_used || 0;
-        const freeBookingLimit = 10;
-        const freeBookingsLeft = Math.max(0, freeBookingLimit - freeBookingUsed);
-        const subscriptionState = freeBookingUsed >= freeBookingLimit 
-          ? (isSubscribed ? 'subscribed' : 'requires_subscription') 
-          : 'free';
-
-        const priceLow = providerDetails.price_range_low || 0;
-        const priceHigh = providerDetails.price_range_high || 0;
-        const priceRange = priceLow && priceHigh 
-          ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
-          : 'Contact for pricing';
-
-        const providerServicesFromSP = providerDetails.services || [];
-        const providerServicesFromTable = servicesByProvider[profile.id] || [];
-        const allServices = [...new Set([...providerServicesFromSP, ...providerServicesFromTable])];
-
-        const stats = reviewMap[profile.id] || { total: 0, count: 0 };
-        const avgRating = stats.count > 0 ? stats.total / stats.count : 0;
-
-        return {
-          id: profile.id,
-          providerId: providerDetails.id || profile.id,
-          type: 'service-provider',
-          name: providerDetails.business_name || profile.full_name || 'Service Provider',
-          title: providerDetails.title || '',
-          description: providerDetails.description || 'Experienced professional',
-          profileImage: providerDetails.avatar_url || profile.avatar_url || '👨‍🔧',
-          location: providerDetails.location || profile.location || 
-                    `${providerDetails.state || ''} ${providerDetails.lga || ''}`.trim() || 'Nigeria',
-          rating: avgRating,
-          reviews: stats.count,
-          services: allServices,
-          category: providerDetails.category || '',
-          priceRange,
-          verificationState: isVerified ? 'verified' : 'unverified',
-          boostState: isBoosted ? 'boosted' : 'not-boosted',
-          subscriptionState,
-          badges: [
-            ...(isVerified ? ['verified'] : []),
-            ...(isBoosted ? ['boosted'] : []),
-            ...(!isVerified ? ['unverified'] : [])
-          ],
-          bookingsCount: freeBookingUsed,
-          freeBookingsLeft,
-          totalBookings: profile.total_bookings || 0,
-          yearsExperience: providerDetails.years_experience || 0,
-          successRate: providerDetails.success_rate || 95,
-          responseTime: providerDetails.response_time || 'Within 2-4 hours',
-          areasServed: providerDetails.areas_served || [],
-          boostPriority,
-          createdAt: profile.created_at || new Date().toISOString()
-        };
-      });
-
-      // 11. Combine all items
-      const allItems = [
+      // Combine all items for this page
+      const pageItems = [
         ...transformedEstateFirms,
         ...transformedEstateServices,
         ...transformedServiceProviders
-      ].filter(Boolean);
+      ];
 
-      // 12. Sort items
-      const sortedItems = allItems.sort((a, b) => {
-        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
-        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
-          return (b.boostPriority || 0) - (a.boostPriority || 0);
+      // Apply search and other filters locally (since we fetched only needed profiles)
+      const filteredPageItems = pageItems.filter(item => {
+        if (!item) return false;
+
+        // Search
+        if (searchTerm.trim()) {
+          const term = searchTerm.toLowerCase();
+          const searchable = [
+            item.name,
+            item.title || '',
+            item.description,
+            ...(item.services || []),
+            item.location
+          ].join(' ').toLowerCase();
+          if (!searchable.includes(term)) return false;
         }
-        if (b.rating !== a.rating) return b.rating - a.rating;
-        return new Date(b.createdAt) - new Date(a.createdAt);
+
+        // Verified only
+        if (filters.verifiedOnly && item.verificationState !== 'verified') return false;
+
+        // Boosted only
+        if (filters.boostOnly && item.boostState !== 'boosted') return false;
+
+        // Min rating
+        if (item.rating < filters.minRating) return false;
+
+        // Service type / category
+        if (filters.serviceType && (item.type === 'service-provider' || item.type === 'service')) {
+          if (!item.services?.some(s => s.toLowerCase().includes(filters.serviceType.toLowerCase()))) {
+            return false;
+          }
+        }
+        if (filters.category && (item.type === 'service-provider' || item.type === 'service')) {
+          if (item.category !== filters.category) return false;
+        }
+
+        return true;
+      });
+
+      // Sort the filtered page items
+      const sortedPageItems = [...filteredPageItems].sort((a, b) => {
+        switch (filters.sortBy) {
+          case 'rating':
+            return b.rating - a.rating;
+          case 'boosted':
+            if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+            if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+            if (a.boostState === 'boosted' && b.boostState === 'boosted') {
+              return (b.boostPriority || 0) - (a.boostPriority || 0);
+            }
+            return 0;
+          case 'newest':
+            return new Date(b.createdAt) - new Date(a.createdAt);
+          default: // relevance
+            if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+            if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+            if (a.boostState === 'boosted' && b.boostState === 'boosted') {
+              return (b.boostPriority || 0) - (a.boostPriority || 0);
+            }
+            return b.rating - a.rating;
+        }
       });
 
       setMarketplaceData({
         estateFirms: transformedEstateFirms,
         serviceProviders: transformedServiceProviders,
-        allItems: sortedItems
+        allItems: sortedPageItems
       });
 
     } catch (err) {
@@ -391,79 +518,18 @@ const MarketplacePage = () => {
     }
   };
 
-  // ---------- Filtering & Sorting (client-side) ----------
-  const filteredItems = marketplaceData.allItems.filter(item => {
-    if (!item) return false;
-
-    // Tab filter
-    if (activeTab === 'estate-firms' && item.type !== 'estate-firm') return false;
-    if (activeTab === 'services' && item.type !== 'service-provider' && item.type !== 'service') return false;
-
-    // Search
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      const searchable = [
-        item.name,
-        item.title || '',
-        item.description,
-        ...(item.services || []),
-        item.location
-      ].join(' ').toLowerCase();
-      if (!searchable.includes(term)) return false;
+  const shuffleArray = (array) => {
+    const a = [...array];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
     }
+    return a;
+  };
 
-    // Verified only
-    if (filters.verifiedOnly && item.verificationState !== 'verified') return false;
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
-    // Boosted only
-    if (filters.boostOnly && item.boostState !== 'boosted') return false;
-
-    // Min rating
-    if (item.rating < filters.minRating) return false;
-
-    // Service type / category
-    if (filters.serviceType && (item.type === 'service-provider' || item.type === 'service')) {
-      if (!item.services?.some(s => s.toLowerCase().includes(filters.serviceType.toLowerCase()))) {
-        return false;
-      }
-    }
-    if (filters.category && (item.type === 'service-provider' || item.type === 'service')) {
-      if (item.category !== filters.category) return false;
-    }
-
-    // Location filters
-    if (filters.state && item.location) {
-      if (!item.location.toLowerCase().includes(filters.state.toLowerCase())) return false;
-    }
-
-    return true;
-  });
-
-  const sortedItems = [...filteredItems].sort((a, b) => {
-    if (!a || !b) return 0;
-    switch (filters.sortBy) {
-      case 'rating':
-        return b.rating - a.rating;
-      case 'boosted':
-        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
-        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
-          return (b.boostPriority || 0) - (a.boostPriority || 0);
-        }
-        return 0;
-      case 'newest':
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      default: // relevance
-        if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
-        if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-        if (a.boostState === 'boosted' && b.boostState === 'boosted') {
-          return (b.boostPriority || 0) - (a.boostPriority || 0);
-        }
-        return b.rating - a.rating;
-    }
-  });
-
-  // ---------- Action Handlers ----------
+  // Action handlers (unchanged from original)
   const handleBookService = async (provider) => {
     setSelectedProvider(provider);
     setLoadingPlans(true);
@@ -535,7 +601,7 @@ const MarketplacePage = () => {
     handleContactServiceProvider({ providerId: firm.id });
   };
 
-  // ---------- Badge Rendering ----------
+  // Badge rendering (unchanged)
   const renderBadges = (item) => {
     const badges = [];
 
@@ -591,7 +657,7 @@ const MarketplacePage = () => {
         <AlertCircle size={48} />
         <h3>Failed to load marketplace</h3>
         <p>{error}</p>
-        <button onClick={fetchMarketplaceData}>Retry</button>
+        <button onClick={() => loadMarketplaceWithBoost()}>Retry</button>
       </div>
     );
   }
@@ -605,10 +671,16 @@ const MarketplacePage = () => {
           <p className="subtitle">
             Find trusted estate firms and service providers. <span className="highlight">Verified</span> and <span className="highlight">Boosted</span> listings highlighted.
           </p>
+          {userLocation && (
+            <div className="location-info">
+              <Navigation size={16} />
+              <span>Showing providers near {userLocation.city ? `${userLocation.city}, ` : ''}{userLocation.state}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Search and Filter Bar */}
+      {/* Search and Filter Bar (unchanged) */}
       <div className="search-filter-bar">
         <div className="search-container">
           <div className="search-input-wrapper">
@@ -655,7 +727,7 @@ const MarketplacePage = () => {
         </div>
       </div>
 
-      {/* Category Tabs */}
+      {/* Category Tabs (unchanged) */}
       <div className="category-tabs">
         <button 
           className={`tab ${activeTab === 'all' ? 'active' : ''}`}
@@ -682,12 +754,12 @@ const MarketplacePage = () => {
 
       {/* Results Count */}
       <div className="results-info">
-        <p>{sortedItems.length} {activeTab === 'all' ? 'services' : activeTab.replace('-', ' ')} found</p>
+        <p>{marketplaceData.allItems.length} {activeTab === 'all' ? 'services' : activeTab.replace('-', ' ')} found (page {page} of {totalPages})</p>
       </div>
 
       {/* Marketplace Grid */}
       <div className="marketplace-grid">
-        {sortedItems.length === 0 ? (
+        {marketplaceData.allItems.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">
               <Search size={48} />
@@ -696,7 +768,7 @@ const MarketplacePage = () => {
             <p>Try adjusting your search or filters</p>
           </div>
         ) : (
-          sortedItems.map((item) => {
+          marketplaceData.allItems.map((item) => {
             const badges = renderBadges(item);
             return (
               <div key={item.id} className={`service-card ${item.boostState === 'boosted' ? 'boosted' : ''}`}>
@@ -734,7 +806,7 @@ const MarketplacePage = () => {
                   </div>
                 </div>
 
-                {/* Card Body */}
+                {/* Card Body (unchanged) */}
                 <div className="card-body">
                   <div className="provider-info">
                     <div className="provider-avatar">
@@ -818,7 +890,7 @@ const MarketplacePage = () => {
                   </div>
                 </div>
 
-                {/* Card Footer */}
+                {/* Card Footer (unchanged) */}
                 <div className="card-footer">
                   {item.type === 'estate-firm' ? (
                     <>
@@ -840,16 +912,13 @@ const MarketplacePage = () => {
                     </>
                   ) : item.type === 'service' ? (
                     <>
-                      {/* Only show View Details for services and service providers, not for estate firms */}
-{item.type !== 'estate-firm' && (
-  <button 
-    className="btn btn-outline"
-    onClick={() => navigate(`/services/${item.id}`)}
-  >
-    <Eye size={16} />
-    <span>View Details</span>
-  </button>
-)}
+                      <button 
+                        className="btn btn-outline"
+                        onClick={() => navigate(`/services/${item.id}`)}
+                      >
+                        <Eye size={16} />
+                        <span>View Details</span>
+                      </button>
                       <button 
                         className="btn btn-primary"
                         onClick={() => handleContactServiceProvider(item)}
@@ -882,19 +951,18 @@ const MarketplacePage = () => {
                       </button>
                     </>
                   )}
-                  {/* Write Review button – visible for all types when user logged in */}
+                  {/* Write Review button */}
                   {user && (
-  <button 
-    className="btn btn-outline btn-sm"
-    onClick={() => {
-      // For service items, use providerId; for others, use item.id
-      const reviewId = item.type === 'service' ? item.providerId : item.id;
-      navigate(`/write-review/${reviewId}`);
-    }}
-  >
-    <Star size={14} /> Write Review
-  </button>
-)}
+                    <button 
+                      className="btn btn-outline btn-sm"
+                      onClick={() => {
+                        const reviewId = item.type === 'service' ? item.providerId : item.id;
+                        navigate(`/write-review/${reviewId}`);
+                      }}
+                    >
+                      <Star size={14} /> Write Review
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -902,7 +970,26 @@ const MarketplacePage = () => {
         )}
       </div>
 
-      {/* Business Rules Info */}
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button 
+            disabled={page === 1} 
+            onClick={() => setPage(p => p - 1)}
+          >
+            Previous
+          </button>
+          <span>Page {page} of {totalPages}</span>
+          <button 
+            disabled={page === totalPages} 
+            onClick={() => setPage(p => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      {/* Business Rules Info (unchanged) */}
       <div className="business-rules-info">
         <div className="rules-header">
           <Award size={24} />
@@ -940,7 +1027,7 @@ const MarketplacePage = () => {
         </div>
       </div>
 
-      {/* Pricing Plan Modal */}
+      {/* Pricing Plan Modal (unchanged) */}
       {showPricingModal && selectedProvider && (
         <div className="modal-overlay" onClick={() => setShowPricingModal(false)}>
           <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>

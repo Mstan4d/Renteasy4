@@ -1,84 +1,101 @@
 // src/modules/dashboard/pages/tenant/TenantLeases.jsx
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../../../shared/context/AuthContext'
-import VerifiedBadge from '../../../../shared/components/VerifiedBadge'
-import './TenantLeases.css'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../../shared/context/AuthContext';
+import { supabase } from '../../../../shared/lib/supabaseClient';
+import VerifiedBadge from '../../../../shared/components/VerifiedBadge';
+import './TenantLeases.css';
 
 const TenantLeases = () => {
-  const { user } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth();
+  const navigate = useNavigate();
   
-  const [leases, setLeases] = useState([])
-  const [activeLease, setActiveLease] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [leases, setLeases] = useState([]);
+  const [activeLease, setActiveLease] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadLeases()
-  }, [])
+    if (user) loadLeases();
+  }, [user]);
 
-  const loadLeases = () => {
-    // Mock data
-    const mockLeases = [
-      {
-        id: 'lease_001',
-        property: '2 Bedroom Flat, Lekki Phase 1',
-        propertyId: 'prop_001',
-        landlord: 'Verified Properties Ltd.',
-        landlordVerified: true,
-        startDate: '2024-01-15',
-        endDate: '2025-01-14',
-        duration: '12 months',
-        monthlyRent: 450000,
-        securityDeposit: 900000,
-        totalRent: 5400000,
-        status: 'active',
-        agreementUrl: '#',
-        payments: [
-          { month: 'January 2024', amount: 450000, status: 'paid', date: '2024-01-10' },
-          { month: 'February 2024', amount: 450000, status: 'paid', date: '2024-02-10' },
-          // ... more payments
-        ],
-        terms: [
-          'Rent due on the 1st of each month',
-          'Late fee: 5% after 5 days',
-          'Maintenance requests through portal',
-          'No subletting without permission'
-        ]
-      },
-      {
-        id: 'lease_002',
-        property: 'Studio Apartment, Victoria Island',
-        propertyId: 'prop_002',
-        landlord: 'Luxury Homes',
-        landlordVerified: true,
-        startDate: '2023-06-01',
-        endDate: '2024-05-31',
-        duration: '12 months',
-        monthlyRent: 1800000,
-        securityDeposit: 3600000,
-        totalRent: 21600000,
-        status: 'completed',
-        agreementUrl: '#',
+  const loadLeases = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from('leases')
+        .select(`
+          *,
+          property:property_id (id, title, address),
+          landlord:landlord_id (id, name, verified, avatar_url)
+        `)
+        .eq('tenant_id', user.id)
+        .order('start_date', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform data to match component's expected structure
+      const transformed = (data || []).map(lease => ({
+        id: lease.id,
+        property: lease.property?.title || 'Unknown Property',
+        propertyId: lease.property_id,
+        landlord: lease.landlord?.name || lease.landlord_name || 'Unknown',
+        landlordVerified: lease.landlord?.verified || lease.landlord_verified,
+        startDate: lease.start_date,
+        endDate: lease.end_date,
+        duration: lease.duration,
+        monthlyRent: lease.monthly_rent,
+        securityDeposit: lease.security_deposit,
+        totalRent: lease.total_rent,
+        status: lease.status,
+        agreementUrl: lease.agreement_url,
+        terms: lease.terms || [],
+        // If you have a separate payments table, you'd fetch them here.
+        // For now, we'll leave payments empty or store them in lease JSON.
         payments: [],
-        terms: []
-      }
-    ]
+      }));
 
-    setTimeout(() => {
-      setLeases(mockLeases)
-      setActiveLease(mockLeases.find(lease => lease.status === 'active'))
-      setLoading(false)
-    }, 800)
-  }
+      setLeases(transformed);
+      setActiveLease(transformed.find(lease => lease.status === 'active'));
+    } catch (err) {
+      console.error('Error loading leases:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const viewAgreement = (leaseId) => {
-    // Open agreement PDF
-    alert('Opening agreement PDF...')
-  }
+    const lease = leases.find(l => l.id === leaseId);
+    if (lease?.agreementUrl) {
+      window.open(lease.agreementUrl, '_blank');
+    } else {
+      alert('No agreement document available.');
+    }
+  };
 
   const renewLease = (leaseId) => {
-    navigate(`/dashboard/tenant/renew-lease/${leaseId}`)
+    navigate(`/dashboard/tenant/renew-lease/${leaseId}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="tenant-leases">
+        <div className="loading-state">Loading leases...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="tenant-leases">
+        <div className="error-state">
+          <p>Failed to load leases: {error}</p>
+          <button onClick={loadLeases}>Retry</button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -116,7 +133,7 @@ const TenantLeases = () => {
             </div>
             <div className="summary-item">
               <span className="label">Security Deposit</span>
-              <span className="value">₦{activeLease.securityDeposit.toLocaleString()}</span>
+              <span className="value">₦{activeLease.securityDeposit?.toLocaleString()}</span>
             </div>
           </div>
           <div className="summary-actions">
@@ -131,8 +148,10 @@ const TenantLeases = () => {
       )}
 
       {/* Leases List */}
-      {loading ? (
-        <div className="loading-state">Loading leases...</div>
+      {leases.length === 0 ? (
+        <div className="empty-state">
+          <p>No leases found.</p>
+        </div>
       ) : (
         <div className="leases-list">
           {leases.map(lease => (
@@ -157,7 +176,7 @@ const TenantLeases = () => {
                 </div>
                 <div className="detail-row">
                   <span>Monthly Rent: ₦{lease.monthlyRent.toLocaleString()}</span>
-                  <span>Total Rent: ₦{lease.totalRent.toLocaleString()}</span>
+                  <span>Total Rent: ₦{lease.totalRent?.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -176,7 +195,7 @@ const TenantLeases = () => {
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default TenantLeases
+export default TenantLeases;

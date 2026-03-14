@@ -1,4 +1,3 @@
-// src/modules/estate-firm/components/SubscriptionModal.jsx
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
 import { Crown, Check, X, CreditCard, Building, Clock, Upload } from 'lucide-react';
@@ -85,11 +84,27 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
         metadata: { plan_id: selectedPlan.id, plan_name: selectedPlan.name },
       });
 
-      await paymentService.createSubscription({
-        userId: user.id,
-        plan: selectedPlan,
-        paymentId: payment.id,
-      });
+      // Calculate subscription dates
+      const startDate = new Date();
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + (selectedPlan.duration_days || 30));
+
+      // Insert subscription with all required columns
+      const { error: subError } = await supabase
+        .from('subscriptions')
+        .insert({
+          profile_id: user.id,
+          plan_id: selectedPlan.id,
+          payment_id: payment.id,
+          amount: selectedPlan.price,
+          status: 'pending',
+          starts_at: startDate.toISOString(),
+          expires_at: endDate.toISOString(),
+          plan_type: user.role,
+          created_at: new Date().toISOString()
+        });
+
+      if (subError) throw subError;
 
       setPaymentRecord(payment);
       setStep('payment');

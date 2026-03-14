@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../shared/context/AuthContext';
-import { supabase } from '../../../../shared/lib/supabaseClient'; // Added Supabase Import
+import { supabase } from '../../../../shared/lib/supabaseClient';
 import {
   AlertTriangle,
   Home,
@@ -24,37 +24,38 @@ import {
   MessageCircle,
   Bell,
   FileText,
-  Tool // Added missing icon if needed
+  DollarSign,
+  Receipt
 } from 'lucide-react';
 import './Reports.css';
 
 const Reports = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [reports, setReports] = useState([]);
+  const [items, setItems] = useState([]); // Combined feed items
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [selectedReport, setSelectedReport] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
   const [stats, setStats] = useState({
-    totalReports: 0,
-    openReports: 0,
-    resolvedReports: 0,
-    urgentReports: 0,
-    maintenanceReports: 0,
-    newMaintenance: 0
+    total: 0,
+    maintenance: 0,
+    payments: 0,
+    documents: 0,
+    urgent: 0,
+    unread: 0
   });
 
   useEffect(() => {
     if (user?.id) {
-      loadReportsData();
+      loadAllReports();
     }
   }, [user?.id]);
 
-  const loadReportsData = async () => {
+  const loadAllReports = async () => {
     setLoading(true);
     try {
-      // Fetch maintenance_requests from Supabase where landlord_id matches current user
-      const { data, error } = await supabase
+      // 1. Fetch maintenance requests for this landlord
+      const { data: maintenance, error: maintError } = await supabase
         .from('maintenance_requests')
         .select(`
           *,
@@ -64,287 +65,492 @@ const Reports = () => {
         .eq('landlord_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (maintError) throw maintError;
 
-      // Transform Supabase data to match your component's expected structure
-      const formattedReports = data.map(item => ({
-        id: item.id,
-        tenantId: item.tenant_id,
-        tenantName: item.tenant?.full_name || 'Unknown Tenant',
-        tenantEmail: item.tenant?.email || 'No email',
-        tenantPhone: item.tenant?.phone_number || 'No phone',
-        propertyId: item.property_id,
-        propertyName: item.property?.title || 'Unknown Property',
-        propertyAddress: item.property?.address || 'Address not specified',
+      // 2. Fetch properties owned by landlord to get unit IDs for payments
+      const { data: properties, error: propError } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('landlord_id', user.id);
+
+      if (propError) throw propError;
+
+      let payments = [];
+      if (properties && properties.length > 0) {
+        const propertyIds = properties.map(p => p.id);
+        
+        // Get units for these properties
+        const { data: units, error: unitError } = await supabase
+          .from('units')
+          .select('id')
+          .in('property_id', propertyIds);
+
+        if (unitError) throw unitError;
+
+        if (units && units.length > 0) {
+          const unitIds = units.map(u => u.id);
+          
+          // Fetch payments for these units
+          // 2. Fetch payments for landlord's properties (includes utility payments)
+const { data: payments, error: payError } = await supabase
+  .from('payments')
+  .select(`
+    *,
+    unit:unit_id (
+      unit_number,
+      property:property_id (title, address),
+      tenant:tenant_id (full_name, email, phone_number)
+    )
+  `)
+  .in('unit_id', unitIds)   // unitIds already fetched from properties
+  .order('payment_date', { ascending: false });
+          if (payError) throw payError;
+          payments = pays || [];
+        }
+      }
+
+      // 3. Fetch documents shared with landlord (estate_documents with client_id = user.id)
+      const { data: documents, error: docError } = await supabase
+        .from('estate_documents')
+        .select('*')
+        .eq('client_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (docError) throw docError;
+
+      // 4. Format maintenance items
+      const maintItems = maintenance.map(item => ({
+        id: `maint-${item.id}`,
+        originalId: item.id,
         type: 'maintenance',
-        subType: item.category,
         title: item.title,
         description: item.description,
-        severity: item.emergency ? 'urgent' : (item.priority === 'high' ? 'high' : 'medium'),
+        date: item.created_at,
         status: item.status,
-        dateReported: item.created_at,
-        dateResolved: item.estimated_completion,
-        assignedTo: item.assigned_to,
-        attachments: item.images || [],
         priority: item.priority,
-        lastUpdated: item.created_at,
-        notes: item.notes,
-        actionsTaken: item.actions_taken || [], // Assuming actions_taken is an array column
-        source: 'tenant_maintenance',
+        emergency: item.emergency,
         viewed: item.viewed || false,
-        emergency: item.emergency || false
+        tenant: item.tenant,
+        property: item.property,
+        category: item.category,
+        actionsTaken: item.actions_taken || [],
+        assignedTo: item.assigned_to,
+        icon: <Wrench size={18} />,
+        link: `/dashboard/landlord/maintenance/${item.id}`, // optional detail page
       }));
 
-      // Calculate stats
-      setReports(formattedReports);
+      // 5. Format payment items
+      const paymentItems = (payments || []).map(pay => ({
+  id: `pay-${pay.id}`,
+  originalId: pay.id,
+  type: 'payment',
+  paymentType: pay.payment_type || 'rent',   // <-- new field
+  title: pay.payment_type === 'utility' 
+    ? `Utility Bill - ${pay.unit?.unit_number || 'Unit'}` 
+    : `Rent Payment - ${pay.unit?.unit_number || 'Unit'}`,
+  description: `₦${pay.amount.toLocaleString()} paid on ${new Date(pay.payment_date).toLocaleDateString()}`,
+  date: pay.payment_date,
+  amount: pay.amount,
+  status: 'completed',
+  viewed: true,
+  tenant: pay.unit?.tenant,
+  property: pay.unit?.property,
+  unitNumber: pay.unit?.unit_number,
+  receipt_url: pay.receipt_url,
+  receipt_doc_id: pay.receipt_doc_id,
+  icon: pay.payment_type === 'utility' ? <Zap size={18} /> : <DollarSign size={18} />, // different icon
+  link: pay.receipt_url ? `/dashboard/landlord/documents/${pay.receipt_doc_id}` : null,
+}));
+
+      // 6. Format document items
+      const docItems = documents.map(doc => ({
+        id: `doc-${doc.id}`,
+        originalId: doc.id,
+        type: 'document',
+        title: doc.name,
+        description: `${doc.category} document`,
+        date: doc.created_at,
+        status: doc.status,
+        viewed: doc.viewed || false,
+        icon: <FileText size={18} />,
+        link: `/dashboard/landlord/documents/${doc.id}`,
+        file_url: doc.file_url,
+      }));
+
+      // 7. Combine all, sort by date (most recent first)
+      const all = [...maintItems, ...paymentItems, ...docItems].sort((a, b) => 
+        new Date(b.date) - new Date(a.date)
+      );
+
+      setItems(all);
+
+      // 8. Calculate stats
       setStats({
-        totalReports: formattedReports.length,
-        openReports: formattedReports.filter(r => r.status === 'open').length,
-        resolvedReports: formattedReports.filter(r => r.status === 'resolved').length,
-        urgentReports: formattedReports.filter(r => r.priority === 'high' || r.severity === 'urgent').length,
-        maintenanceReports: formattedReports.length,
-        newMaintenance: formattedReports.filter(r => !r.viewed).length
+        total: all.length,
+        maintenance: maintItems.length,
+        payments: paymentItems.length,
+        documents: docItems.length,
+        urgent: maintItems.filter(i => i.priority === 'high' || i.emergency).length,
+        unread: all.filter(i => !i.viewed).length,
       });
+
     } catch (err) {
-      console.error("Error fetching reports:", err.message);
+      console.error("Error loading reports:", err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateStatus = async (reportId, newStatus) => {
+  const handleMarkViewed = async (item) => {
+    if (item.viewed) return;
+    
     try {
-      const { error } = await supabase
-        .from('maintenance_requests')
-        .update({ 
-          status: newStatus,
-          viewed: true // Auto-mark as viewed when updated
-        })
-        .eq('id', reportId);
-
-      if (error) throw error;
-
+      if (item.type === 'maintenance') {
+        await supabase
+          .from('maintenance_requests')
+          .update({ viewed: true })
+          .eq('id', item.originalId);
+      } else if (item.type === 'document') {
+        await supabase
+          .from('estate_documents')
+          .update({ viewed: true })
+          .eq('id', item.originalId);
+      }
+      // Payments might not have viewed flag, skip
+      
       // Update local state
-      const updated = reports.map(r => r.id === reportId ? { ...r, status: newStatus, viewed: true } : r);
-      setReports(updated);
-      if (selectedReport?.id === reportId) {
-        setSelectedReport({ ...selectedReport, status: newStatus, viewed: true });
+      setItems(prev => prev.map(i => 
+        i.id === item.id ? { ...i, viewed: true } : i
+      ));
+      setStats(prev => ({ ...prev, unread: prev.unread - 1 }));
+    } catch (err) {
+      console.error("Failed to mark as viewed:", err);
+    }
+  };
+
+  const handleUpdateMaintenanceStatus = async (itemId, newStatus) => {
+    try {
+      await supabase
+        .from('maintenance_requests')
+        .update({ status: newStatus })
+        .eq('id', itemId);
+
+      setItems(prev => prev.map(i => 
+        i.originalId === itemId && i.type === 'maintenance' 
+          ? { ...i, status: newStatus } 
+          : i
+      ));
+      if (selectedItem?.originalId === itemId && selectedItem.type === 'maintenance') {
+        setSelectedItem({ ...selectedItem, status: newStatus });
       }
     } catch (err) {
       alert("Failed to update status: " + err.message);
     }
   };
 
-  const handleAssignTo = async (reportId, assignee) => {
-    try {
-      const { error } = await supabase
-        .from('maintenance_requests')
-        .update({ assigned_to: assignee })
-        .eq('id', reportId);
-
-      if (error) throw error;
-
-      const updated = reports.map(r => r.id === reportId ? { ...r, assignedTo: assignee } : r);
-      setReports(updated);
-      if (selectedReport?.id === reportId) {
-        setSelectedReport({ ...selectedReport, assignedTo: assignee });
-      }
-    } catch (err) {
-      alert("Failed to assign: " + err.message);
-    }
-  };
-
-  const handleAddAction = async (reportId, action) => {
-    const report = reports.find(r => r.id === reportId);
-    const newActions = [...(report.actionsTaken || []), action];
-
-    try {
-      const { error } = await supabase
-        .from('maintenance_requests')
-        .update({ actions_taken: newActions })
-        .eq('id', reportId);
-
-      if (error) throw error;
-
-      const updated = reports.map(r => r.id === reportId ? { ...r, actionsTaken: newActions } : r);
-      setReports(updated);
-      if (selectedReport?.id === reportId) {
-        setSelectedReport({ ...selectedReport, actionsTaken: newActions });
-      }
-    } catch (err) {
-      alert("Failed to add action: " + err.message);
-    }
-  };
-
-  const handleViewReport = async (report) => {
-    setSelectedReport(report);
-    if (!report.viewed) {
-      await supabase
-        .from('maintenance_requests')
-        .update({ viewed: true })
-        .eq('id', report.id);
-      
-      setReports(prev => prev.map(r => r.id === report.id ? { ...r, viewed: true } : r));
-    }
-  };
-
-  const markAllAsViewed = async () => {
-    try {
-      await supabase
-        .from('maintenance_requests')
-        .update({ viewed: true })
-        .eq('landlord_id', user.id)
-        .eq('viewed', false);
-      
-      loadReportsData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const filteredReports = reports.filter(report => {
+  const filteredItems = items.filter(item => {
     if (filter === 'all') return true;
-    if (filter === 'open') return report.status === 'open';
-    if (filter === 'in_progress') return report.status === 'in_progress';
-    if (filter === 'resolved') return report.status === 'resolved';
-    if (filter === 'urgent') return report.priority === 'high' || report.severity === 'urgent';
-    if (filter === 'new') return !report.viewed;
+    if (filter === 'maintenance') return item.type === 'maintenance';
+    if (filter === 'payments') return item.type === 'payment';
+    if (filter === 'documents') return item.type === 'document';
+    if (filter === 'urgent') return item.type === 'maintenance' && (item.priority === 'high' || item.emergency);
+    if (filter === 'unread') return !item.viewed;
     return true;
   });
 
-  const getStatusBadge = (status) => {
-    const config = {
-      open: { label: 'Open', color: '#ef4444', icon: <AlertTriangle size={14} /> },
-      pending: { label: 'Pending', color: '#f59e0b', icon: <Clock size={14} /> },
-      in_progress: { label: 'In Progress', color: '#3b82f6', icon: <Clock size={14} /> },
-      resolved: { label: 'Resolved', color: '#10b981', icon: <CheckCircle size={14} /> }
-    };
-    const { label, color, icon } = config[status] || { label: status, color: '#6b7280', icon: null };
-    return (
-      <span className="status-badge" style={{ backgroundColor: `${color}15`, color, borderColor: color }}>
-        {icon} {label}
-      </span>
-    );
-  };
-
-  const getPriorityBadge = (priority) => {
-    const colors = { high: '#dc2626', medium: '#d97706', low: '#059669' };
-    const color = colors[priority] || '#6b7280';
-    return (
-      <span className="priority-badge" style={{ backgroundColor: `${color}15`, color, borderColor: color }}>
-        {priority?.toUpperCase()}
-      </span>
-    );
-  };
-
-  const getTypeIcon = (type, subType) => {
-    const icons = { plumbing: <Droplets size={16} />, electrical: <Zap size={16} />, structural: <Hammer size={16} />, decoration: <PaintBucket size={16} /> };
-    return icons[subType] || <Wrench size={16} />;
+  const getStatusBadge = (item) => {
+    if (item.type === 'maintenance') {
+      const config = {
+        open: { label: 'Open', color: '#ef4444', icon: <AlertTriangle size={14} /> },
+        pending: { label: 'Pending', color: '#f59e0b', icon: <Clock size={14} /> },
+        in_progress: { label: 'In Progress', color: '#3b82f6', icon: <Clock size={14} /> },
+        resolved: { label: 'Resolved', color: '#10b981', icon: <CheckCircle size={14} /> }
+      };
+      const { label, color, icon } = config[item.status] || { label: item.status, color: '#6b7280', icon: null };
+      return (
+        <span className="status-badge" style={{ backgroundColor: `${color}15`, color, borderColor: color }}>
+          {icon} {label}
+        </span>
+      );
+    } else if (item.type === 'document') {
+      const config = {
+        verified: { label: 'Verified', color: '#10b981' },
+        pending: { label: 'Pending', color: '#f59e0b' },
+        rejected: { label: 'Rejected', color: '#ef4444' },
+        expired: { label: 'Expired', color: '#6b7280' }
+      };
+      const { label, color } = config[item.status] || { label: item.status, color: '#6b7280' };
+      return (
+        <span className="status-badge" style={{ backgroundColor: `${color}15`, color, borderColor: color }}>
+          {label}
+        </span>
+      );
+    } else {
+      // payments are always completed
+      return (
+        <span className="status-badge" style={{ backgroundColor: '#10b98115', color: '#10b981', borderColor: '#10b981' }}>
+          <CheckCircle size={14} /> Completed
+        </span>
+      );
+    }
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'Pending';
-    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
-  if (loading) return <div className="reports-loading"><div className="loading-spinner"></div><p>Syncing with database...</p></div>;
+  if (loading) {
+    return (
+      <div className="reports-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading all reports...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="reports-container">
+      {/* Header */}
       <div className="reports-header">
         <div className="header-left">
-          <button className="btn btn-back" onClick={() => navigate('/dashboard/landlord')}>← Back</button>
-          <h1>Property Reports</h1>
-          <p>Real-time maintenance & complaints from Supabase</p>
+          <button className="btn btn-back" onClick={() => navigate('/dashboard/landlord')}>
+            ← Back
+          </button>
+          <h1>All Reports & Updates</h1>
+          <p>Maintenance requests, rent payments, and shared documents from your properties</p>
         </div>
         <div className="header-right">
-          {stats.newMaintenance > 0 && (
-            <button className="btn btn-warning" onClick={markAllAsViewed}>
-              <Bell size={18} /> Mark Viewed ({stats.newMaintenance})
+          {stats.unread > 0 && (
+            <button 
+              className="btn btn-warning"
+              onClick={() => items.filter(i => !i.viewed).forEach(i => handleMarkViewed(i))}
+            >
+              <Bell size={18} /> Mark All Read ({stats.unread})
             </button>
           )}
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="reports-stats">
-        <div className="stat-card"><h3>Total</h3><div className="stat-value">{stats.totalReports}</div></div>
-        <div className="stat-card"><h3>Open</h3><div className="stat-value">{stats.openReports}</div></div>
-        <div className="stat-card"><h3>Urgent</h3><div className="stat-value">{stats.urgentReports}</div></div>
+        <div className="stat-card" onClick={() => setFilter('all')}>
+          <h3>Total</h3>
+          <div className="stat-value">{stats.total}</div>
+        </div>
+        <div className="stat-card" onClick={() => setFilter('maintenance')}>
+          <h3>Maintenance</h3>
+          <div className="stat-value">{stats.maintenance}</div>
+        </div>
+        <div className="stat-card" onClick={() => setFilter('payments')}>
+          <h3>Payments</h3>
+          <div className="stat-value">{stats.payments}</div>
+        </div>
+        <div className="stat-card" onClick={() => setFilter('documents')}>
+          <h3>Documents</h3>
+          <div className="stat-value">{stats.documents}</div>
+        </div>
+        <div className="stat-card urgent" onClick={() => setFilter('urgent')}>
+          <h3>Urgent</h3>
+          <div className="stat-value">{stats.urgent}</div>
+        </div>
       </div>
 
+      {/* Filter Tabs */}
       <div className="reports-filters">
-        <button className={`filter-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button>
-        <button className={`filter-btn ${filter === 'new' ? 'active' : ''}`} onClick={() => setFilter('new')}>New</button>
-        <button className={`filter-btn ${filter === 'open' ? 'active' : ''}`} onClick={() => setFilter('open')}>Open</button>
-        <button className={`filter-btn ${filter === 'resolved' ? 'active' : ''}`} onClick={() => setFilter('resolved')}>Resolved</button>
+        <button className={`filter-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+          All
+        </button>
+        <button className={`filter-btn ${filter === 'unread' ? 'active' : ''}`} onClick={() => setFilter('unread')}>
+          Unread
+        </button>
+        <button className={`filter-btn ${filter === 'maintenance' ? 'active' : ''}`} onClick={() => setFilter('maintenance')}>
+          Maintenance
+        </button>
+        <button className={`filter-btn ${filter === 'payments' ? 'active' : ''}`} onClick={() => setFilter('payments')}>
+          Payments
+        </button>
+        <button className={`filter-btn ${filter === 'documents' ? 'active' : ''}`} onClick={() => setFilter('documents')}>
+          Documents
+        </button>
       </div>
 
-      <div className="reports-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Issue</th>
-              <th>Tenant</th>
-              <th>Property</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredReports.map(report => (
-              <tr key={report.id} className={!report.viewed ? 'unread-row' : ''}>
-                <td>
-                  <div className="report-title-cell">
-                    {getTypeIcon(null, report.subType)}
-                    <strong>{report.title}</strong>
-                    {!report.viewed && <span className="new-dot"></span>}
+      {/* Feed List */}
+      <div className="reports-feed">
+        {filteredItems.length === 0 ? (
+          <div className="empty-feed">
+            <FileText size={48} />
+            <h3>No reports found</h3>
+            <p>There are no items matching your current filter.</p>
+          </div>
+        ) : (
+          filteredItems.map(item => (
+            <div 
+              key={item.id} 
+              className={`feed-item ${!item.viewed ? 'unread' : ''}`}
+              onClick={() => {
+                handleMarkViewed(item);
+                setSelectedItem(item);
+              }}
+            >
+              <div className="item-icon" style={{ backgroundColor: item.type === 'maintenance' ? '#fee2e2' : item.type === 'payment' ? '#d1fae5' : '#e0f2fe' }}>
+                {item.icon}
+              </div>
+              <div className="item-content">
+                <div className="item-header">
+                  <h4>{item.title}</h4>
+                  <span className="item-type">{item.type}</span>
+                </div>
+                <p className="item-description">{item.description}</p>
+                <div className="item-meta">
+                  <span className="item-date">
+                    <Calendar size={12} /> {formatDate(item.date)}
+                  </span>
+                  {item.tenant?.full_name && (
+                    <span className="item-tenant">
+                      <User size={12} /> {item.tenant.full_name}
+                    </span>
+                  )}
+                  {item.property?.title && (
+                    <span className="item-property">
+                      <Home size={12} /> {item.property.title}
+                    </span>
+                  )}
+                </div>
+                {item.type === 'maintenance' && (
+                  <div className="item-badges">
+                    {item.priority === 'high' && <span className="badge badge-danger">High Priority</span>}
+                    {item.emergency && <span className="badge badge-danger">Emergency</span>}
+                    {getStatusBadge(item)}
                   </div>
-                </td>
-                <td>{report.tenantName}</td>
-                <td>{report.propertyName}</td>
-                <td>{getStatusBadge(report.status)}</td>
-                <td><button className="btn btn-sm btn-outline" onClick={() => handleViewReport(report)}><Eye size={14} /> View</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                )}
+                {(item.type === 'document' || item.type === 'payment') && (
+                  <div className="item-badges">
+                    {getStatusBadge(item)}
+                  </div>
+                )}
+              </div>
+              <div className="item-arrow">
+                <ChevronRight size={16} />
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
-      {selectedReport && (
-        <div className="report-modal-overlay" onClick={() => setSelectedReport(null)}>
+      {/* Detail Modal */}
+      {selectedItem && (
+        <div className="report-modal-overlay" onClick={() => setSelectedItem(null)}>
           <div className="report-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{selectedReport.title}</h2>
-              <button onClick={() => setSelectedReport(null)}>×</button>
+              <h2>{selectedItem.title}</h2>
+              <button onClick={() => setSelectedItem(null)}>×</button>
             </div>
             <div className="modal-content">
-              <div className="info-grid">
-                <div className="info-block">
-                  <label>Tenant Details</label>
-                  <p><strong>{selectedReport.tenantName}</strong></p>
-                  <p>{selectedReport.tenantPhone}</p>
-                </div>
-                <div className="info-block">
-                  <label>Property</label>
-                  <p>{selectedReport.propertyName}</p>
-                </div>
-              </div>
-              <div className="description-area">
-                <label>Issue Description</label>
-                <p>{selectedReport.description}</p>
-              </div>
+              {selectedItem.type === 'maintenance' && (
+                <>
+                  <div className="info-grid">
+                    <div className="info-block">
+                      <label>Tenant</label>
+                      <p><strong>{selectedItem.tenant?.full_name || 'N/A'}</strong></p>
+                      <p>{selectedItem.tenant?.phone_number && <Phone size={14} />} {selectedItem.tenant?.phone_number}</p>
+                      <p>{selectedItem.tenant?.email && <Mail size={14} />} {selectedItem.tenant?.email}</p>
+                    </div>
+                    <div className="info-block">
+                      <label>Property</label>
+                      <p><strong>{selectedItem.property?.title || 'N/A'}</strong></p>
+                      <p>{selectedItem.property?.address}</p>
+                    </div>
+                  </div>
+                  <div className="description-area">
+                    <label>Description</label>
+                    <p>{selectedItem.description}</p>
+                  </div>
+                  {selectedItem.actionsTaken && selectedItem.actionsTaken.length > 0 && (
+                    <div className="actions-area">
+                      <label>Actions Taken</label>
+                      <ul>
+                        {selectedItem.actionsTaken.map((action, idx) => (
+                          <li key={idx}>{action}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="status-update">
+                    <label>Update Status</label>
+                    <select 
+                      value={selectedItem.status} 
+                      onChange={(e) => handleUpdateMaintenanceStatus(selectedItem.originalId, e.target.value)}
+                    >
+                      <option value="open">Open</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="resolved">Resolved</option>
+                    </select>
+                  </div>
+                </>
+              )}
 
-              <div className="action-updates">
-                <label>Update Status</label>
-                <select 
-                  value={selectedReport.status} 
-                  onChange={(e) => handleUpdateStatus(selectedReport.id, e.target.value)}
-                  className="status-select"
-                >
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="resolved">Resolved</option>
-                </select>
+              {selectedItem.type === 'payment' && (
+                <>
+                  <div className="info-grid">
+                    <div className="info-block">
+                      <label>Tenant</label>
+                      <p><strong>{selectedItem.tenant?.full_name || 'N/A'}</strong></p>
+                      <p>{selectedItem.tenant?.phone_number && <Phone size={14} />} {selectedItem.tenant?.phone_number}</p>
+                    </div>
+                    <div className="info-block">
+                      <label>Property</label>
+                      <p><strong>{selectedItem.property?.title || 'N/A'}</strong></p>
+                      <p>Unit {selectedItem.unitNumber}</p>
+                    </div>
+                  </div>
+                  <div className="payment-details">
+                    <div className="detail-row">
+                      <span>Amount:</span>
+                      <span className="amount">₦{selectedItem.amount?.toLocaleString()}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span>Payment Date:</span>
+                      <span>{formatDate(selectedItem.date)}</span>
+                    </div>
+                  </div>
+                  {selectedItem.receipt_url && (
+                    <div className="receipt-action">
+                      <a href={selectedItem.receipt_url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+                        <Receipt size={16} /> View Receipt
+                      </a>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {selectedItem.type === 'document' && (
+                <>
+                  <div className="document-info">
+                    <p><strong>Category:</strong> {selectedItem.description}</p>
+                    <p><strong>Uploaded:</strong> {formatDate(selectedItem.date)}</p>
+                    <p><strong>Status:</strong> {selectedItem.status}</p>
+                  </div>
+                  {selectedItem.file_url && (
+                    <div className="document-action">
+                      <a href={selectedItem.file_url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+                        <Eye size={16} /> View Document
+                      </a>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="modal-actions">
+                <button className="btn btn-outline" onClick={() => setSelectedItem(null)}>
+                  Close
+                </button>
               </div>
             </div>
           </div>

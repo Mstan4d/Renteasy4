@@ -5,6 +5,9 @@ import { supabase } from '../../../shared/lib/supabaseClient'
 import VerifiedBadge, { InlineVerifiedBadge } from '../../../shared/components/VerifiedBadge'
 import './Home.css'
 
+const ITEMS_TO_SHOW = 8
+const BOOST_RATIO = 0.8 // 80% boosted, 20% non-boosted
+
 const Home = () => {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -23,6 +26,7 @@ const Home = () => {
     lat: null,
     lng: null
   })
+  const [boostedUserIds, setBoostedUserIds] = useState([])
 
   // ========== FETCH USER PROFILE ==========
   useEffect(() => {
@@ -46,10 +50,25 @@ const Home = () => {
     }
   }, [user])
 
+  // ========== FETCH BOOSTED USER IDS ==========
+  useEffect(() => {
+    const fetchBoostedUsers = async () => {
+      const { data, error } = await supabase
+        .from('active_boosts')
+        .select('user_id')
+        .eq('status', 'active')
+        .gte('expires_at', new Date().toISOString())
+      if (!error && data) {
+        setBoostedUserIds(data.map(b => b.user_id))
+      }
+    }
+    fetchBoostedUsers()
+  }, [])
+
   // ========== FETCH ALL LISTINGS ==========
   useEffect(() => {
     fetchListingsFromSupabase()
-  }, [userLocation.state, userLocation.lga]) // re‑fetch if user location changes
+  }, [userLocation.state, userLocation.lga, boostedUserIds])
 
   const fetchListingsFromSupabase = async () => {
     try {
@@ -102,16 +121,33 @@ const Home = () => {
         commissionRate: listing.commission_rate
       }))
 
-      setAllListings(transformedListings)
-
-      // Sort by location relevance
+      // 1. Sort by location relevance
       const sorted = sortListingsByLocation(transformedListings, userLocation)
-      // Keep top 50 sorted
-      setAllListings(sorted)
 
-      // Take top 20 and pick 8 random from them
-      const top20 = sorted.slice(0, 20)
-      setDisplayedListings(getRandomItems(top20, 8))
+      // 2. Separate boosted and non-boosted within the sorted list
+      const boosted = sorted.filter(l => boostedUserIds.includes(l.userId))
+      const nonBoosted = sorted.filter(l => !boostedUserIds.includes(l.userId))
+
+      // 3. Shuffle each group
+      const shuffledBoosted = shuffleArray(boosted)
+      const shuffledNonBoosted = shuffleArray(nonBoosted)
+
+      // 4. Interleave to achieve desired ratio
+      const boostedNeeded = Math.round(ITEMS_TO_SHOW * BOOST_RATIO) // 6
+      const nonBoostedNeeded = ITEMS_TO_SHOW - boostedNeeded // 2
+
+      const selectedBoosted = shuffledBoosted.slice(0, boostedNeeded)
+      const selectedNonBoosted = shuffledNonBoosted.slice(0, nonBoostedNeeded)
+
+      // Combine and interleave (alternate, but any order works)
+      const combined = []
+      for (let i = 0; i < Math.max(selectedBoosted.length, selectedNonBoosted.length); i++) {
+        if (i < selectedBoosted.length) combined.push(selectedBoosted[i])
+        if (i < selectedNonBoosted.length) combined.push(selectedNonBoosted[i])
+      }
+
+      setAllListings(sorted)
+      setDisplayedListings(combined.slice(0, ITEMS_TO_SHOW))
 
     } catch (error) {
       console.error('Error in fetchListingsFromSupabase:', error)
@@ -126,16 +162,20 @@ const Home = () => {
     const mockListings = [
       // ... your existing mock listings ...
     ]
+    // Apply the same boost logic to mock data (if needed)
+    // For simplicity, just set allListings and then random subset
     setAllListings(mockListings)
-    const top20 = mockListings.slice(0, 20)
-    setDisplayedListings(getRandomItems(top20, 8))
+    const sorted = sortListingsByLocation(mockListings, userLocation)
+    // Mock boost: assume no boosts, so just random subset
+    const shuffled = shuffleArray(sorted)
+    setDisplayedListings(shuffled.slice(0, ITEMS_TO_SHOW))
   }
 
   // ========== LOCATION SORTING ==========
   const sortListingsByLocation = (listings, userLoc) => {
     // If user not logged in or no location info, just shuffle randomly
     if (!user || (!userLoc.state && !userLoc.lga && !userLoc.lat && !userLoc.lng)) {
-      return [...listings].sort(() => Math.random() - 0.5)
+      return shuffleArray(listings)
     }
 
     return [...listings].sort((a, b) => {
@@ -171,7 +211,6 @@ const Home = () => {
     return score
   }
 
-  // Haversine formula to calculate distance in km between two lat/lng points
   const haversineDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371 // Earth radius in km
     const dLat = (lat2 - lat1) * Math.PI / 180
@@ -182,6 +221,15 @@ const Home = () => {
       Math.sin(dLon / 2) * Math.sin(dLon / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
+  }
+
+  const shuffleArray = (array) => {
+    const a = [...array]
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
   }
 
   // ========== SEARCH HANDLER ==========
@@ -254,10 +302,24 @@ const Home = () => {
         area: listing.area
       }))
 
-      // Sort search results by location relevance too
+      // Apply location sorting and boost logic to search results
       const sorted = sortListingsByLocation(transformed, userLocation)
-      const top20 = sorted.slice(0, 20)
-      setDisplayedListings(getRandomItems(top20, 8))
+      const boosted = sorted.filter(l => boostedUserIds.includes(l.userId))
+      const nonBoosted = sorted.filter(l => !boostedUserIds.includes(l.userId))
+      const shuffledBoosted = shuffleArray(boosted)
+      const shuffledNonBoosted = shuffleArray(nonBoosted)
+      const boostedNeeded = Math.round(ITEMS_TO_SHOW * BOOST_RATIO)
+      const nonBoostedNeeded = ITEMS_TO_SHOW - boostedNeeded
+      const selectedBoosted = shuffledBoosted.slice(0, boostedNeeded)
+      const selectedNonBoosted = shuffledNonBoosted.slice(0, nonBoostedNeeded)
+
+      const combined = []
+      for (let i = 0; i < Math.max(selectedBoosted.length, selectedNonBoosted.length); i++) {
+        if (i < selectedBoosted.length) combined.push(selectedBoosted[i])
+        if (i < selectedNonBoosted.length) combined.push(selectedNonBoosted[i])
+      }
+
+      setDisplayedListings(combined.slice(0, ITEMS_TO_SHOW))
 
     } catch (error) {
       console.error('Search error:', error)
@@ -271,22 +333,32 @@ const Home = () => {
     }
   }
 
-  // ========== UTILITIES ==========
-  const getRandomItems = (arr, count) => {
-    if (arr.length <= count) return [...arr]
-    const shuffled = [...arr].sort(() => Math.random() - 0.5)
-    return shuffled.slice(0, count)
-  }
-
+  // ========== REFRESH RANDOM LISTINGS ==========
   const refreshRandomListings = (filterType = 'all') => {
     let sourceList = allListings
     if (filterType === 'verified') {
       sourceList = sourceList.filter(l => l.verified)
     }
-    const top20 = sourceList.slice(0, 20)
-    const newRandom = getRandomItems(top20, 8)
-    setDisplayedListings(newRandom)
+    // Apply boost logic again
+    const boosted = sourceList.filter(l => boostedUserIds.includes(l.userId))
+    const nonBoosted = sourceList.filter(l => !boostedUserIds.includes(l.userId))
+    const shuffledBoosted = shuffleArray(boosted)
+    const shuffledNonBoosted = shuffleArray(nonBoosted)
+    const boostedNeeded = Math.round(ITEMS_TO_SHOW * BOOST_RATIO)
+    const nonBoostedNeeded = ITEMS_TO_SHOW - boostedNeeded
+    const selectedBoosted = shuffledBoosted.slice(0, boostedNeeded)
+    const selectedNonBoosted = shuffledNonBoosted.slice(0, nonBoostedNeeded)
+
+    const combined = []
+    for (let i = 0; i < Math.max(selectedBoosted.length, selectedNonBoosted.length); i++) {
+      if (i < selectedBoosted.length) combined.push(selectedBoosted[i])
+      if (i < selectedNonBoosted.length) combined.push(selectedNonBoosted[i])
+    }
+
+    setDisplayedListings(combined.slice(0, ITEMS_TO_SHOW))
   }
+
+  // (All helper functions remain the same: getFirstImage, getVerificationType, getListingStatus, etc.)
 
   const getFirstImage = (listing) => {
     if (listing.images && listing.images.length > 0) {
@@ -354,7 +426,7 @@ const Home = () => {
     setSearchParams(prev => ({ ...prev, [name]: value }))
   }
 
-  // ========== RENDER ==========
+  // ========== RENDER (unchanged) ==========
   return (
     <main className="home-container">
       {/* HERO SECTION with integrated search */}
@@ -534,7 +606,7 @@ const Home = () => {
 
             <div className="refresh-section">
               <p className="refresh-hint">
-                Showing random properties from the most relevant locations.
+                Showing boosted and nearby properties first.
                 <button className="refresh-link" onClick={() => refreshRandomListings('all')}>
                   Show different
                 </button>

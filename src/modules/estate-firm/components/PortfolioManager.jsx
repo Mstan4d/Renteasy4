@@ -1,17 +1,19 @@
-// src/modules/estate-firm/components/PortfolioManager.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  Building, PlusCircle, Upload, Filter, Download, 
+import { useNavigate } from 'react-router-dom';
+import {
+  Building, PlusCircle, Upload, Filter, Download,
   Edit, Trash2, Eye, DollarSign, MapPin,
   CheckCircle, XCircle, MoreVertical, Search,
-  Home, Users, TrendingUp, ArrowUpRight
+  Home, Users, TrendingUp, ArrowUpRight, Zap
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { createListingFromUnit } from '../../../shared/utils/listingUtils'; // Phase 5 utility
 import './PortfolioManager.css';
 
-const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
+const PortfolioManager = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState('grid');
   const [selectedProperties, setSelectedProperties] = useState([]);
   const [sortBy, setSortBy] = useState('recent');
@@ -25,7 +27,8 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     managedProperties: 0,
     occupiedProperties: 0,
     totalValue: 0,
-    monthlyRevenue: 0
+    monthlyRevenue: 0,
+    vacantUnits: 0
   });
 
   useEffect(() => {
@@ -97,11 +100,8 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
         ...rentEasyProps
       ];
 
-      // For each property, if it already has units (from external table) use them, else use the transformed ones
+      // For each property, fetch units if external
       const enriched = await Promise.all(allProperties.map(async (property) => {
-        // If it's an external property, we already have units (if any) – we need to fetch them
-        // For simplicity, we'll assume external properties might have units already loaded from the join,
-        // but we didn't join units. So we need to fetch units for external properties.
         let units = [];
         if (property.source === 'external') {
           const { data: unitData } = await supabase
@@ -110,7 +110,6 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
             .eq('property_id', property.id);
           units = unitData || [];
         } else {
-          // For rent-easy, we already created a pseudo unit
           units = property.units || [];
         }
 
@@ -122,11 +121,14 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
           return sum + (u.rent_amount * multiplier);
         }, 0);
 
+        const totalRent = units.reduce((sum, u) => sum + (u.rent_amount || 0), 0);
+
         return {
           ...property,
           units,
           occupiedCount: occupiedUnits.length,
           monthlyRent,
+          totalRent, // for value estimation
         };
       }));
 
@@ -138,7 +140,8 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
       const externalCount = totalProperties - rentEasyCount;
       const occupiedProperties = enriched.reduce((sum, p) => sum + p.occupiedCount, 0);
       const monthlyRevenue = enriched.reduce((sum, p) => sum + p.monthlyRent, 0);
-      const totalValue = enriched.reduce((sum, p) => sum + (p.units?.reduce((acc, u) => acc + (u.rent_amount || 0), 0) * 5 || 0), 0);
+      const totalValue = enriched.reduce((sum, p) => sum + (p.totalRent * 5 || 0), 0); // rough valuation
+      const vacantUnits = enriched.reduce((sum, p) => sum + (p.units?.length || 0) - p.occupiedCount, 0);
 
       setPortfolioStats({
         totalProperties,
@@ -147,7 +150,8 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
         managedProperties: totalProperties,
         occupiedProperties,
         totalValue,
-        monthlyRevenue
+        monthlyRevenue,
+        vacantUnits
       });
 
     } catch (error) {
@@ -157,12 +161,30 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     }
   };
 
+  const handleAddProperty = () => {
+    // Navigate to a page where user can choose external property or RentEasy listing
+    // For simplicity, we'll navigate to external property creation
+    navigate('/dashboard/estate-firm/add-external-property');
+  };
+
+  const handleBulkUpload = () => {
+    navigate('/dashboard/estate-firm/bulk-upload');
+  };
+
+  const handleEditProperty = (property) => {
+    if (property.source === 'external') {
+      navigate(`/dashboard/estate-firm/properties/${property.id}/edit`);
+    } else {
+      // For RentEasy listings, maybe navigate to listing edit
+      navigate(`/dashboard/estate-firm/listings/${property.id}/edit`);
+    }
+  };
+
   const handleDeleteProperty = async (propertyId, propertyName, source) => {
     if (!window.confirm(`Are you sure you want to delete "${propertyName}"?`)) return;
 
     try {
       if (source === 'external') {
-        // Delete from properties table
         const { error } = await supabase
           .from('properties')
           .delete()
@@ -170,8 +192,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
           .eq('estate_firm_id', user.id);
         if (error) throw error;
       } else {
-        // Delete from listings? Actually, you might want to just remove from portfolio, not delete the listing.
-        // For now, we'll just skip or maybe mark as inactive. We'll handle later.
+        // For RentEasy listings, we might archive or just remove from portfolio view
         alert('RentEasy properties cannot be deleted directly from portfolio. You can archive them.');
         return;
       }
@@ -179,6 +200,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
       setSelectedProperties(selectedProperties.filter(id => id !== propertyId));
       await loadProperties();
 
+      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'property',
@@ -198,7 +220,6 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     if (!window.confirm(`Delete ${selectedProperties.length} selected properties?`)) return;
 
     try {
-      // Separate external and rent-easy IDs
       const externalIds = properties
         .filter(p => selectedProperties.includes(p.id) && p.source === 'external')
         .map(p => p.id);
@@ -212,8 +233,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
         if (error) throw error;
       }
 
-      // For rent-easy, we might just skip or mark inactive
-      const rentEasyIds = selectedProperties.filter(id => 
+      const rentEasyIds = selectedProperties.filter(id =>
         properties.find(p => p.id === id)?.source === 'rent-easy'
       );
       if (rentEasyIds.length > 0) {
@@ -238,9 +258,47 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     }
   };
 
+  // Phase 5: Post all vacant units to marketplace
+  const handlePostAllVacant = async () => {
+    const vacantUnits = [];
+    properties.forEach(prop => {
+      prop.units?.forEach(unit => {
+        if (unit.status === 'vacant') {
+          vacantUnits.push({ unit, property: prop });
+        }
+      });
+    });
+
+    if (vacantUnits.length === 0) {
+      alert('No vacant units found.');
+      return;
+    }
+
+    if (!window.confirm(`Post ${vacantUnits.length} vacant unit(s) to RentEasy marketplace?`)) return;
+
+    setLoading(true);
+    let success = 0;
+    let failed = 0;
+
+    for (const { unit, property } of vacantUnits) {
+      try {
+        await createListingFromUnit(unit, property, user?.id);
+        success++;
+      } catch (err) {
+        console.error(err);
+        failed++;
+      }
+    }
+
+    alert(`Posted ${success} listings. ${failed} failed.`);
+    setLoading(false);
+    // Optionally reload properties to reflect any changes (e.g., unit status if we update it)
+    await loadProperties();
+  };
+
   const handleExportCSV = () => {
     const csvContent = [
-      ['ID', 'Name', 'Address', 'Units', 'Occupied Units', 'Monthly Revenue', 'Landlord', 'Created Date'],
+      ['ID', 'Name', 'Address', 'Units', 'Occupied Units', 'Monthly Revenue', 'Landlord', 'Source', 'Created Date'],
       ...filteredProperties.map(p => [
         p.id.substring(0, 8),
         `"${p.name}"`,
@@ -249,6 +307,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
         p.occupiedCount,
         `₦${p.monthlyRent.toLocaleString()}`,
         p.landlord?.name || 'None',
+        p.source,
         new Date(p.created_at).toLocaleDateString()
       ])
     ].map(row => row.join(',')).join('\n');
@@ -264,7 +323,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
   const propertyTypes = [
     { id: 'all', label: 'All Properties', count: portfolioStats.totalProperties, color: 'blue' },
     { id: 'occupied', label: 'Occupied', count: portfolioStats.occupiedProperties, color: 'purple' },
-    { id: 'vacant', label: 'Vacant', count: portfolioStats.totalProperties - portfolioStats.occupiedProperties, color: 'orange' },
+    { id: 'vacant', label: 'Vacant Units', count: portfolioStats.vacantUnits, color: 'orange' },
   ];
 
   const filteredProperties = properties.filter(property => {
@@ -287,6 +346,13 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
     return `₦${(amount || 0).toLocaleString()}`;
   };
 
+  const getSourceBadge = (source) => {
+    if (source === 'rent-easy') {
+      return <span className="badge badge-info">RentEasy</span>;
+    }
+    return <span className="badge badge-secondary">External</span>;
+  };
+
   if (loading) {
     return (
       <div className="portfolio-manager">
@@ -305,41 +371,50 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
         <div>
           <h2>Property Portfolio</h2>
           <p className="subtitle">
-            Managing {portfolioStats.totalProperties} properties • 
+            Managing {portfolioStats.totalProperties} properties •
             <span className="revenue"> {formatCurrency(portfolioStats.monthlyRevenue)}/month</span>
           </p>
         </div>
-        
+
         <div className="header-actions">
-          <button 
-            className="btn btn-primary" 
-            onClick={() => onAddProperty && onAddProperty('new-property')}
+          <button
+            className="btn btn-primary"
+            onClick={handleAddProperty}
           >
             <PlusCircle size={18} />
             Add Property
           </button>
-          <button 
-            className="btn btn-outline" 
-            onClick={() => onBulkUpload && onBulkUpload()}
+          <button
+            className="btn btn-outline"
+            onClick={handleBulkUpload}
           >
             <Upload size={18} />
             Bulk Import
           </button>
-          <button 
-            className="btn btn-outline" 
+          <button
+            className="btn btn-outline"
             onClick={handleExportCSV}
           >
             <Download size={18} />
             Export CSV
           </button>
+          {portfolioStats.vacantUnits > 0 && (
+            <button
+              className="btn btn-success"
+              onClick={handlePostAllVacant}
+            >
+              <Zap size={18} />
+              Post Vacant ({portfolioStats.vacantUnits})
+            </button>
+          )}
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="portfolio-stats">
         {propertyTypes.map(type => (
-          <div 
-            key={type.id} 
+          <div
+            key={type.id}
             className="stat-card"
             style={{ borderLeftColor: type.color }}
           >
@@ -376,9 +451,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
             <div className="metric">
               <Users size={16} />
               <div>
-                <span className="metric-value">
-                  {portfolioStats.totalProperties - portfolioStats.occupiedProperties}
-                </span>
+                <span className="metric-value">{portfolioStats.vacantUnits}</span>
                 <span className="metric-label">Vacant Units</span>
               </div>
             </div>
@@ -386,7 +459,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
               <TrendingUp size={16} />
               <div>
                 <span className="metric-value">
-                  {portfolioStats.totalProperties > 0 
+                  {portfolioStats.totalProperties > 0
                     ? `${Math.round((portfolioStats.occupiedProperties / portfolioStats.totalProperties) * 100)}%`
                     : '0%'
                   }
@@ -413,13 +486,13 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
 
         <div className="control-group">
           <div className="view-toggle">
-            <button 
+            <button
               className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
               onClick={() => setViewMode('grid')}
             >
               Grid
             </button>
-            <button 
+            <button
               className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
               onClick={() => setViewMode('list')}
             >
@@ -427,7 +500,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
             </button>
           </div>
 
-          <select 
+          <select
             className="sort-select"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -448,18 +521,18 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
             <span>{selectedProperties.length} properties selected</span>
           </div>
           <div className="selection-actions">
-            <button 
-              className="btn btn-sm" 
+            <button
+              className="btn btn-sm"
               onClick={() => {
-                // Bulk edit functionality
+                // Bulk edit functionality (placeholder)
                 console.log('Bulk edit:', selectedProperties);
               }}
             >
               <Edit size={16} />
               Edit Selected
             </button>
-            <button 
-              className="btn btn-sm btn-danger" 
+            <button
+              className="btn btn-sm btn-danger"
               onClick={handleBulkDelete}
             >
               <Trash2 size={16} />
@@ -486,13 +559,16 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                     }
                   }}
                 />
-                <span className="property-status-badge">
-                  {property.units?.some(u => u.status === 'occupied') ? (
-                    <span className="status occupied">Occupied</span>
-                  ) : (
-                    <span className="status vacant">Vacant</span>
-                  )}
-                </span>
+                <div className="property-header-right">
+                  {getSourceBadge(property.source)}
+                  <span className="property-status-badge">
+                    {property.occupiedCount > 0 ? (
+                      <span className="status occupied">Occupied</span>
+                    ) : (
+                      <span className="status vacant">Vacant</span>
+                    )}
+                  </span>
+                </div>
               </div>
 
               <div className="property-body">
@@ -525,23 +601,23 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
               </div>
 
               <div className="property-footer">
-                <button 
+                <button
                   className="btn-icon"
-                  onClick={() => window.location.href = `/dashboard/estate-firm/properties/${property.id}`}
+                  onClick={() => navigate(`/dashboard/estate-firm/properties/${property.id}`)}
                   title="View Details"
                 >
                   <Eye size={16} />
                 </button>
-                <button 
+                <button
                   className="btn-icon"
-                  onClick={() => onEditProperty && onEditProperty(property)}
+                  onClick={() => handleEditProperty(property)}
                   title="Edit"
                 >
                   <Edit size={16} />
                 </button>
-                <button 
+                <button
                   className="btn-icon danger"
-                  onClick={() => handleDeleteProperty(property.id, property.name)}
+                  onClick={() => handleDeleteProperty(property.id, property.name, property.source)}
                   title="Delete"
                 >
                   <Trash2 size={16} />
@@ -556,8 +632,8 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
             <thead>
               <tr>
                 <th style={{ width: '30px' }}>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     onChange={(e) => {
                       if (e.target.checked) {
                         setSelectedProperties(filteredProperties.map(p => p.id));
@@ -574,6 +650,7 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                 <th>Occupied</th>
                 <th>Monthly Rent</th>
                 <th>Landlord</th>
+                <th>Source</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -604,17 +681,18 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
                   <td>{property.occupiedCount}</td>
                   <td>{formatCurrency(property.monthlyRent)}</td>
                   <td>{property.landlord?.name || 'None'}</td>
+                  <td>{getSourceBadge(property.source)}</td>
                   <td>
                     <div className="list-actions">
-                      <button className="btn-icon-sm" onClick={() => window.location.href = `/dashboard/estate-firm/properties/${property.id}`}>
+                      <button className="btn-icon-sm" onClick={() => navigate(`/dashboard/estate-firm/properties/${property.id}`)}>
                         <Eye size={14} />
                       </button>
-                      <button className="btn-icon-sm" onClick={() => onEditProperty && onEditProperty(property)}>
+                      <button className="btn-icon-sm" onClick={() => handleEditProperty(property)}>
                         <Edit size={14} />
                       </button>
-                      <button 
+                      <button
                         className="btn-icon-sm danger"
-                        onClick={() => handleDeleteProperty(property.id, property.name)}
+                        onClick={() => handleDeleteProperty(property.id, property.name, property.source)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -633,9 +711,9 @@ const PortfolioManager = ({ onAddProperty, onBulkUpload, onEditProperty }) => {
           <Building size={48} />
           <h3>No properties found</h3>
           <p>Try adjusting your search or add a new property</p>
-          <button 
+          <button
             className="btn btn-primary"
-            onClick={() => onAddProperty && onAddProperty('new-property')}
+            onClick={handleAddProperty}
           >
             <PlusCircle size={18} />
             Add Your First Property

@@ -254,3 +254,95 @@
   margin-top: 1rem;
   color: #64748b;
 }
+
+.stats-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.stat-mini-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.stat-mini-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+.stat-mini-card .stat-label {
+  font-size: 0.875rem;
+  color: #666;
+}
+.stat-mini-card .stat-number {
+  font-size: 1.25rem;
+  font-weight: 600;
+  display: block;
+}
+
+.activity-feed {
+  margin-top: 1rem;
+}
+.feed-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.feed-item.unread {
+  border-left: 3px solid #3b82f6;
+  background: #f0f9ff;
+}
+.feed-item:hover {
+  background: #f9fafb;
+}
+.item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e0f2fe;
+  color: #0284c7;
+}
+.item-details {
+  flex: 1;
+}
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+.item-title {
+  font-weight: 500;
+}
+.item-description {
+  font-size: 0.875rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+.item-date {
+  font-size: 0.75rem;
+  color: #999;
+}
+.badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  color: white;
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}

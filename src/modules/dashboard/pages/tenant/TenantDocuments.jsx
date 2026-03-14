@@ -105,7 +105,7 @@ const TenantDocuments = () => {
       // 1. Upload file to Supabase Storage
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `tenant-documents/${user.id}/${fileName}`; // Organized by user ID
+      const filePath = `tenant-documents/${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('estate-documents')
@@ -132,7 +132,7 @@ const TenantDocuments = () => {
           file_size: file.size,
           category: uploadCategory,
           status: 'pending',
-          storage_path: filePath, // Save for later deletion
+          storage_path: filePath,
           created_at: new Date().toISOString()
         })
         .select()
@@ -195,8 +195,7 @@ const TenantDocuments = () => {
   const totalDocs = documents.length;
   const verifiedCount = documents.filter(d => d.status === 'verified').length;
   const pendingCount = documents.filter(d => d.status === 'pending').length;
-  // Profile completeness: for now a simple placeholder
-  const completeness = Math.min(85, Math.round((verifiedCount / 3) * 100)); // Just an example
+  const completeness = Math.min(85, Math.round((verifiedCount / 3) * 100)); // example
 
   if (loading) {
     return (
@@ -326,9 +325,7 @@ const TenantDocuments = () => {
               {documents.length > 0 ? (
                 documents.map(doc => {
                   const statusBadge = getStatusBadge(doc.status);
-                  // Format date
                   const uploadedDate = new Date(doc.created_at).toLocaleDateString();
-                  // Format size
                   const size = doc.file_size 
                     ? (doc.file_size / 1024).toFixed(1) + ' KB'
                     : '—';
