@@ -4,7 +4,7 @@ import { useAuth } from '../../../../shared/context/AuthContext';
 import {
   Home, Building, DollarSign, MessageSquare, 
   User, Settings, Bell, Wallet, Share2, 
-  BarChart3, LogOut, PlusCircle, Menu, X
+  BarChart3, Receipt, LogOut, PlusCircle, Menu, X
 } from 'lucide-react';
 import './LandlordLayout.css';
 
@@ -20,6 +20,7 @@ const LandlordLayout = () => {
     { id: 'earnings', path: '/dashboard/landlord/earnings', label: 'Earnings', icon: <DollarSign size={20} /> },
     { id: 'wallet', path: '/dashboard/landlord/wallet', label: 'Wallet', icon: <Wallet size={20} /> },
     { id: 'referrals', path: '/dashboard/landlord/referrals', label: 'Referrals', icon: <Share2 size={20} /> },
+    { id: 'rent-tracking', path: '/dashboard/landlord/rent/tracking', label: 'Rents', icon: <Receipt size={20} /> },
     { id: 'messages', path: '/dashboard/messages', label: 'Messages', icon: <MessageSquare size={20} /> },
     { id: 'analytics', path: '/dashboard/landlord/analytics', label: 'Analytics', icon: <BarChart3 size={20} /> },
   ];

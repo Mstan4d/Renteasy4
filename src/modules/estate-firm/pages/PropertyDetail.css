@@ -477,3 +477,39 @@
     grid-template-columns: 1fr;
   }
 }
+
+.rent-tracking-link {
+  margin: 1rem 0 2rem;
+  text-align: right;
+}
+.rent-tracking-link .btn-outline {
+  background: transparent;
+  border: 1px solid #2563eb;
+  color: #2563eb;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.rent-tracking-link .btn-outline:hover {
+  background: #2563eb;
+  color: white;
+}
+
+.rent-tracking-link {
+  margin: 1rem 0 2rem;
+  text-align: right;
+}
+.rent-tracking-link .btn-outline {
+  background: transparent;
+  border: 1px solid #2563eb;
+  color: #2563eb;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.rent-tracking-link .btn-outline:hover {
+  background: #2563eb;
+  color: white;
+}

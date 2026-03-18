@@ -1,10 +1,10 @@
-// src/modules/estate-firm/pages/PropertyDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { documentGenerator } from '../../../shared/lib/documentGenerator';
 import UnitModal from '../components/UnitModal';
+import PropertyRentSummary from '../components/PropertyRentSummary';
 import {
   Building, ArrowLeft, Home, Users, DollarSign, Calendar,
   Plus, Edit, Trash2, Eye, Download, Send, Clock,
@@ -116,6 +116,17 @@ const PropertyDetail = () => {
     }
   };
 
+  const handleDeleteProperty = async () => {
+  if (!window.confirm('Delete this property and all its units? This action cannot be undone.')) return;
+  try {
+    await supabase.from('units').delete().eq('property_id', id);
+    await supabase.from('properties').delete().eq('id', id);
+    navigate('/dashboard/estate-firm/properties');
+  } catch (err) {
+    alert('Delete failed');
+  }
+};
+
   const handleRecordPayment = (unit) => {
     setSelectedUnit(unit);
     setPaymentForm({
@@ -130,139 +141,147 @@ const PropertyDetail = () => {
   const submitPayment = async () => {
   if (!selectedUnit) return;
   try {
-    // 1. Insert payment record
+    // Generate a unique reference
+    const paymentReference = `PMT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+    // 1. Insert payment record with reference
     const { data: payment, error: payError } = await supabase
       .from('payments')
       .insert([{
         unit_id: selectedUnit.id,
+        user_id: selectedUnit.tenant?.id,
         amount: parseFloat(paymentForm.amount),
         payment_date: paymentForm.paymentDate,
         due_date: paymentForm.dueDate || null,
         description: paymentForm.description,
+        payment_type: 'rent',
+        reference: paymentReference,  // <-- add this line
       }])
       .select()
       .single();
     if (payError) throw payError;
 
-    // 2. Fetch full payment with relations for receipt generation
-    const { data: fullPayment, error: fetchError } = await supabase
-      .from('payments')
-      .select(`
-        *,
-        unit:unit_id (
-          id,
-          unit_number,
-          tenant:tenant_id (id, name),
-          property:property_id (id, name, estate_firm_id)
-        )
-      `)
-      .eq('id', payment.id)
-      .single();
-    if (fetchError) throw fetchError;
 
-    // 3. Generate receipt document (now returns the full document record)
-    const receiptDoc = await documentGenerator.generateReceipt(fullPayment);
+      // 2. Fetch full payment with relations for receipt generation
+      const { data: fullPayment, error: fetchError } = await supabase
+        .from('payments')
+        .select(`
+          *,
+          unit:unit_id (
+            id,
+            unit_number,
+            tenant:tenant_id (id, name),
+            property:property_id (id, name, estate_firm_id)
+          )
+        `)
+        .eq('id', payment.id)
+        .single();
+      if (fetchError) throw fetchError;
 
-    // 4. Update payment with receipt URL and document ID
-    await supabase
-      .from('payments')
-      .update({ 
-        receipt_url: receiptDoc.file_url, 
-        receipt_doc_id: receiptDoc.id 
-      })
-      .eq('id', payment.id);
+      // 3. Generate receipt document
+      const receiptDoc = await documentGenerator.generateReceipt(fullPayment);
 
-    // 5. Send in-app notification to tenant if they are a RentEasy user
-    if (selectedUnit.tenant?.id) {
-      await supabase.from('notifications').insert({
-        user_id: selectedUnit.tenant.id,
-        type: 'receipt',
-        title: 'New Rent Receipt',
-        message: `Receipt for ₦${paymentForm.amount} payment on ${paymentForm.paymentDate} is ready.`,
-        link: `/dashboard/tenant/documents/${receiptDoc.id}`, // adjust route as needed
-        created_at: new Date().toISOString()
-      });
-    }
-
-    // 6. If unit was vacant, mark as occupied
-    if (selectedUnit.status !== 'occupied') {
+      // 4. Update payment with receipt URL and document ID
       await supabase
-        .from('units')
-        .update({ status: 'occupied' })
-        .eq('id', selectedUnit.id);
+        .from('payments')
+        .update({ 
+          receipt_url: receiptDoc.file_url, 
+          receipt_doc_id: receiptDoc.id 
+        })
+        .eq('id', payment.id);
+
+      // 5. Send in-app notification to tenant if they are a RentEasy user
+      if (selectedUnit.tenant?.id) {
+        await supabase.from('notifications').insert({
+          user_id: selectedUnit.tenant.id,
+          type: 'receipt',
+          title: 'New Rent Receipt',
+          message: `Receipt for ₦${paymentForm.amount} payment on ${paymentForm.paymentDate} is ready.`,
+          link: `/dashboard/tenant/documents/${receiptDoc.id}`,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      // 6. If unit was vacant, mark as occupied
+      if (selectedUnit.status !== 'occupied') {
+        await supabase
+          .from('units')
+          .update({ status: 'occupied' })
+          .eq('id', selectedUnit.id);
+      }
+
+      // 7. Add activity
+      await supabase
+        .from('property_activities')
+        .insert([{
+          property_id: id,
+          unit_id: selectedUnit.id,
+          activity_type: 'rent_paid',
+          description: `Rent payment of ₦${paymentForm.amount} recorded`,
+        }]);
+
+      alert('Payment recorded and receipt generated');
+      setShowPaymentModal(false);
+      await loadProperty();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to record payment');
     }
+  };
 
-    // 7. Add activity
-    await supabase
-      .from('property_activities')
-      .insert([{
-        property_id: id,
-        unit_id: selectedUnit.id,
-        activity_type: 'rent_paid',
-        description: `Rent payment of ₦${paymentForm.amount} recorded`,
-      }]);
+  const handleSendReminder = async (unit) => {
+    if (!window.confirm(`Send rent reminder for ${unit.unit_number}?`)) return;
+    try {
+      // 1. Create reminder record
+      const { data: reminder, error: remError } = await supabase
+        .from('reminders')
+        .insert([{
+          unit_id: unit.id,
+          reminder_type: 'rent_due',
+          scheduled_date: new Date().toISOString().split('T')[0],
+        }])
+        .select()
+        .single();
+      if (remError) throw remError;
 
-    alert('Payment recorded and receipt generated');
-    setShowPaymentModal(false);
-    await loadProperty();
-  } catch (err) {
-    console.error(err);
-    alert('Failed to record payment');
-  }
-};
- const handleSendReminder = async (unit) => {
-  if (!window.confirm(`Send rent reminder for ${unit.unit_number}?`)) return;
-  try {
-    // 1. Create reminder record
-    const { data: reminder, error: remError } = await supabase
-      .from('reminders')
-      .insert([{
-        unit_id: unit.id,
-        reminder_type: 'rent_due',
-        scheduled_date: new Date().toISOString().split('T')[0],
-      }])
-      .select()
-      .single();
-    if (remError) throw remError;
+      // 2. Generate reminder letter
+      const doc = await documentGenerator.generateReminder(reminder, unit);
 
-    // 2. Generate reminder letter (returns the full document record)
-    const doc = await documentGenerator.generateReminder(reminder, unit);
+      // 3. Update reminder with document ID
+      await supabase
+        .from('reminders')
+        .update({ document_id: doc.id, sent: true, sent_at: new Date().toISOString() })
+        .eq('id', reminder.id);
 
-    // 3. Update reminder with document ID
-    await supabase
-      .from('reminders')
-      .update({ document_id: doc.id, sent: true, sent_at: new Date().toISOString() })
-      .eq('id', reminder.id);
+      // 4. Send in-app notification to tenant
+      if (unit.tenant?.id) {
+        await supabase.from('notifications').insert({
+          user_id: unit.tenant.id,
+          type: 'rent_reminder',
+          title: 'Rent Reminder',
+          message: `Rent for ${unit.unit_number} is due on ${new Date(reminder.scheduled_date).toLocaleDateString()}.`,
+          link: `/dashboard/tenant/documents/${doc.id}`,
+          created_at: new Date().toISOString()
+        });
+      }
 
-    // 4. Send in-app notification to tenant if they are a RentEasy user
-    if (unit.tenant?.id) {
-      await supabase.from('notifications').insert({
-        user_id: unit.tenant.id,
-        type: 'rent_reminder',
-        title: 'Rent Reminder',
-        message: `Rent for ${unit.unit_number} is due on ${new Date(reminder.scheduled_date).toLocaleDateString()}.`,
-        link: `/dashboard/tenant/documents/${doc.id}`,
-        created_at: new Date().toISOString()
-      });
+      // 5. Add activity
+      await supabase
+        .from('property_activities')
+        .insert([{
+          property_id: id,
+          unit_id: unit.id,
+          activity_type: 'reminder_sent',
+          description: `Rent reminder sent for ${unit.unit_number}`,
+        }]);
+
+      alert('Reminder sent and letter generated');
+      await loadProperty();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to send reminder');
     }
-
-    // 5. Add activity
-    await supabase
-      .from('property_activities')
-      .insert([{
-        property_id: id,
-        unit_id: unit.id,
-        activity_type: 'reminder_sent',
-        description: `Rent reminder sent for ${unit.unit_number}`,
-      }]);
-
-    alert('Reminder sent and letter generated');
-    await loadProperty();
-  } catch (err) {
-    console.error(err);
-    alert('Failed to send reminder');
-  }
-};
+  };
 
   const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
 
@@ -309,7 +328,7 @@ const PropertyDetail = () => {
           <span className="property-address"><MapPin size={16} /> {property.address}</span>
         </div>
         <div className="property-actions">
-          <button className="btn-outline" onClick={() => alert('Edit property')}>
+          <button className="btn-outline" onClick={() => navigate(`/dashboard/estate-firm/properties/${id}/edit`)}>
             <Edit size={16} /> Edit
           </button>
           {property.source === 'rent-easy' && (
@@ -319,6 +338,19 @@ const PropertyDetail = () => {
           )}
         </div>
       </header>
+
+      {/* Rent Summary Component */}
+      <PropertyRentSummary propertyId={id} />
+
+      {/* Link to full rent tracking page */}
+      <div className="rent-tracking-link">
+        <button 
+          className="btn-outline"
+          onClick={() => navigate('/dashboard/estate-firm/rent-tracking')}
+        >
+          View All Rent Payments
+        </button>
+      </div>
 
       <div className="property-content">
         {/* Left column: Units */}

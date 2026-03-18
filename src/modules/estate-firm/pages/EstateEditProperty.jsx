@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building, MapPin, User, DollarSign, Percent, Settings, Save } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Building, MapPin, User, DollarSign, Percent, Settings, Save, Trash2 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
-import './EstateAddExternalProperty.css';
+import './EstateEditProperty.css';
 
-const EstateAddExternalProperty = () => {
+const EstateEditProperty = () => {
+  const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
     propertyName: '',
     address: '',
@@ -45,164 +48,171 @@ const EstateAddExternalProperty = () => {
     { value: 'letting-only', label: 'Letting Only', description: 'Only handle tenant finding' }
   ];
 
+  useEffect(() => {
+    if (user && id) fetchProperty();
+  }, [user, id]);
+
+  const fetchProperty = async () => {
+    setFetching(true);
+    setError(null);
+    try {
+      // Fetch property with landlord info and units
+      const { data: property, error: propError } = await supabase
+        .from('properties')
+        .select(`
+          *,
+          landlord:landlord_id (id, name, phone, email),
+          units (id, unit_number, rent_amount, rent_frequency, status, bedrooms, bathrooms)
+        `)
+        .eq('id', id)
+        .single();
+
+      if (propError) throw propError;
+      if (!property) throw new Error('Property not found');
+
+      // Populate form
+      setFormData({
+        propertyName: property.title || '',
+        address: property.address || '',
+        city: property.city || '',
+        state: property.state || '',
+        lga: property.lga || '',
+        clientName: property.landlord?.name || '',
+        clientPhone: property.landlord?.phone || '',
+        clientEmail: property.landlord?.email || '',
+        propertyType: property.property_type || 'residential',
+        rentAmount: property.units?.[0]?.rent_amount || '',
+        rentFrequency: property.units?.[0]?.rent_frequency || 'monthly',
+        commissionRate: property.commission_rate || 7.5,
+        managementLevel: property.management_level || 'full',
+        nextRentDue: property.contract_next_due || '', // you may need to add this column
+        contractStart: property.contract_start || '',
+        contractEnd: property.contract_end || '',
+        notes: property.description || ''
+      });
+    } catch (err) {
+      console.error('Error fetching property:', err);
+      setError(err.message);
+    } finally {
+      setFetching(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!user) {
-      alert('Please login to add property');
-      return;
-    }
-
     setLoading(true);
+    setError(null);
 
     try {
-      // Sanitize numeric inputs (remove commas)
-      const sanitizeNumber = (val) => {
-        if (!val) return 0;
-        return parseFloat(String(val).replace(/,/g, '')) || 0;
-      };
-
+      const sanitizeNumber = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
       const rentAmount = sanitizeNumber(formData.rentAmount);
       const commissionRate = sanitizeNumber(formData.commissionRate);
 
-      // 1. Get or create estate firm profile
-      const { data: firmProfile, error: firmError } = await supabase
-        .from('estate_firm_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (firmError) throw firmError;
-
-      let estateFirmProfileId;
-      if (!firmProfile) {
-        const { data: newProfile, error: createError } = await supabase
-          .from('estate_firm_profiles')
-          .insert({
-            user_id: user.id,
-            firm_name: 'My Estate Firm',
-            description: 'Property management',
-            verification_status: 'unverified',
-            boost_status: 'not_boosted',
-            subscription_status: 'inactive',
-            free_posts_remaining: 10,
-            created_at: new Date().toISOString()
-          })
-          .select('id')
-          .single();
-        if (createError) throw createError;
-        estateFirmProfileId = newProfile.id;
-      } else {
-        estateFirmProfileId = firmProfile.id;
-      }
-
-      // 2. Create/find landlord contact
-      let landlordId = null;
-      if (formData.clientName) {
-        const { data: existing } = await supabase
-          .from('contacts')
-          .select('id')
-          .eq('estate_firm_id', estateFirmProfileId)
-          .or(`phone.eq.${formData.clientPhone},email.eq.${formData.clientEmail}`)
-          .maybeSingle();
-
-        if (existing) {
-          landlordId = existing.id;
-        } else {
-          const { data: newContact, error: contactError } = await supabase
-            .from('contacts')
-            .insert({
-              name: formData.clientName,
-              phone: formData.clientPhone || null,
-              email: formData.clientEmail || null,
-              type: 'landlord',
-              estate_firm_id: estateFirmProfileId
-            })
-            .select()
-            .single();
-          if (contactError) throw contactError;
-          landlordId = newContact.id;
-        }
-      }
-
-      // 3. Insert property
-      const { data: property, error: propError } = await supabase
+      // Update property
+      const { error: propError } = await supabase
         .from('properties')
-        .insert({
-          estate_firm_id: estateFirmProfileId,
-          landlord_id: landlordId,
+        .update({
           title: formData.propertyName,
           address: formData.address,
           city: formData.city || null,
           state: formData.state || null,
           lga: formData.lga || null,
           property_type: formData.propertyType,
-          status: 'active',
           description: formData.notes,
           commission_rate: commissionRate || null,
           management_level: formData.managementLevel,
           contract_start: formData.contractStart || null,
           contract_end: formData.contractEnd || null,
-          created_at: new Date().toISOString()
+          updated_at: new Date().toISOString()
         })
-        .select()
-        .single();
+        .eq('id', id);
       if (propError) throw propError;
 
-      // 4. Insert unit
-      if (rentAmount > 0) {
+      // Update first unit (if exists)
+      const { data: units } = await supabase
+        .from('units')
+        .select('id')
+        .eq('property_id', id)
+        .limit(1);
+
+      if (units && units.length > 0) {
         const { error: unitError } = await supabase
           .from('units')
-          .insert({
-            property_id: property.id,
-            unit_number: '1',
+          .update({
             rent_amount: rentAmount,
-            rent_frequency: formData.rentFrequency,
-            status: 'vacant',
-            bedrooms: 0,
-            bathrooms: 0,
-            area_sqm: null
-          });
+            rent_frequency: formData.rentFrequency
+          })
+          .eq('id', units[0].id);
         if (unitError) throw unitError;
       }
 
-      // 5. Log activity
-      await supabase.from('activities').insert({
-        user_id: user.id,
-        type: 'property',
-        action: 'add_external',
-        description: `Added external property: ${formData.propertyName}`,
-        created_at: new Date().toISOString()
-      });
+      // Update landlord contact if changed
+      if (formData.clientName) {
+        // First get current landlord id
+        const { data: property } = await supabase
+          .from('properties')
+          .select('landlord_id')
+          .eq('id', id)
+          .single();
 
-      alert('External property added successfully!');
-
-      // 6. Navigate to property details (adjust the URL if your route differs)
-      if (property?.id) {
-        navigate(`/dashboard/estate-firm/properties/${property.id}`);
-      } else {
-        navigate('/dashboard/estate-firm/properties');
+        if (property?.landlord_id) {
+          // Update existing contact
+          await supabase
+            .from('contacts')
+            .update({
+              name: formData.clientName,
+              phone: formData.clientPhone || null,
+              email: formData.clientEmail || null
+            })
+            .eq('id', property.landlord_id);
+        }
       }
 
-    } catch (error) {
-      console.error('Error adding external property:', error);
-      alert('Failed to add property. Please try again.');
+      alert('Property updated successfully!');
+      navigate(`/dashboard/estate-firm/properties/${id}`);
+    } catch (err) {
+      console.error('Error updating property:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this property? This action cannot be undone.')) return;
+
+    setLoading(true);
+    try {
+      // Delete units first (cascade should handle, but manual for safety)
+      await supabase.from('units').delete().eq('property_id', id);
+      // Delete property
+      const { error } = await supabase.from('properties').delete().eq('id', id);
+      if (error) throw error;
+
+      alert('Property deleted successfully!');
+      navigate('/dashboard/estate-firm/properties');
+    } catch (err) {
+      console.error('Error deleting property:', err);
+      alert('Failed to delete property.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (fetching) return <div className="loading">Loading property...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
+
   return (
-    <div className="add-external-property-page">
+    <div className="edit-property-page">
       <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/dashboard/estate-firm')}>
+        <button className="back-btn" onClick={() => navigate(`/dashboard/estate-firm/properties/${id}`)}>
           <ArrowLeft size={20} />
         </button>
-        <h1>Add External Property</h1>
-        <p>Add properties you manage outside RentEasy for portfolio tracking</p>
+        <h1>Edit Property</h1>
+        <p>Update property details and management information</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="external-property-form">
+      <form onSubmit={handleSubmit} className="edit-property-form">
         {/* Property Details */}
         <div className="form-section">
           <div className="section-header">
@@ -217,7 +227,6 @@ const EstateAddExternalProperty = () => {
                 type="text"
                 value={formData.propertyName}
                 onChange={(e) => setFormData({...formData, propertyName: e.target.value})}
-                placeholder="e.g., 3-Bedroom Duplex, Lekki"
                 required
               />
             </div>
@@ -230,7 +239,6 @@ const EstateAddExternalProperty = () => {
                   type="text"
                   value={formData.address}
                   onChange={(e) => setFormData({...formData, address: e.target.value})}
-                  placeholder="Full property address"
                   required
                 />
               </div>
@@ -242,7 +250,6 @@ const EstateAddExternalProperty = () => {
                 type="text"
                 value={formData.city}
                 onChange={(e) => setFormData({...formData, city: e.target.value})}
-                placeholder="e.g., Lagos"
               />
             </div>
 
@@ -252,17 +259,15 @@ const EstateAddExternalProperty = () => {
                 type="text"
                 value={formData.state}
                 onChange={(e) => setFormData({...formData, state: e.target.value})}
-                placeholder="e.g., Lagos State"
               />
             </div>
 
             <div className="form-group">
-              <label>LGA (optional)</label>
+              <label>LGA</label>
               <input
                 type="text"
                 value={formData.lga}
                 onChange={(e) => setFormData({...formData, lga: e.target.value})}
-                placeholder="e.g., Ikeja"
               />
             </div>
 
@@ -284,7 +289,7 @@ const EstateAddExternalProperty = () => {
           </div>
         </div>
 
-        {/* Client Information */}
+        {/* Landlord Information */}
         <div className="form-section">
           <div className="section-header">
             <User size={20} />
@@ -293,13 +298,11 @@ const EstateAddExternalProperty = () => {
 
           <div className="form-grid">
             <div className="form-group">
-              <label>Landlord Name *</label>
+              <label>Landlord Name</label>
               <input
                 type="text"
                 value={formData.clientName}
                 onChange={(e) => setFormData({...formData, clientName: e.target.value})}
-                placeholder="Property owner's name"
-                required
               />
             </div>
 
@@ -309,7 +312,6 @@ const EstateAddExternalProperty = () => {
                 type="tel"
                 value={formData.clientPhone}
                 onChange={(e) => setFormData({...formData, clientPhone: e.target.value})}
-                placeholder="+234 801 234 5678"
               />
             </div>
 
@@ -319,13 +321,12 @@ const EstateAddExternalProperty = () => {
                 type="email"
                 value={formData.clientEmail}
                 onChange={(e) => setFormData({...formData, clientEmail: e.target.value})}
-                placeholder="client@email.com"
               />
             </div>
           </div>
         </div>
 
-        {/* Financial Details */}
+        {/* Rent Details */}
         <div className="form-section">
           <div className="section-header">
             <DollarSign size={20} />
@@ -341,7 +342,6 @@ const EstateAddExternalProperty = () => {
                   type="number"
                   value={formData.rentAmount}
                   onChange={(e) => setFormData({...formData, rentAmount: e.target.value})}
-                  placeholder="e.g., 2500000"
                 />
               </div>
             </div>
@@ -366,7 +366,7 @@ const EstateAddExternalProperty = () => {
                   type="number"
                   value={formData.commissionRate}
                   onChange={(e) => setFormData({...formData, commissionRate: e.target.value})}
-                  min="1"
+                  min="0"
                   max="100"
                   step="0.1"
                 />
@@ -419,15 +419,6 @@ const EstateAddExternalProperty = () => {
                 onChange={(e) => setFormData({...formData, contractEnd: e.target.value})}
               />
             </div>
-
-            <div className="form-group">
-              <label>Next Rent Due Date</label>
-              <input
-                type="date"
-                value={formData.nextRentDue}
-                onChange={(e) => setFormData({...formData, nextRentDue: e.target.value})}
-              />
-            </div>
           </div>
 
           <div className="form-group">
@@ -435,23 +426,21 @@ const EstateAddExternalProperty = () => {
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({...formData, notes: e.target.value})}
-              placeholder="Any additional information about this property..."
               rows="3"
             />
           </div>
         </div>
 
         <div className="form-actions">
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => navigate('/dashboard/estate-firm')}
-          >
+          <button type="button" className="btn btn-outline" onClick={() => navigate(`/dashboard/estate-firm/properties/${id}`)}>
             Cancel
+          </button>
+          <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={loading}>
+            <Trash2 size={18} /> Delete
           </button>
           <button type="submit" className="btn btn-primary" disabled={loading}>
             <Save size={18} />
-            {loading ? 'Adding...' : 'Add to Portfolio'}
+            {loading ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>
@@ -459,4 +448,4 @@ const EstateAddExternalProperty = () => {
   );
 };
 
-export default EstateAddExternalProperty;
+export default EstateEditProperty;

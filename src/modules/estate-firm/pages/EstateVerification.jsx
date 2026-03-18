@@ -56,7 +56,6 @@ const EstateVerification = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingVerification, setExistingVerification] = useState(null);
 
-  // Constants needed for the component
   const directorIdTypes = [
     { value: 'national-id', label: 'National ID' },
     { value: 'passport', label: 'International Passport' },
@@ -148,7 +147,7 @@ const EstateVerification = () => {
             numberOfEmployees: data.number_of_employees || '',
             annualTurnover: data.annual_turnover || '',
             status: data.status || 'pending',
-            // These fields are not stored in DB but needed for form
+            // File fields are not stored in DB, so reset them
             cacDocument: null,
             taxDocument: null,
             proofOfAddress: null,
@@ -304,7 +303,8 @@ const EstateVerification = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const uploadDocument = async (file, documentType) => {
+  // Enhanced upload function: uploads file and creates a record in verification_documents
+  const uploadDocument = async (file, documentType, description = '') => {
     if (!file || !user) return null;
 
     try {
@@ -312,8 +312,9 @@ const EstateVerification = () => {
       const fileName = `${documentType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
       const filePath = `verifications/${user.id}/${fileName}`;
 
+      // Upload to storage (use a consistent bucket name)
       const { error: uploadError } = await supabase.storage
-        .from('estate-verification-docs')
+        .from('estate-verification-docs')  // you may rename the bucket as needed
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
@@ -322,8 +323,21 @@ const EstateVerification = () => {
         .from('estate-verification-docs')
         .getPublicUrl(filePath);
 
-      return publicUrl;
+      // Insert document record
+      const { error: docError } = await supabase
+        .from('verification_documents')
+        .insert({
+          provider_id: user.id,
+          document_type: documentType,
+          file_url: publicUrl,
+          file_name: file.name,
+          description,
+          uploaded_at: new Date().toISOString()
+        });
 
+      if (docError) throw docError;
+
+      return publicUrl;
     } catch (error) {
       console.error(`Error uploading ${documentType}:`, error);
       throw error;
@@ -346,33 +360,48 @@ const EstateVerification = () => {
     setIsSubmitting(true);
 
     try {
-      // Upload documents to Supabase Storage
-      let cacDocumentUrl = null;
-      let taxDocumentUrl = null;
-      let proofOfAddressUrl = null;
-      let businessPlanUrl = null;
+      // Upload main documents
+      const cacUrl = formData.cacDocument ? await uploadDocument(formData.cacDocument, 'cac_certificate') : null;
+      const taxUrl = formData.taxDocument ? await uploadDocument(formData.taxDocument, 'tax_clearance') : null;
+      const addressUrl = formData.proofOfAddress ? await uploadDocument(formData.proofOfAddress, 'proof_of_address') : null;
+      const businessPlanUrl = formData.businessPlan ? await uploadDocument(formData.businessPlan, 'business_plan') : null;
 
-      if (formData.cacDocument) {
-        cacDocumentUrl = await uploadDocument(formData.cacDocument, 'cac');
-      }
-      if (formData.taxDocument) {
-        taxDocumentUrl = await uploadDocument(formData.taxDocument, 'tax');
-      }
-      if (formData.proofOfAddress) {
-        proofOfAddressUrl = await uploadDocument(formData.proofOfAddress, 'address');
-      }
-      if (formData.businessPlan) {
-        businessPlanUrl = await uploadDocument(formData.businessPlan, 'business_plan');
-      }
+      // Upload director documents
+      const directorsWithUrls = await Promise.all(
+        formData.directors.map(async (director, index) => {
+          let idDocumentUrl = null;
+          let photoUrl = null;
 
-      // Prepare verification data
-      const verificationData = {
-        user_id: user.id,
+          if (director.idDocument) {
+            idDocumentUrl = await uploadDocument(
+              director.idDocument,
+              `director_${index}_id`,
+              `ID for ${director.name}`
+            );
+          }
+          if (director.photo) {
+            photoUrl = await uploadDocument(
+              director.photo,
+              `director_${index}_photo`,
+              `Photo of ${director.name}`
+            );
+          }
+
+          return {
+            ...director,
+            idDocument: idDocumentUrl,   // store URL instead of file object
+            photo: photoUrl
+          };
+        })
+      );
+
+      // Prepare KYC data for profiles table
+      const kycData = {
         business_name: formData.businessName,
         business_type: formData.businessType,
         registration_number: formData.registrationNumber,
         tax_id_number: formData.taxIdNumber,
-        year_established: formData.yearEstablished ? parseInt(formData.yearEstablished) : null,
+        year_established: formData.yearEstablished,
         office_address: formData.officeAddress,
         city: formData.city,
         state: formData.state,
@@ -382,31 +411,56 @@ const EstateVerification = () => {
         contact_email: formData.contactEmail,
         contact_phone: formData.contactPhone,
         alternative_phone: formData.alternativePhone,
-        cac_document_url: cacDocumentUrl,
-        tax_document_url: taxDocumentUrl,
-        proof_of_address_url: proofOfAddressUrl,
-        business_plan_url: businessPlanUrl,
-        directors: formData.directors,
+        directors: directorsWithUrls,
         services_offered: formData.servicesOffered,
-        years_in_operation: formData.yearsInOperation ? parseInt(formData.yearsInOperation) : null,
-        number_of_employees: formData.numberOfEmployees ? parseInt(formData.numberOfEmployees) : null,
-        annual_turnover: formData.annualTurnover ? parseFloat(formData.annualTurnover) : null,
-        status: 'pending',
-        submitted_at: new Date().toISOString()
+        years_in_operation: formData.yearsInOperation,
+        number_of_employees: formData.numberOfEmployees,
+        annual_turnover: formData.annualTurnover
       };
 
-      // Insert into database
-      const { data, error } = await supabase
-        .from('estate_verifications')
-        .upsert(verificationData, {
-          onConflict: 'user_id'
+      // Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          kyc_status: 'pending',
+          kyc_submitted_at: new Date().toISOString(),
+          kyc_data: kycData,
+          updated_at: new Date().toISOString()
         })
-        .select()
-        .single();
+        .eq('id', user.id);
 
-      if (error) throw error;
+      if (profileError) throw profileError;
 
-      // Update estate firm profile
+      // Insert/update estate_verifications table (optional – for detailed business info)
+      const { error: verifError } = await supabase
+        .from('estate_verifications')
+        .upsert({
+          user_id: user.id,
+          business_name: formData.businessName,
+          business_type: formData.businessType,
+          registration_number: formData.registrationNumber,
+          tax_id_number: formData.taxIdNumber,
+          year_established: formData.yearEstablished ? parseInt(formData.yearEstablished) : null,
+          office_address: formData.officeAddress,
+          city: formData.city,
+          state: formData.state,
+          country: formData.country,
+          postal_code: formData.postalCode,
+          contact_person: formData.contactPerson,
+          contact_email: formData.contactEmail,
+          contact_phone: formData.contactPhone,
+          alternative_phone: formData.alternativePhone,
+          services_offered: formData.servicesOffered,
+          years_in_operation: formData.yearsInOperation ? parseInt(formData.yearsInOperation) : null,
+          number_of_employees: formData.numberOfEmployees ? parseInt(formData.numberOfEmployees) : null,
+          annual_turnover: formData.annualTurnover ? parseFloat(formData.annualTurnover) : null,
+          status: 'pending',
+          submitted_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (verifError) throw verifError;
+
+      // Update estate_firm_profiles (optional)
       await supabase
         .from('estate_firm_profiles')
         .upsert({
@@ -421,9 +475,7 @@ const EstateVerification = () => {
             certified: false,
             verification_status: 'pending'
           }
-        }, {
-          onConflict: 'user_id'
-        });
+        }, { onConflict: 'user_id' });
 
       // Log activity
       await supabase.from('activities').insert({
@@ -436,7 +488,7 @@ const EstateVerification = () => {
 
       alert('Verification submitted successfully! Our team will review your application within 3-5 business days.');
       navigate('/dashboard/estate-firm');
-      
+
     } catch (error) {
       console.error('Submission error:', error);
       alert('Failed to submit verification. Please try again.');
@@ -1086,19 +1138,20 @@ const DocumentUpload = ({ label, name, file, preview, onUpload, error }) => {
             </div>
           </div>
         ) : (
-          <div className="upload-placeholder">
+          // Make the placeholder a label that triggers the file input
+          <label htmlFor={`file-${name}`} className="upload-placeholder">
             <Upload size={24} />
             <p>Click to upload document</p>
             <small>PDF, JPG, PNG up to 5MB</small>
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-              id={`file-${name}`}
-            />
-          </div>
+          </label>
         )}
+        <input
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png"
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+          id={`file-${name}`}
+        />
       </div>
       
       {error && <span className="error-text">{error}</span>}

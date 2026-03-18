@@ -1,11 +1,13 @@
 // src/modules/estate-firm/components/BoostManager.jsx
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Row, Col, Badge, Alert, Modal } from 'react-bootstrap';
-import { Zap, TrendingUp, Clock, Crown, Check } from 'lucide-react';
-import { paymentSystem } from '../../../shared/lib/paymentSystem';
+import { Card, Button, Row, Col, Badge, Alert, Modal, Form } from 'react-bootstrap';
+import { Zap, TrendingUp, Clock, Crown, Check, CreditCard, Upload, X } from 'lucide-react';
+import { paymentService } from '../../../shared/lib/paymentService';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 
 const BoostManager = ({ estateFirmData, onBoostSuccess }) => {
+  const { user } = useAuth();
   const [boostPackages, setBoostPackages] = useState([]);
   const [activeBoost, setActiveBoost] = useState(null);
   const [showBoostModal, setShowBoostModal] = useState(false);
@@ -147,63 +149,130 @@ const BoostManager = ({ estateFirmData, onBoostSuccess }) => {
           loadBoostData();
           if (onBoostSuccess) onBoostSuccess();
         }}
+        user={user}
       />
     </>
   );
 };
 
-// Boost Purchase Modal Component
-const BoostPurchaseModal = ({ show, onHide, boostPackage, onSuccess }) => {
-  const [step, setStep] = useState('details');
-  const [paymentDetails, setPaymentDetails] = useState(null);
-  const [uploadedProof, setUploadedProof] = useState(null);
-  const [loading, setLoading] = useState(false);
+// ===== Boost Purchase Modal Component =====
+const BoostPurchaseModal = ({ show, onHide, boostPackage, onSuccess, user }) => {
+  const [step, setStep] = useState('details'); // details, payment
+  const [paymentRecord, setPaymentRecord] = useState(null);
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleInitiatePayment = async () => {
+  const bankDetails = paymentService.getBankDetails();
+
+  const handleProceedToPayment = async () => {
     if (!boostPackage) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const user = (await supabase.auth.getUser()).data.user;
-      
-      // Get service provider ID
-      const { data: sp, error: spError } = await supabase
-        .from('service_providers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (spError) throw spError;
+      const reference = paymentService.generateReference('BST');
+      const amount = boostPackage.price;
 
       // Create payment record
-      const result = await paymentSystem.processBoost(
-        user.id,
-        boostPackage.id,
-        sp.id
-      );
+      const payment = await paymentService.createPayment({
+        userId: user.id,
+        amount,
+        type: 'boost',
+        reference,
+        metadata: { package_id: boostPackage.id, package_name: boostPackage.name },
+      });
 
-      setPaymentDetails(result);
+      setPaymentRecord(payment);
       setStep('payment');
     } catch (err) {
-      setError(err.message || 'Failed to initiate payment');
+      console.error(err);
+      setError('Failed to initiate payment. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ... Similar to SubscriptionModal but for boosts
-  // Add similar payment proof upload functionality
+  const handleFileChange = (e) => {
+    const selected = e.target.files[0];
+    if (!selected) return;
+    if (selected.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
+      return;
+    }
+    if (!selected.type.startsWith('image/')) {
+      setError('Only image files are allowed');
+      return;
+    }
+    setFile(selected);
+    setError(null);
+  };
+
+  const handleUploadProof = async () => {
+    if (!file) {
+      setError('Please select a file');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      // Upload proof
+      await paymentService.uploadProof({
+        paymentId: paymentRecord.id,
+        userId: user.id,
+        file,
+      });
+
+      // Create pending boost record
+      const { error: boostError } = await supabase
+        .from('active_boosts')
+        .insert({
+          user_id: user.id,
+          package_id: boostPackage.id,
+          payment_id: paymentRecord.id,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        });
+
+      if (boostError) throw boostError;
+
+      alert('Payment proof submitted! Your boost request is now pending admin approval.');
+      onSuccess();
+      onHide();
+    } catch (err) {
+      console.error(err);
+      setError('Failed to upload proof. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Reset state when modal closes
+  const handleClose = () => {
+    setStep('details');
+    setPaymentRecord(null);
+    setFile(null);
+    setError(null);
+    onHide();
+  };
 
   return (
-    <Modal show={show} onHide={onHide} centered>
+    <Modal show={show} onHide={handleClose} centered size="lg">
       <Modal.Header closeButton>
-        <Modal.Title>Purchase Boost</Modal.Title>
+        <Modal.Title>
+          {step === 'details' ? (
+            <><Zap size={24} className="me-2 text-warning" />Purchase Boost</>
+          ) : (
+            <><CreditCard size={24} className="me-2" />Payment Instructions</>
+          )}
+        </Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        {boostPackage && (
+        {step === 'details' && boostPackage && (
           <div>
             <h5>{boostPackage.name}</h5>
             <p className="text-muted">{boostPackage.description}</p>
@@ -225,17 +294,100 @@ const BoostPurchaseModal = ({ show, onHide, boostPackage, onSuccess }) => {
               </ul>
             </div>
 
+            {error && <Alert variant="danger">{error}</Alert>}
+
             <Button 
               variant="warning" 
               className="w-100"
-              onClick={handleInitiatePayment}
+              onClick={handleProceedToPayment}
               disabled={loading}
             >
-              {loading ? 'Processing...' : 'Purchase Now'}
+              {loading ? 'Processing...' : 'Proceed to Payment'}
             </Button>
           </div>
         )}
+
+        {step === 'payment' && paymentRecord && (
+          <div>
+            <Alert variant="info">
+              <h6>Payment Reference: <strong>{paymentRecord.reference}</strong></h6>
+              <p className="mb-0">Use this reference when making your transfer</p>
+            </Alert>
+
+            <Card className="mb-3">
+              <Card.Body>
+                <h6>Bank Transfer Details:</h6>
+                <div className="border rounded p-3 bg-light">
+                  <div className="mb-2">
+                    <strong>Bank Name:</strong> {bankDetails.bankName}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Account Number:</strong> {bankDetails.accountNumber}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Account Name:</strong> {bankDetails.accountName}
+                  </div>
+                  <div className="mb-2">
+                    <strong>Amount:</strong> ₦{paymentRecord.amount?.toLocaleString()}
+                  </div>
+                  <div>
+                    <strong>Reference:</strong> {paymentRecord.reference}
+                  </div>
+                </div>
+              </Card.Body>
+            </Card>
+
+            <div className="mb-3">
+              <label className="form-label">Upload Proof of Payment</label>
+              <div className="border rounded p-3 text-center">
+                {file ? (
+                  <div className="d-flex align-items-center justify-content-between">
+                    <span>{file.name}</span>
+                    <Button variant="link" size="sm" onClick={() => setFile(null)}>
+                      <X size={16} />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Upload size={32} className="text-muted mb-2" />
+                    <p className="text-muted mb-2">Click to upload or drag and drop</p>
+                    <small className="text-muted d-block">PNG, JPG up to 5MB</small>
+                    <Form.Control
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="mt-2"
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {error && <Alert variant="danger">{error}</Alert>}
+          </div>
+        )}
       </Modal.Body>
+      <Modal.Footer>
+        {step === 'payment' && (
+          <>
+            <Button variant="secondary" onClick={() => setStep('details')}>
+              Back
+            </Button>
+            <Button
+              variant="warning"
+              onClick={handleUploadProof}
+              disabled={!file || uploading}
+            >
+              {uploading ? 'Uploading...' : 'Submit Proof'}
+            </Button>
+          </>
+        )}
+        {step === 'details' && (
+          <Button variant="secondary" onClick={handleClose}>
+            Cancel
+          </Button>
+        )}
+      </Modal.Footer>
     </Modal>
   );
 };

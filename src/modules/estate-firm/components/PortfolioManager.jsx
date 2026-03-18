@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Building, PlusCircle, Upload, Filter, Download,
   Edit, Trash2, Eye, DollarSign, MapPin,
@@ -8,12 +8,15 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
-import { createListingFromUnit } from '../../../shared/utils/listingUtils'; // Phase 5 utility
+import { createListingFromUnit } from '../../../shared/utils/listingUtils';
 import './PortfolioManager.css';
 
 const PortfolioManager = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const [estateFirmProfileId, setEstateFirmProfileId] = useState(null);
   const [viewMode, setViewMode] = useState('grid');
   const [selectedProperties, setSelectedProperties] = useState([]);
   const [sortBy, setSortBy] = useState('recent');
@@ -32,35 +35,54 @@ const PortfolioManager = () => {
   });
 
   useEffect(() => {
-    loadProperties();
+    const fetchProfileId = async () => {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+      if (!error && data) {
+        setEstateFirmProfileId(data.id);
+      } else {
+        console.error('Could not fetch estate firm profile ID', error);
+      }
+    };
+    fetchProfileId();
   }, [user]);
 
+  useEffect(() => {
+    if (estateFirmProfileId) {
+      loadProperties();
+    }
+  }, [estateFirmProfileId, location.key]);
+
   const loadProperties = async () => {
-    if (!user) return;
+    if (!estateFirmProfileId) return;
 
     try {
       setLoading(true);
 
-      // 1. Fetch external properties from the properties table
+      // Fetch external properties
       const { data: externalProps, error: externalError } = await supabase
         .from('properties')
         .select(`
           *,
           landlord:landlord_id (id, name, email, phone)
         `)
-        .eq('estate_firm_id', user.id)
+        .eq('estate_firm_id', estateFirmProfileId)
         .order('created_at', { ascending: false });
 
       if (externalError) throw externalError;
 
-      // 2. Fetch RentEasy listings where this estate firm is the manager
+      // Fetch RentEasy listings
       const { data: listings, error: listingsError } = await supabase
         .from('listings')
         .select(`
           *,
           landlord:profiles!landlord_id (id, name, email, phone)
         `)
-        .eq('estate_firm_id', user.id)
+        .eq('estate_firm_id', estateFirmProfileId)
         .order('created_at', { ascending: false });
 
       if (listingsError) throw listingsError;
@@ -79,7 +101,6 @@ const PortfolioManager = () => {
         source: 'rent-easy',
         listing_id: listing.id,
         created_at: listing.created_at,
-        // For a listing, we treat it as a single unit
         units: [{
           id: `unit-${listing.id}`,
           property_id: listing.id,
@@ -89,18 +110,16 @@ const PortfolioManager = () => {
           status: listing.status === 'rented' ? 'occupied' : 'vacant',
           tenant_id: listing.tenant_id,
         }],
-        // We'll compute these later
         occupiedCount: listing.status === 'rented' ? 1 : 0,
         monthlyRent: listing.price && listing.rent_frequency === 'yearly' ? listing.price / 12 : listing.price,
       }));
 
-      // 3. Combine both sets
+      // Combine and enrich
       const allProperties = [
         ...(externalProps || []).map(p => ({ ...p, source: 'external' })),
         ...rentEasyProps
       ];
 
-      // For each property, fetch units if external
       const enriched = await Promise.all(allProperties.map(async (property) => {
         let units = [];
         if (property.source === 'external') {
@@ -114,6 +133,7 @@ const PortfolioManager = () => {
         }
 
         const occupiedUnits = units.filter(u => u.status === 'occupied');
+        const vacantUnits = units.filter(u => u.status === 'vacant');
         const monthlyRent = occupiedUnits.reduce((sum, u) => {
           let multiplier = 1;
           if (u.rent_frequency === 'yearly') multiplier = 1/12;
@@ -127,21 +147,22 @@ const PortfolioManager = () => {
           ...property,
           units,
           occupiedCount: occupiedUnits.length,
+          vacantCount: vacantUnits.length, // explicitly store vacant count
           monthlyRent,
-          totalRent, // for value estimation
+          totalRent,
         };
       }));
 
       setProperties(enriched);
 
-      // Calculate stats
+      // Calculate stats using the new vacantCount
       const totalProperties = enriched.length;
       const rentEasyCount = enriched.filter(p => p.source === 'rent-easy').length;
       const externalCount = totalProperties - rentEasyCount;
       const occupiedProperties = enriched.reduce((sum, p) => sum + p.occupiedCount, 0);
       const monthlyRevenue = enriched.reduce((sum, p) => sum + p.monthlyRent, 0);
-      const totalValue = enriched.reduce((sum, p) => sum + (p.totalRent * 5 || 0), 0); // rough valuation
-      const vacantUnits = enriched.reduce((sum, p) => sum + (p.units?.length || 0) - p.occupiedCount, 0);
+      const totalValue = enriched.reduce((sum, p) => sum + (p.totalRent * 5 || 0), 0);
+      const vacantUnits = enriched.reduce((sum, p) => sum + p.vacantCount, 0); // use vacantCount
 
       setPortfolioStats({
         totalProperties,
@@ -162,8 +183,6 @@ const PortfolioManager = () => {
   };
 
   const handleAddProperty = () => {
-    // Navigate to a page where user can choose external property or RentEasy listing
-    // For simplicity, we'll navigate to external property creation
     navigate('/dashboard/estate-firm/add-external-property');
   };
 
@@ -172,12 +191,7 @@ const PortfolioManager = () => {
   };
 
   const handleEditProperty = (property) => {
-    if (property.source === 'external') {
-      navigate(`/dashboard/estate-firm/properties/${property.id}/edit`);
-    } else {
-      // For RentEasy listings, maybe navigate to listing edit
-      navigate(`/dashboard/estate-firm/listings/${property.id}/edit`);
-    }
+    navigate(`/dashboard/estate-firm/properties/${property.id}/edit`);
   };
 
   const handleDeleteProperty = async (propertyId, propertyName, source) => {
@@ -185,22 +199,41 @@ const PortfolioManager = () => {
 
     try {
       if (source === 'external') {
-        const { error } = await supabase
+        // First check if property exists and belongs to this estate firm
+        const { data: property, error: checkError } = await supabase
+          .from('properties')
+          .select('id')
+          .eq('id', propertyId)
+          .eq('estate_firm_id', estateFirmProfileId)
+          .single();
+
+        if (checkError || !property) {
+          alert('Property not found or you do not have permission to delete it.');
+          return;
+        }
+
+        // Perform deletion and get number of affected rows
+        const { error: deleteError, count } = await supabase
           .from('properties')
           .delete()
           .eq('id', propertyId)
-          .eq('estate_firm_id', user.id);
-        if (error) throw error;
+          .eq('estate_firm_id', estateFirmProfileId)
+          .select('id'); // using select to get affected rows
+
+        if (deleteError) throw deleteError;
+
+        if (count === 0) {
+          alert('No rows were deleted. Please try again.');
+          return;
+        }
       } else {
-        // For RentEasy listings, we might archive or just remove from portfolio view
-        alert('RentEasy properties cannot be deleted directly from portfolio. You can archive them.');
+        alert('RentEasy properties cannot be deleted directly from portfolio. You can archive them in the RentEasy section.');
         return;
       }
 
-      setSelectedProperties(selectedProperties.filter(id => id !== propertyId));
+      setSelectedProperties(prev => prev.filter(id => id !== propertyId));
       await loadProperties();
 
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'property',
@@ -225,12 +258,30 @@ const PortfolioManager = () => {
         .map(p => p.id);
 
       if (externalIds.length > 0) {
-        const { error } = await supabase
+        // Verify all belong to this estate firm
+        const { data: existing, error: verifyError } = await supabase
+          .from('properties')
+          .select('id')
+          .in('id', externalIds)
+          .eq('estate_firm_id', estateFirmProfileId);
+
+        if (verifyError) throw verifyError;
+        if (existing.length !== externalIds.length) {
+          alert('Some properties do not belong to you and will be skipped.');
+        }
+
+        const { error: deleteError, count } = await supabase
           .from('properties')
           .delete()
           .in('id', externalIds)
-          .eq('estate_firm_id', user.id);
-        if (error) throw error;
+          .eq('estate_firm_id', estateFirmProfileId)
+          .select('id');
+
+        if (deleteError) throw deleteError;
+
+        if (count !== externalIds.length) {
+          console.warn(`Expected to delete ${externalIds.length}, but deleted ${count}`);
+        }
       }
 
       const rentEasyIds = selectedProperties.filter(id =>
@@ -258,7 +309,6 @@ const PortfolioManager = () => {
     }
   };
 
-  // Phase 5: Post all vacant units to marketplace
   const handlePostAllVacant = async () => {
     const vacantUnits = [];
     properties.forEach(prop => {
@@ -282,7 +332,7 @@ const PortfolioManager = () => {
 
     for (const { unit, property } of vacantUnits) {
       try {
-        await createListingFromUnit(unit, property, user?.id);
+        await createListingFromUnit(unit, property, estateFirmProfileId);
         success++;
       } catch (err) {
         console.error(err);
@@ -292,7 +342,6 @@ const PortfolioManager = () => {
 
     alert(`Posted ${success} listings. ${failed} failed.`);
     setLoading(false);
-    // Optionally reload properties to reflect any changes (e.g., unit status if we update it)
     await loadProperties();
   };
 
@@ -430,15 +479,12 @@ const PortfolioManager = () => {
         ))}
       </div>
 
-      {/* Portfolio Performance */}
+      {/* Portfolio Performance - Removed hardcoded growth */}
       <div className="portfolio-performance">
         <div className="performance-card">
           <div className="performance-header">
             <h4>Portfolio Performance</h4>
-            <span className="performance-change positive">
-              <ArrowUpRight size={14} />
-              +12% growth
-            </span>
+            {/* Growth removed – add real calculation later if needed */}
           </div>
           <div className="performance-metrics">
             <div className="metric">
@@ -524,8 +570,8 @@ const PortfolioManager = () => {
             <button
               className="btn btn-sm"
               onClick={() => {
-                // Bulk edit functionality (placeholder)
-                console.log('Bulk edit:', selectedProperties);
+                // Bulk edit – could navigate to a bulk edit page or open modal
+                alert('Bulk edit not implemented yet');
               }}
             >
               <Edit size={16} />

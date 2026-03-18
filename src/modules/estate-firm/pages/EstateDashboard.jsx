@@ -87,318 +87,279 @@ const EstateDashboard = () => {
 
   // Load estate firm data from Supabase
   const loadEstateFirmData = async () => {
-    if (!user) {
+  if (!user) {
+    setLoading(false);
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError(null);
+    
+    console.log('Loading estate dashboard data for user:', user.id);
+
+    // 1. Get or create estate firm profile
+    let estateFirmProfile = null;
+    try {
+      const { data, error: firmError } = await supabase
+        .from('estate_firm_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (firmError) throw firmError;
+
+      if (!data) {
+        // Create default profile
+        const { data: newProfile, error: createError } = await supabase
+          .from('estate_firm_profiles')
+          .insert({
+            user_id: user.id,
+            firm_name: 'My Estate Firm',
+            description: 'Professional estate management firm',
+            verification_status: 'not_started',
+            boost_status: 'none',
+            subscription_status: 'inactive',
+            free_posts_remaining: 10,
+            rating: 0,
+            total_reviews: 0,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        estateFirmProfile = newProfile;
+      } else {
+        estateFirmProfile = data;
+      }
+    } catch (err) {
+      console.error('Error with estate firm profile:', err);
+      setError('Failed to load estate firm profile');
       setLoading(false);
       return;
     }
 
+    // 2. Get active subscription
+    let activeSubscription = null;
     try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('Loading estate dashboard data for user:', user.id);
-
-      // 1. Load estate firm profile from estate_firm_profiles table
-      let estateFirmProfile = null;
-      try {
-        const { data, error: firmError } = await supabase
-          .from('estate_firm_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-
-        if (firmError) {
-          if (firmError.code === 'PGRST116') {
-            console.log('No estate firm profile found, creating default...');
-            // Get user profile for business name
-            const { data: userProfile } = await supabase
-              .from('profiles')
-              .select('name, email, phone') // changed from full_name to name
-              .eq('id', user.id)
-              .single();
-
-            // Create default profile if doesn't exist
-            const { data: newProfile, error: createError } = await supabase
-              .from('estate_firm_profiles')
-              .insert({
-                user_id: user.id,
-                firm_name: userProfile?.name || 'Estate Firm', // changed
-                description: 'Professional estate management firm',
-                contact_email: userProfile?.email || '',
-                contact_phone: userProfile?.phone || '',
-                verification_status: 'unverified',
-                boost_status: 'not_boosted',
-                subscription_status: 'inactive',
-                rating: 0,
-                total_reviews: 0,
-                free_posts_remaining: 10,
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
-              .select()
-              .single();
-
-            if (!createError) {
-              estateFirmProfile = newProfile;
-            } else {
-              console.error('Error creating estate firm profile:', createError);
-            }
-          } else {
-            console.warn('Firm profile error:', firmError.message);
-          }
-        } else {
-          estateFirmProfile = data;
-        }
-      } catch (err) {
-        console.warn('Error loading estate firm profile:', err.message);
-      }
-
-      // 2. Load subscription data from subscriptions table
-      let subscription = null;
-      try {
-        const { data: subscriptionData, error: subscriptionError } = await supabase
-          .from('subscriptions')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('status', 'active')
-          .gte('expires_at', new Date().toISOString())
-          .order('expires_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (!subscriptionError) {
-          subscription = subscriptionData;
-        }
-      } catch (err) {
-        console.warn('Subscription error:', err.message);
-      }
-
-      // 3. Load properties managed by this estate firm from listings table
-      let properties = [];
-      if (estateFirmProfile?.id) {
-        try {
-          const { data: propertiesData, error: propertiesError } = await supabase
-            .from('listings')
-            .select('*')
-            .eq('estate_firm_id', estateFirmProfile.id)
-            .order('created_at', { ascending: false });
-
-          if (propertiesError) {
-            console.error('Properties query error:', propertiesError.message);
-          } else {
-            properties = propertiesData || [];
-          }
-        } catch (err) {
-          console.error('Error loading properties:', err.message);
-          properties = [];
-        }
-      }
-
-      // 4. Load payments from payments table
-      let payments = [];
-      try {
-        const { data: paymentsData, error: paymentsError } = await supabase
-          .from('payments')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (!paymentsError) {
-          payments = paymentsData || [];
-        }
-      } catch (err) {
-        console.warn('Payments table error:', err.message);
-      }
-
-      // Update estate firm data state
-      if (estateFirmProfile) {
-        const isVerified = estateFirmProfile.verification_status === 'verified';
-        const hasActiveSubscription = subscription ? true : 
-          estateFirmProfile.subscription_status === 'active';
-        
-        setEstateFirmData({
-          id: estateFirmProfile.id,
-          isVerified,
-          verificationStatus: estateFirmProfile.verification_status || 'unverified',
-          freePostsRemaining: estateFirmProfile.free_posts_remaining || 10,
-          hasActiveSubscription,
-          subscriptionEndDate: subscription?.expires_at || estateFirmProfile.subscription_expiry,
-          subscriptionType: subscription?.plan_type || estateFirmProfile.subscription_status,
-          isInMarketplace: true, // Always true for estate firms
-          marketplaceBoost: estateFirmProfile.boost_status === 'boosted',
-          boostStatus: estateFirmProfile.boost_status || 'not_boosted',
-          boostExpiry: estateFirmProfile.boost_expiry,
-          businessName: estateFirmProfile.firm_name || 'Estate Firm',
-          rating: estateFirmProfile.rating || 0,
-          totalReviews: estateFirmProfile.total_reviews || 0
-        });
-      }
-
-      // Transform properties for display
-      const transformedProperties = properties.map(property => ({
-        id: property.id,
-        name: property.title || `Property ${property.id?.substring(0, 8) || 'N/A'}`,
-        type: 'rent-easy-listing',
-        source: 'rent-easy',
-        listingId: property.id,
-        managementType: 'full',
-        clientId: property.landlord_id || property.client_id,
-        clientName: 'Property Owner',
-        commissionRate: 0, // Estate firms pay 0% commission
-        rentAmount: property.price || property.rent_amount || 0,
-        rentFrequency: property.rent_frequency || 'monthly',
-        rentDueDate: property.rent_due_datetime || property.rent_due_date,
-        rentEndDate: property.rent_end_datetime || property.lease_end_date,
-        status: property.status === 'approved' ? 'available' : 
-               property.status === 'rented' ? 'occupied' : 
-               property.status || 'available',
-        tenant: property.tenant_id ? {
-          name: 'Tenant',
-          phone: '',
-          email: ''
-        } : null,
-        healthScore: 85, // Default for now
-        nextMaintenance: null,
-        address: property.address || `${property.city}, ${property.state}`,
-        category: property.property_type || 'residential',
-        addedDate: property.created_at,
-        postedBy: property.posted_by || 'estate-firm',
-        tags: ['verified-estate-firm'],
-        commissionSaved: ((property.price || 0) * 0.075) // 7.5% commission saved
-      }));
-
-      setAllProperties(transformedProperties);
-
-      // Calculate dashboard stats
-      const totalProperties = transformedProperties.length;
-      const rentEasyListings = transformedProperties.length;
-      const occupiedProperties = transformedProperties.filter(p => 
-        p.status === 'occupied' || p.status === 'rented'
-      ).length;
-      const vacantProperties = totalProperties - occupiedProperties;
-      
-      // Calculate monthly revenue
-      const monthlyRevenue = transformedProperties
-        .filter(p => p.status === 'occupied' || p.status === 'rented')
-        .reduce((sum, p) => {
-          let multiplier = 1;
-          if (p.rentFrequency === 'yearly') multiplier = 1/12;
-          if (p.rentFrequency === 'quarterly') multiplier = 1/3;
-          if (p.rentFrequency === 'weekly') multiplier = 4.33;
-          if (p.rentFrequency === 'daily') multiplier = 30;
-          return sum + (p.rentAmount * multiplier);
-        }, 0);
-
-      // Calculate commission savings
-      const commissionSaved = transformedProperties
-        .filter(p => p.status === 'occupied' || p.status === 'rented')
-        .reduce((sum, p) => sum + (p.commissionSaved || 0), 0);
-
-      // Calculate posts this month
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      const postsThisMonth = transformedProperties.filter(p => {
-        const addedDate = new Date(p.addedDate);
-        return addedDate.getMonth() === currentMonth && 
-               addedDate.getFullYear() === currentYear;
-      }).length;
-
-      // Calculate total earnings
-      const totalEarnings = payments
-        .filter(p => p.status === 'completed' || p.status === 'success')
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-      // Calculate average occupancy rate
-      const averageOccupancyRate = totalProperties > 0 
-        ? (occupiedProperties / totalProperties) * 100 
-        : 0;
-
-      setDashboardStats({
-        totalProperties,
-        managedProperties: transformedProperties.length,
-        rentEasyListings,
-        externalProperties: 0,
-        occupiedProperties,
-        vacantProperties,
-        totalTenants: occupiedProperties,
-        monthlyRevenue,
-        pendingPayments: transformedProperties.filter(p => {
-          if (!p.rentDueDate || !(p.status === 'occupied' || p.status === 'rented')) return false;
-          const dueDate = new Date(p.rentDueDate);
-          const today = new Date();
-          return dueDate < today;
-        }).length,
-        maintenanceRequests: 0,
-        expiringLeases: transformedProperties.filter(p => {
-          if (!p.rentEndDate || !(p.status === 'occupied' || p.status === 'rented')) return false;
-          const endDate = new Date(p.rentEndDate);
-          const today = new Date();
-          const daysDiff = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-          return daysDiff <= 30;
-        }).length,
-        totalClients: [...new Set(transformedProperties
-          .map(p => p.clientId)
-          .filter(Boolean)
-        )].length,
-        portfolioValue: monthlyRevenue * 12,
-        postsThisMonth,
-        commissionSaved,
-        subscriptionSavings: estateFirmData.hasActiveSubscription ? 10000 : 0,
-        totalEarnings,
-        pendingCommissions: 0,
-        averageOccupancyRate,
-        responseRate: Math.floor(Math.random() * 30) + 70
-      });
-
-      // Set critical alerts
-      const alerts = [];
-      
-      if (!estateFirmData.hasActiveSubscription && estateFirmData.freePostsRemaining <= 3) {
-        alerts.push({
-          id: 1,
-          type: 'subscription_expiry',
-          message: `Only ${estateFirmData.freePostsRemaining} free posts remaining`,
-          priority: 'medium',
-          action: 'subscribe'
-        });
-      }
-
-      if (!estateFirmData.isVerified) {
-        alerts.push({
-          id: 2,
-          type: 'verification_pending',
-          message: 'Complete verification to get verified badge',
-          priority: 'low',
-          action: 'verify'
-        });
-      }
-
-      if (estateFirmData.boostStatus === 'boosted' && estateFirmData.boostExpiry) {
-        const expiryDate = new Date(estateFirmData.boostExpiry);
-        const daysUntilExpiry = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
-        if (daysUntilExpiry <= 7) {
-          alerts.push({
-            id: 3,
-            type: 'boost_expiry',
-            message: `Boost expires in ${daysUntilExpiry} days`,
-            priority: 'low',
-            action: 'boost'
-          });
-        }
-      }
-
-      setCriticalAlerts(alerts);
-
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('profile_id', user.id)
+        .eq('status', 'active')
+        .gte('expires_at', new Date().toISOString())
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!error) activeSubscription = data;
     } catch (err) {
-      console.error('Error loading dashboard data:', err);
-      setError('Failed to load dashboard data. Please check your connection and try again.');
-    } finally {
-      setLoading(false);
+      console.warn('Subscription query error:', err.message);
     }
-  };
 
+    const hasActiveSubscription = !!activeSubscription;
+    const subscriptionExpiry = activeSubscription?.expires_at || null;
+
+    // 3. Fetch listings (RentEasy marketplace)
+    let listings = [];
+    if (estateFirmProfile.id) {
+      try {
+        const { data, error } = await supabase
+          .from('listings')
+          .select('*')
+          .eq('estate_firm_id', estateFirmProfile.id)
+          .order('created_at', { ascending: false });
+        if (!error) listings = data || [];
+      } catch (err) {
+        console.warn('Error loading listings:', err.message);
+      }
+    }
+
+    // 4. Fetch external properties
+    let externalProps = [];
+    if (estateFirmProfile.id) {
+      try {
+        const { data, error } = await supabase
+          .from('properties')
+          .select('*')
+          .eq('estate_firm_id', estateFirmProfile.id)
+          .order('created_at', { ascending: false });
+        if (!error) externalProps = data || [];
+      } catch (err) {
+        console.warn('Error loading external properties:', err.message);
+      }
+    }
+
+    // 5. Transform both types into a unified array
+    const transformedListings = listings.map(item => ({
+      id: item.id,
+      name: item.title || 'Listing',
+      type: 'rent-easy-listing',
+      source: 'rent-easy',
+      estate_firm_id: item.estate_firm_id,
+      landlord_id: item.landlord_id,
+      address: item.address,
+      city: item.city,
+      state: item.state,
+      rentAmount: parseFloat(item.price) || 0,
+      rentFrequency: item.rent_frequency || 'monthly',
+      status: item.status === 'active' ? 'available' : 
+              item.status === 'rented' ? 'occupied' : item.status,
+      tenant: item.tenant_id ? { id: item.tenant_id } : null,
+      addedDate: item.created_at,
+      commissionSaved: 0, // RentEasy listings have 0% commission
+      healthScore: 85,
+    }));
+
+    const transformedExternal = externalProps.map(item => ({
+      id: item.id,
+      name: item.name || item.title || 'External Property',
+      type: 'external',
+      source: 'external',
+      estate_firm_id: item.estate_firm_id,
+      landlord_id: item.landlord_id,
+      address: item.address,
+      city: item.city,
+      state: item.state,
+      rentAmount: parseFloat(item.rental_amount || item.price) || 0,
+      rentFrequency: item.rent_frequency || 'monthly',
+      status: item.status === 'active' ? 'available' : item.status,
+      tenant: item.tenant_id ? { id: item.tenant_id } : null,
+      addedDate: item.created_at,
+      commissionRate: parseFloat(item.commission_rate) || 0,
+      commissionSaved: 0, // External properties may have commission, we'll calculate later if needed
+      healthScore: 70,
+    }));
+
+    const allProperties = [...transformedListings, ...transformedExternal];
+
+    // 6. Calculate stats
+    const totalProperties = allProperties.length;
+    const occupiedProperties = allProperties.filter(p => 
+      p.status === 'occupied' || p.status === 'rented'
+    ).length;
+    const vacantProperties = totalProperties - occupiedProperties;
+    
+    const monthlyRevenue = allProperties
+      .filter(p => p.status === 'occupied' || p.status === 'rented')
+      .reduce((sum, p) => {
+        let multiplier = 1;
+        if (p.rentFrequency === 'yearly') multiplier = 1/12;
+        else if (p.rentFrequency === 'quarterly') multiplier = 1/3;
+        else if (p.rentFrequency === 'weekly') multiplier = 4.33;
+        else if (p.rentFrequency === 'daily') multiplier = 30;
+        return sum + (p.rentAmount * multiplier);
+      }, 0);
+
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const postsThisMonth = allProperties.filter(p => {
+      const d = new Date(p.addedDate);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }).length;
+
+    const totalClients = [
+      ...new Set(allProperties.map(p => p.landlord_id).filter(Boolean))
+    ].length;
+
+    // Expiring leases: properties with contract_end within 30 days
+    const expiringLeases = externalProps.filter(p => {
+      if (!p.contract_end) return false;
+      const end = new Date(p.contract_end);
+      const today = new Date();
+      const days = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+      return days >= 0 && days <= 30;
+    }).length;
+
+    // Pending payments (mock – you might have a payments table per unit)
+    const pendingPayments = 0; // to be implemented if you have rent tracking
+
+    // 7. Update state
+    setEstateFirmData({
+      id: estateFirmProfile.id,
+      isVerified: estateFirmProfile.verification_status === 'verified',
+      verificationStatus: estateFirmProfile.verification_status || 'not_started',
+      freePostsRemaining: estateFirmProfile.free_posts_remaining || 10,
+      hasActiveSubscription,
+      subscriptionEndDate: subscriptionExpiry,
+      subscriptionType: activeSubscription?.plan_type || 'inactive',
+      isInMarketplace: true,
+      marketplaceBoost: estateFirmProfile.boost_status === 'boosted',
+      boostStatus: estateFirmProfile.boost_status || 'none',
+      boostExpiry: estateFirmProfile.boost_expiry,
+      businessName: estateFirmProfile.firm_name || 'Estate Firm',
+      rating: estateFirmProfile.rating || 0,
+      totalReviews: estateFirmProfile.total_reviews || 0
+    });
+
+    setDashboardStats({
+      totalProperties,
+      managedProperties: allProperties.length,
+      rentEasyListings: transformedListings.length,
+      externalProperties: transformedExternal.length,
+      occupiedProperties,
+      vacantProperties,
+      totalTenants: occupiedProperties,
+      monthlyRevenue,
+      pendingPayments,
+      maintenanceRequests: 0, // not implemented yet
+      expiringLeases,
+      totalClients,
+      portfolioValue: monthlyRevenue * 12,
+      postsThisMonth,
+      commissionSaved: 0, // RentEasy saves commission; external may charge commission – compute if needed
+      subscriptionSavings: hasActiveSubscription ? 10000 : 0,
+      totalEarnings: 0, // from payments table if needed
+      pendingCommissions: 0,
+      averageOccupancyRate: totalProperties ? (occupiedProperties / totalProperties) * 100 : 0,
+      responseRate: Math.floor(Math.random() * 30) + 70
+    });
+
+    setAllProperties(allProperties);
+
+    // 8. Critical alerts
+    const alerts = [];
+    if (!hasActiveSubscription && estateFirmProfile.free_posts_remaining <= 3) {
+      alerts.push({
+        id: 1,
+        type: 'subscription_expiry',
+        message: `Only ${estateFirmProfile.free_posts_remaining} free posts remaining`,
+        priority: 'medium',
+        action: 'subscribe'
+      });
+    }
+    if (estateFirmProfile.verification_status !== 'verified') {
+      alerts.push({
+        id: 2,
+        type: 'verification_pending',
+        message: 'Complete verification to get verified badge',
+        priority: 'low',
+        action: 'verify'
+      });
+    }
+    if (estateFirmProfile.boost_status === 'boosted' && estateFirmProfile.boost_expiry) {
+      const daysLeft = Math.ceil((new Date(estateFirmProfile.boost_expiry) - new Date()) / (1000*60*60*24));
+      if (daysLeft <= 7) {
+        alerts.push({
+          id: 3,
+          type: 'boost_expiry',
+          message: `Boost expires in ${daysLeft} days`,
+          priority: 'low',
+          action: 'boost'
+        });
+      }
+    }
+    setCriticalAlerts(alerts);
+
+  } catch (err) {
+    console.error('Error loading dashboard data:', err);
+    setError('Failed to load dashboard data. Please check your connection and try again.');
+  } finally {
+    setLoading(false);
+  }
+};
   useEffect(() => {
     loadEstateFirmData();
   }, [user, refreshKey]);

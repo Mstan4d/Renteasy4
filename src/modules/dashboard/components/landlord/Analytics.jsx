@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import { supabase } from '../../../../shared/lib/supabaseClient';
-import { 
-  TrendingUp, DollarSign, Home, BarChart3, 
-  ArrowLeft, Download, MapPin, Zap 
+import {
+  TrendingUp, DollarSign, Home, BarChart3,
+  ArrowLeft, Download, MapPin, Zap,
+  Users, Calendar, Clock, CheckCircle, XCircle
 } from 'lucide-react';
 import './Analytics.css';
 
@@ -13,45 +14,143 @@ const Analytics = () => {
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState('monthly');
   const [isLoading, setIsLoading] = useState(true);
-  const [stats, setStats] = useState(null);
+  const [analyticsData, setAnalyticsData] = useState(null);
 
   useEffect(() => {
-    if (user) fetchRealAnalytics();
+    if (user) fetchAnalytics();
   }, [user, timeRange]);
 
-  const fetchRealAnalytics = async () => {
+  const fetchAnalytics = async () => {
     try {
       setIsLoading(true);
-      
-      // 1. Fetch all properties posted by this landlord
-      const { data: properties, error: propError } = await supabase
+
+      // 1. Get all properties (listings) owned by this landlord
+      const { data: listings, error: listError } = await supabase
         .from('listings')
-        .select('*')
-        .eq('poster_id', user.id);
+        .select(`
+          id,
+          title,
+          address,
+          city,
+          state,
+          price,
+          property_type,
+          created_at,
+          units (
+            id,
+            unit_number,
+            tenant_id,
+            rent_amount,
+            rent_frequency
+          )
+        `)
+        .eq('landlord_id', user.id)  // landlord_id in listings (from your schema)
+        .order('created_at', { ascending: false });
 
-      if (propError) throw propError;
+      if (listError) throw listError;
 
-      // 2. Fetch all earned commissions (1.5%)
+      // 2. Collect all unit IDs
+      const unitIds = (listings || []).flatMap(p => (p.units || []).map(u => u.id));
+
+      // 3. Fetch rent payments for these units
+      let payments = [];
+      if (unitIds.length > 0) {
+        const { data: pays, error: payError } = await supabase
+          .from('rent_payments')
+          .select(`
+            *,
+            unit:unit_id (
+              unit_number,
+              property:property_id (id, title)
+            ),
+            tenant:tenant_id (id, name, email, phone)
+          `)
+          .in('unit_id', unitIds)
+          .order('due_date', { ascending: false });
+        if (payError) throw payError;
+        payments = pays || [];
+      }
+
+      // 4. Fetch commissions (if any – adjust table name if needed)
       const { data: commissions, error: commError } = await supabase
-        .from('tenant_commissions')
+        .from('tenant_commissions')   // adjust if different table
         .select('*')
-        .eq('tenant_id', user.id) // Landlord as poster
+        .eq('landlord_id', user.id)
         .eq('status', 'paid');
 
-      if (commError) throw commError;
+      if (commError && commError.code !== 'PGRST116') throw commError; // ignore if table missing
 
-      // 3. Process Data
-      const totalProps = properties?.length || 0;
-      const rentedProps = properties?.filter(p => p.status === 'rented').length || 0;
-      const totalComm = commissions?.reduce((sum, c) => sum + Number(c.commission_amount), 0) || 0;
-      const occupancyRate = totalProps > 0 ? Math.round((rentedProps / totalProps) * 100) : 0;
+      // 5. Process data
+      const totalProperties = listings?.length || 0;
+      const totalUnits = unitIds.length;
+      const occupiedUnits = (listings || []).reduce(
+        (sum, p) => sum + (p.units || []).filter(u => u.tenant_id).length, 0
+      );
 
-      setStats({
-        totalProperties: totalProps,
-        activeRentals: rentedProps,
-        occupancyRate: `${occupancyRate}%`,
-        totalCommission: totalComm,
-        topProperties: properties?.sort((a, b) => b.price - a.price).slice(0, 3) || []
+      // Rent stats
+      const totalRentDue = payments.reduce((sum, p) => sum + (p.amount_due || 0), 0);
+      const totalRentCollected = payments
+        .filter(p => p.status === 'confirmed')
+        .reduce((sum, p) => sum + (p.amount_due || 0), 0);
+      const pendingRent = payments
+        .filter(p => p.status === 'pending')
+        .reduce((sum, p) => sum + (p.amount_due || 0), 0);
+      const overdueCount = payments.filter(p =>
+        p.status !== 'confirmed' && new Date(p.due_date) < new Date()
+      ).length;
+
+      // Group payments by month for chart
+      const monthlyData = {};
+      payments.forEach(p => {
+        if (p.status === 'confirmed') {
+          const date = new Date(p.paid_date || p.due_date);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          monthlyData[monthKey] = (monthlyData[monthKey] || 0) + p.amount_due;
+        }
+      });
+      const sortedMonths = Object.keys(monthlyData).sort().slice(-6);
+      const chartData = sortedMonths.map(m => monthlyData[m]);
+
+      // Top tenants by total rent paid
+      const tenantRentMap = {};
+      payments.forEach(p => {
+        if (p.status === 'confirmed' && p.tenant?.id) {
+          const tenantId = p.tenant.id;
+          if (!tenantRentMap[tenantId]) {
+            tenantRentMap[tenantId] = {
+              tenant: p.tenant,
+              totalRent: 0,
+              lastPayment: p.paid_date
+            };
+          }
+          tenantRentMap[tenantId].totalRent += p.amount_due;
+        }
+      });
+      const topTenants = Object.values(tenantRentMap)
+        .sort((a, b) => b.totalRent - a.totalRent)
+        .slice(0, 5);
+
+      // Commission total
+      const totalCommission = commissions?.reduce((sum, c) => sum + Number(c.amount || c.commission_amount), 0) || 0;
+
+      setAnalyticsData({
+        totalProperties,
+        totalUnits,
+        occupiedUnits,
+        occupancyRate: totalUnits ? Math.round((occupiedUnits / totalUnits) * 100) : 0,
+        totalRentDue,
+        totalRentCollected,
+        pendingRent,
+        overdueCount,
+        collectionRate: totalRentDue ? Math.round((totalRentCollected / totalRentDue) * 100) : 0,
+        totalCommission,
+        topTenants,
+        chartData,
+        chartMonths: sortedMonths.map(m => {
+          const [y, mo] = m.split('-');
+          return `${mo}/${y.slice(2)}`;
+        }),
+        properties: listings || []
       });
 
     } catch (error) {
@@ -64,6 +163,7 @@ const Analytics = () => {
   const formatCurrency = (amount) => `₦${Number(amount).toLocaleString('en-NG')}`;
 
   if (isLoading) return <div className="loading-state">Generating Insights...</div>;
+  if (!analyticsData) return <div className="error-state">No data available</div>;
 
   return (
     <div className="analytics-container">
@@ -73,33 +173,85 @@ const Analytics = () => {
           <ArrowLeft size={20} />
         </button>
         <div className="header-text">
-          <h1>Performance Insights</h1>
-          <p>Real-time data for your portfolio</p>
+          <h1>Rental Performance Analytics</h1>
+          <p>Real-time insights for your portfolio</p>
         </div>
-        <button className="export-btn">
+        <button className="export-btn" onClick={() => alert('Export to CSV')}>
           <Download size={18} /> Export
         </button>
       </header>
 
-      {/* Hero Stats */}
+      {/* Key Stats Row */}
       <div className="hero-stats-grid">
         <div className="hero-stat-card primary">
           <div className="stat-info">
-            <label>Total Commissions (1.5%)</label>
-            <h2>{formatCurrency(stats.totalCommission)}</h2>
+            <label>Rent Collected</label>
+            <h2>{formatCurrency(analyticsData.totalRentCollected)}</h2>
           </div>
           <div className="stat-chart-mini">
-            <TrendingUp size={32} color="rgba(255,255,255,0.4)" />
+            <DollarSign size={32} color="rgba(255,255,255,0.4)" />
           </div>
         </div>
 
         <div className="hero-stat-card">
           <div className="stat-info">
-            <label>Occupancy Rate</label>
-            <h2>{stats.occupancyRate}</h2>
+            <label>Pending Rent</label>
+            <h2>{formatCurrency(analyticsData.pendingRent)}</h2>
+          </div>
+          <div className="stat-chart-mini">
+            <Clock size={32} color="rgba(255,255,255,0.4)" />
+          </div>
+        </div>
+
+        <div className="hero-stat-card">
+          <div className="stat-info">
+            <label>Overdue</label>
+            <h2>{analyticsData.overdueCount}</h2>
+          </div>
+          <div className="stat-chart-mini">
+            <XCircle size={32} color="rgba(255,255,255,0.4)" />
+          </div>
+        </div>
+
+        <div className="hero-stat-card">
+          <div className="stat-info">
+            <label>Occupancy</label>
+            <h2>{analyticsData.occupancyRate}%</h2>
           </div>
           <div className="stat-bar-outer">
-            <div className="stat-bar-inner" style={{ width: stats.occupancyRate }}></div>
+            <div className="stat-bar-inner" style={{ width: `${analyticsData.occupancyRate}%` }}></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Second Row Stats */}
+      <div className="stats-grid-secondary">
+        <div className="stat-card">
+          <div className="stat-icon"><Home size={20} /></div>
+          <div className="stat-info">
+            <span className="stat-value">{analyticsData.totalProperties}</span>
+            <span className="stat-label">Properties</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon"><Users size={20} /></div>
+          <div className="stat-info">
+            <span className="stat-value">{analyticsData.occupiedUnits}</span>
+            <span className="stat-label">Occupied Units</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-info">
+            <span className="stat-value">{formatCurrency(analyticsData.totalCommission)}</span>
+            <span className="stat-label">Commissions Earned</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon"><TrendingUp size={20} /></div>
+          <div className="stat-info">
+            <span className="stat-value">{analyticsData.collectionRate}%</span>
+            <span className="stat-label">Collection Rate</span>
           </div>
         </div>
       </div>
@@ -109,51 +261,106 @@ const Analytics = () => {
         {/* Chart Section */}
         <section className="chart-box">
           <div className="box-header">
-            <h3>Revenue Trend</h3>
-            <select className="range-select">
-              <option>Last 6 Months</option>
+            <h3>Monthly Rent Collection</h3>
+            <select
+              className="range-select"
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value)}
+            >
+              <option value="monthly">Last 6 Months</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
             </select>
           </div>
           <div className="visual-chart">
-            {/* Simple CSS-based bar visualization */}
-            {[40, 70, 55, 90, 65, 85].map((h, i) => (
-              <div key={i} className="bar-wrapper">
-                <div className="bar" style={{ height: `${h}%` }}></div>
-                <span>M{i+1}</span>
-              </div>
-            ))}
+            {analyticsData.chartData.length > 0 ? (
+              analyticsData.chartData.map((value, i) => (
+                <div key={i} className="bar-wrapper">
+                  <div className="bar" style={{ height: `${(value / Math.max(...analyticsData.chartData)) * 100}%` }}></div>
+                  <span>{analyticsData.chartMonths[i]}</span>
+                </div>
+              ))
+            ) : (
+              <p className="no-data">No payment data yet</p>
+            )}
           </div>
         </section>
 
-        {/* Top Properties */}
+        {/* Top Tenants */}
         <section className="top-list-box">
-          <h3>Top Performers</h3>
-          {stats.topProperties.map((prop, idx) => (
-            <div className="top-prop-item" key={prop.id}>
-              <div className="rank">{idx + 1}</div>
-              <div className="prop-info">
-                <h4>{prop.title}</h4>
-                <p><MapPin size={12}/> {prop.address.split(',')[0]}</p>
+          <h3>Top Tenants by Rent</h3>
+          {analyticsData.topTenants.length > 0 ? (
+            analyticsData.topTenants.map((item, idx) => (
+              <div className="top-prop-item" key={item.tenant.id}>
+                <div className="rank">{idx + 1}</div>
+                <div className="prop-info">
+                  <h4>{item.tenant.name}</h4>
+                  <p><Calendar size={12}/> Last: {new Date(item.lastPayment).toLocaleDateString()}</p>
+                </div>
+                <div className="prop-val">
+                  {formatCurrency(item.totalRent)}
+                </div>
               </div>
-              <div className="prop-val">
-                {formatCurrency(prop.price)}
-              </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <p className="no-data">No tenant payments yet</p>
+          )}
         </section>
       </div>
 
-      {/* Smart Recommendations */}
+      {/* Property Performance */}
+      <section className="property-performance">
+        <h3>Property Performance</h3>
+        <div className="property-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Property</th>
+                <th>Units</th>
+                <th>Occupied</th>
+                <th>Rent Collected</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {analyticsData.properties.map(prop => {
+                const units = prop.units || [];
+                const occupied = units.filter(u => u.tenant_id).length;
+                // For simplicity, we'll sum rent payments for this property
+                const propPayments = payments?.filter(p => p.unit?.property?.id === prop.id) || [];
+                const collected = propPayments
+                  .filter(p => p.status === 'confirmed')
+                  .reduce((sum, p) => sum + p.amount_due, 0);
+                return (
+                  <tr key={prop.id}>
+                    <td>{prop.title}</td>
+                    <td>{units.length}</td>
+                    <td>{occupied}</td>
+                    <td>{formatCurrency(collected)}</td>
+                    <td>
+                      <span className={`badge ${occupied === units.length ? 'badge-success' : 'badge-warning'}`}>
+                        {occupied === units.length ? 'Full' : 'Vacancies'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Smart Recommendations (unchanged) */}
       <section className="recommend-section">
         <h3><Zap size={18} color="#f59e0b" fill="#f59e0b"/> RentEasy AI Tips</h3>
         <div className="tips-scroll">
           <div className="tip-card">
             <h4>Maximize Profit</h4>
-            <p>Your {stats.topProperties[0]?.property_type} in Lekki is in high demand. Consider a 5% increase on renewal.</p>
+            <p>Your properties in high-demand areas could see 5% rent increase.</p>
           </div>
           <div className="tip-card">
-            <h4>Faster Conversion</h4>
-            <p>Properties with 5+ photos rent 3x faster. Update your {stats.topProperties[stats.topProperties.length - 1]?.title} images.</p>
+            <h4>Reduce Overdue</h4>
+            <p>Send payment reminders 3 days before due date to improve collection rate.</p>
           </div>
         </div>
       </section>

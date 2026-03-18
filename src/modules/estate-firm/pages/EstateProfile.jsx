@@ -176,6 +176,11 @@ const EstateProfile = () => {
     }));
   };
 
+  const handleReset = () => {
+    setIsEditing(false);
+    loadProfile(); // reload original data
+  };
+
   const uploadImage = async (file, type) => {
     if (!file || !user) return null;
 
@@ -183,13 +188,16 @@ const EstateProfile = () => {
       setUploading(true);
       const fileExt = file.name.split('.').pop();
       const fileName = `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-      const filePath = `profile/${user.id}/${fileName}`;
+      const filePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('estate-files')
         .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error details:', uploadError);
+        throw uploadError;
+      }
 
       const { data: { publicUrl } } = supabase.storage
         .from('estate-files')
@@ -199,6 +207,13 @@ const EstateProfile = () => {
 
     } catch (error) {
       console.error(`Error uploading ${type}:`, error);
+      if (error.message?.includes('bucket')) {
+        alert('Storage bucket not found. Please contact support.');
+      } else if (error.message?.includes('permission')) {
+        alert('Permission denied. Please check your login status.');
+      } else {
+        alert(`Failed to upload ${type}. Please try again.`);
+      }
       throw error;
     } finally {
       setUploading(false);
@@ -208,28 +223,44 @@ const EstateProfile = () => {
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
+    if (!user) {
+      alert('You must be logged in to upload.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size must be less than 5MB');
+      e.target.value = '';
+      return;
+    }
     try {
       const logoUrl = await uploadImage(file, 'logo');
       if (logoUrl) {
         setFormData(prev => ({ ...prev, logo: logoUrl }));
       }
     } catch (error) {
-      alert('Failed to upload logo. Please try again.');
+      // error already shown in uploadImage
     }
   };
 
   const handleCoverUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
+    if (!user) {
+      alert('You must be logged in to upload.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size must be less than 5MB');
+      e.target.value = '';
+      return;
+    }
     try {
       const coverUrl = await uploadImage(file, 'cover');
       if (coverUrl) {
         setFormData(prev => ({ ...prev, coverImage: coverUrl }));
       }
     } catch (error) {
-      alert('Failed to upload cover image. Please try again.');
+      // error already shown
     }
   };
 
@@ -301,29 +332,31 @@ const EstateProfile = () => {
   return (
     <div className="estate-profile">
       {/* Cover Image */}
-      <div className="profile-cover">
-        <div className="cover-image">
-          {formData.coverImage ? (
-            <img src={formData.coverImage} alt="Cover" />
-          ) : (
-            <div className="cover-placeholder">
-              <Building size={48} />
-              <span>Upload cover image</span>
-            </div>
-          )}
-          
-          {isEditing && (
-            <label className="cover-upload-btn">
+      <div className="cover-image">
+        {formData.coverImage ? (
+          <img src={formData.coverImage} alt="Cover" />
+        ) : (
+          <div className="cover-placeholder">
+            <Building size={48} />
+            <span>Upload cover image</span>
+          </div>
+        )}
+        
+        {isEditing && (
+          <>
+            <label htmlFor="cover-upload" className="cover-upload-btn">
               <Camera size={16} />
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleCoverUpload}
-                style={{ display: 'none' }}
-              />
+              Upload Cover
             </label>
-          )}
-        </div>
+            <input
+              id="cover-upload"
+              type="file"
+              accept="image/*"
+              onChange={handleCoverUpload}
+              style={{ display: 'none' }}
+            />
+          </>
+        )}
       </div>
 
       {/* Profile Header */}
@@ -338,15 +371,18 @@ const EstateProfile = () => {
               )}
               
               {isEditing && (
-                <label className="avatar-upload-btn">
-                  <Camera size={12} />
+                <>
+                  <label htmlFor="logo-upload" className="avatar-upload-btn">
+                    <Camera size={12} />
+                  </label>
                   <input
+                    id="logo-upload"
                     type="file"
                     accept="image/*"
                     onChange={handleLogoUpload}
                     style={{ display: 'none' }}
                   />
-                </label>
+                </>
               )}
             </div>
             
@@ -532,14 +568,14 @@ const EstateProfile = () => {
             </div>
           </div>
 
-          {/* Firm Stats */}
+          {/* Firm Statistics */}
           <div className="profile-section">
             <h3>Firm Statistics</h3>
             <div className="firm-stats">
               <div className="firm-stat">
                 <Briefcase size={16} />
                 <div>
-                  <span className="stat-label">Total Agents</span>
+                  <span className="stat-label">Total Employees</span>
                   {isEditing ? (
                     <input
                       type="text"

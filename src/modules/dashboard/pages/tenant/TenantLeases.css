@@ -1,0 +1,398 @@
+/* src/modules/dashboard/pages/tenant/TenantLeases.css */
+
+.tenant-leases {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+/* Header */
+.leases-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.leases-header h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.active-lease-badge {
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 40px;
+  font-weight: 500;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.active-lease-badge::before {
+  content: "●";
+  font-size: 1.2rem;
+  color: #10b981;
+  margin-right: 0.5rem;
+}
+
+/* Lease List */
+.leases-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Lease Card */
+.lease-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  border: 1px solid #e9ecef;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.lease-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 12px rgba(0,0,0,0.1);
+}
+
+.lease-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 0.75rem;
+}
+
+.lease-header h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.lease-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.lease-status.active {
+  background: #10b981;
+  color: white;
+}
+
+.lease-status.ended {
+  background: #ef4444;
+  color: white;
+}
+
+.lease-status.upcoming {
+  background: #f59e0b;
+  color: white;
+}
+
+.lease-status.draft {
+  background: #64748b;
+  color: white;
+}
+
+/* Lease Details */
+.lease-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+}
+
+.lease-details p {
+  margin: 0.25rem 0;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.lease-details strong {
+  color: #1e293b;
+  font-weight: 600;
+  min-width: 100px;
+  display: inline-block;
+}
+
+/* Payment Section */
+.payment-section {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.payment-section h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.payment-section h4::before {
+  content: "💰";
+  font-size: 1.2rem;
+}
+
+/* Bank Details */
+.bank-details {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border-left: 4px solid #2563eb;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.bank-details p {
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+  color: #334155;
+}
+
+.bank-details strong {
+  color: #1e293b;
+  font-weight: 600;
+  min-width: 120px;
+  display: inline-block;
+}
+
+/* Payment List */
+.payment-list {
+  margin-bottom: 1rem;
+}
+
+.payment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  border-bottom: 1px dashed #cbd5e1;
+  transition: background 0.2s;
+}
+
+.payment-item:last-child {
+  border-bottom: none;
+}
+
+.payment-item:hover {
+  background: #f1f5f9;
+}
+
+.payment-item .due-date {
+  font-size: 0.9rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.payment-item .amount {
+  font-weight: 600;
+  color: #2563eb;
+  margin-left: 1rem;
+}
+
+.payment-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-secondary {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+/* No payments message */
+.no-payments {
+  color: #94a3b8;
+  font-style: italic;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
+/* Make Payment Button */
+.btn-pay {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-top: 0.5rem;
+}
+
+.btn-pay:hover {
+  background: #1e40af;
+}
+
+/* Lease Actions */
+.lease-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  border-top: 1px solid #e9ecef;
+  padding-top: 1rem;
+  margin-top: 0.5rem;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid #2563eb;
+  color: #2563eb;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-outline:hover {
+  background: #2563eb;
+  color: white;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  color: #64748b;
+}
+
+.empty-state::before {
+  content: "🏠";
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 1rem;
+}
+
+/* Loading / Error States */
+.tenant-leases.loading,
+.tenant-leases.error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  text-align: center;
+  color: #64748b;
+}
+
+.tenant-leases.error button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .tenant-leases {
+    padding: 1rem;
+  }
+
+  .leases-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .lease-details {
+    grid-template-columns: 1fr;
+  }
+
+  .bank-details p {
+    flex-wrap: wrap;
+  }
+
+  .payment-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .payment-status {
+    align-self: flex-end;
+  }
+
+  .lease-actions {
+    flex-direction: column;
+  }
+
+  .btn-outline {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn-pay {
+    width: 100%;
+    justify-content: center;
+  }
+}

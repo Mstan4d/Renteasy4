@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, Building, Briefcase, DollarSign, 
-  MessageSquare, Settings, Users, BarChart,
+  MessageSquare, Receipt, Settings, Users, BarChart,
   FileText, Shield, Upload, LogOut,
-  Menu, X, ChevronDown, Bell, User
+  Menu, X, ChevronDown, Bell, User, UserCircle
 } from 'lucide-react';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
@@ -126,6 +126,7 @@ const EstateHeader = () => {
 
   const navItems = [
     { path: '/dashboard/estate-firm', icon: Home, label: 'Overview' },
+     { path: '/dashboard/estate-firm/profile', icon: UserCircle, label: 'Profile' },
     { path: '/dashboard/estate-firm/properties', icon: Building, label: 'Portfolio' },
     { path: '/dashboard/estate-firm/services', icon: Briefcase, label: 'Services' },
     { path: '/dashboard/estate-firm/clients', icon: Users, label: 'Clients' },
@@ -133,6 +134,7 @@ const EstateHeader = () => {
     { path: '/dashboard/estate-firm/documents', icon: FileText, label: 'Documents' },
     { path: '/dashboard/estate-firm/verification', icon: Shield, label: 'Verification' },
     { path: '/dashboard/messages', icon: MessageSquare, label: 'Messages' },
+    { path: '/dashboard/estate-firm/rent-tracking', icon: Receipt, label: 'Rents' },
     { path: '/dashboard/estate-firm/settings', icon: Settings, label: 'Settings' },
   ];
 

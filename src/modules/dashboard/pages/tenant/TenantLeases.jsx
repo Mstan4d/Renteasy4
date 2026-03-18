@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import { supabase } from '../../../../shared/lib/supabaseClient';
 import VerifiedBadge from '../../../../shared/components/VerifiedBadge';
+import MakePaymentModal from './MakePaymentModal'; // we'll create this
+import { DollarSign, Calendar, CheckCircle, Clock, Upload } from 'lucide-react';
 import './TenantLeases.css';
 
 const TenantLeases = () => {
@@ -14,6 +16,8 @@ const TenantLeases = () => {
   const [activeLease, setActiveLease] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedLeaseForPayment, setSelectedLeaseForPayment] = useState(null);
 
   useEffect(() => {
     if (user) loadLeases();
@@ -23,41 +27,39 @@ const TenantLeases = () => {
     setLoading(true);
     setError(null);
     try {
+      // Fetch leases with property, landlord, unit, and estate firm info
       const { data, error } = await supabase
         .from('leases')
         .select(`
           *,
-          property:property_id (id, title, address),
-          landlord:landlord_id (id, name, verified, avatar_url)
+          property:property_id (id, title, address, estate_firm_id),
+          unit:unit_id (id, unit_number, rent_amount, rent_frequency),
+          landlord:landlord_id (id, name, verified, avatar_url, bank_details),
+          estate_firm:estate_firm_id (id, firm_name, bank_details)
         `)
         .eq('tenant_id', user.id)
         .order('start_date', { ascending: false });
 
       if (error) throw error;
 
-      // Transform data to match component's expected structure
-      const transformed = (data || []).map(lease => ({
-        id: lease.id,
-        property: lease.property?.title || 'Unknown Property',
-        propertyId: lease.property_id,
-        landlord: lease.landlord?.name || lease.landlord_name || 'Unknown',
-        landlordVerified: lease.landlord?.verified || lease.landlord_verified,
-        startDate: lease.start_date,
-        endDate: lease.end_date,
-        duration: lease.duration,
-        monthlyRent: lease.monthly_rent,
-        securityDeposit: lease.security_deposit,
-        totalRent: lease.total_rent,
-        status: lease.status,
-        agreementUrl: lease.agreement_url,
-        terms: lease.terms || [],
-        // If you have a separate payments table, you'd fetch them here.
-        // For now, we'll leave payments empty or store them in lease JSON.
-        payments: [],
-      }));
+      // For each lease, fetch rent payments
+      const leasesWithPayments = await Promise.all(
+        (data || []).map(async (lease) => {
+          let payments = [];
+          if (lease.unit_id) {
+            const { data: pData } = await supabase
+              .from('rent_payments')
+              .select('*')
+              .eq('unit_id', lease.unit_id)
+              .order('due_date', { ascending: false });
+            payments = pData || [];
+          }
+          return { ...lease, payments };
+        })
+      );
 
-      setLeases(transformed);
-      setActiveLease(transformed.find(lease => lease.status === 'active'));
+      setLeases(leasesWithPayments);
+      setActiveLease(leasesWithPayments.find(lease => lease.status === 'active'));
     } catch (err) {
       console.error('Error loading leases:', err);
       setError(err.message);
@@ -68,131 +70,135 @@ const TenantLeases = () => {
 
   const viewAgreement = (leaseId) => {
     const lease = leases.find(l => l.id === leaseId);
-    if (lease?.agreementUrl) {
-      window.open(lease.agreementUrl, '_blank');
+    if (lease?.agreement_url) {
+      window.open(lease.agreement_url, '_blank');
     } else {
       alert('No agreement document available.');
     }
   };
 
-  const renewLease = (leaseId) => {
-    navigate(`/dashboard/tenant/renew-lease/${leaseId}`);
+  const handleMakePayment = (lease) => {
+    setSelectedLeaseForPayment(lease);
+    setShowPaymentModal(true);
   };
 
+  const handlePaymentSuccess = () => {
+    loadLeases(); // refresh payments
+  };
+
+  const getStatusBadge = (status) => {
+    const badges = {
+      pending: { class: 'badge-warning', icon: <Clock size={14} />, text: 'Pending' },
+      paid: { class: 'badge-info', icon: <CheckCircle size={14} />, text: 'Paid' },
+      confirmed: { class: 'badge-success', icon: <CheckCircle size={14} />, text: 'Confirmed' },
+      rejected: { class: 'badge-danger', icon: <XCircle size={14} />, text: 'Rejected' }
+    };
+    const b = badges[status] || { class: 'badge-secondary', text: status };
+    return <span className={`status-badge ${b.class}`}>{b.icon} {b.text}</span>;
+  };
+
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
+
   if (loading) {
-    return (
-      <div className="tenant-leases">
-        <div className="loading-state">Loading leases...</div>
-      </div>
-    );
+    return <div className="tenant-leases loading">Loading leases...</div>;
   }
 
   if (error) {
     return (
-      <div className="tenant-leases">
-        <div className="error-state">
-          <p>Failed to load leases: {error}</p>
-          <button onClick={loadLeases}>Retry</button>
-        </div>
+      <div className="tenant-leases error">
+        <p>Failed to load leases: {error}</p>
+        <button onClick={loadLeases}>Retry</button>
       </div>
     );
   }
 
   return (
     <div className="tenant-leases">
-      {/* Header */}
       <div className="leases-header">
-        <div>
-          <h1>My Leases</h1>
-          <p>Manage your rental agreements and lease terms</p>
-        </div>
+        <h1>My Leases</h1>
         {activeLease && (
           <div className="active-lease-badge">
-            <span className="badge-text">Active Lease</span>
-            <span className="badge-property">{activeLease.property}</span>
+            Active Lease: {activeLease.property?.title}
           </div>
         )}
       </div>
 
-      {/* Active Lease Summary */}
-      {activeLease && (
-        <div className="active-lease-summary">
-          <h3>Current Lease</h3>
-          <div className="summary-grid">
-            <div className="summary-item">
-              <span className="label">Monthly Rent</span>
-              <span className="value">₦{activeLease.monthlyRent.toLocaleString()}</span>
-            </div>
-            <div className="summary-item">
-              <span className="label">Lease Ends</span>
-              <span className="value">{activeLease.endDate}</span>
-            </div>
-            <div className="summary-item">
-              <span className="label">Duration</span>
-              <span className="value">{activeLease.duration}</span>
-            </div>
-            <div className="summary-item">
-              <span className="label">Security Deposit</span>
-              <span className="value">₦{activeLease.securityDeposit?.toLocaleString()}</span>
-            </div>
-          </div>
-          <div className="summary-actions">
-            <button className="btn btn-primary" onClick={() => viewAgreement(activeLease.id)}>
-              View Agreement
-            </button>
-            <button className="btn btn-secondary" onClick={() => renewLease(activeLease.id)}>
-              Renew Lease
-            </button>
-          </div>
+      {leases.length === 0 ? (
+        <div className="empty-state">No leases found.</div>
+      ) : (
+        <div className="leases-list">
+          {leases.map(lease => {
+            // Determine which bank details to show: estate firm if exists, else landlord
+            const bankDetails = lease.estate_firm?.bank_details || lease.landlord?.bank_details || null;
+            const upcomingPayments = lease.payments?.filter(p => p.status !== 'confirmed' && p.status !== 'rejected') || [];
+            const lastConfirmed = lease.payments?.find(p => p.status === 'confirmed');
+
+            return (
+              <div key={lease.id} className="lease-card">
+                <div className="lease-header">
+                  <h3>{lease.property?.title}</h3>
+                  <span className={`lease-status ${lease.status}`}>{lease.status}</span>
+                </div>
+
+                <div className="lease-details">
+                  <p><strong>Unit:</strong> {lease.unit?.unit_number || 'N/A'}</p>
+                  <p><strong>Monthly Rent:</strong> {formatCurrency(lease.unit?.rent_amount || lease.monthly_rent)}</p>
+                  <p><strong>Duration:</strong> {lease.start_date} to {lease.end_date}</p>
+                </div>
+
+                {/* Payment Section */}
+                <div className="payment-section">
+                  <h4>Rent Payments</h4>
+                  
+                  {bankDetails && (
+                    <div className="bank-details">
+                      <p><strong>Bank:</strong> {bankDetails.bank_name}</p>
+                      <p><strong>Account Number:</strong> {bankDetails.account_number}</p>
+                      <p><strong>Account Name:</strong> {bankDetails.account_name}</p>
+                    </div>
+                  )}
+
+                  {upcomingPayments.length > 0 ? (
+                    <div className="payment-list">
+                      {upcomingPayments.map(payment => (
+                        <div key={payment.id} className="payment-item">
+                          <div>
+                            <span className="due-date">Due: {payment.due_date}</span>
+                            <span className="amount">{formatCurrency(payment.amount_due)}</span>
+                          </div>
+                          <div className="payment-status">{getStatusBadge(payment.status)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="no-payments">No pending payments.</p>
+                  )}
+
+                  <button 
+                    className="btn-pay"
+                    onClick={() => handleMakePayment(lease)}
+                  >
+                    <DollarSign size={16} /> Make Payment
+                  </button>
+                </div>
+
+                <div className="lease-actions">
+                  <button className="btn-outline" onClick={() => viewAgreement(lease.id)}>View Agreement</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Leases List */}
-      {leases.length === 0 ? (
-        <div className="empty-state">
-          <p>No leases found.</p>
-        </div>
-      ) : (
-        <div className="leases-list">
-          {leases.map(lease => (
-            <div key={lease.id} className="lease-card">
-              <div className="lease-header">
-                <div>
-                  <h4>{lease.property}</h4>
-                  <div className="landlord-info">
-                    <span>Landlord: {lease.landlord}</span>
-                    {lease.landlordVerified && <VerifiedBadge type="landlord" size="small" />}
-                  </div>
-                </div>
-                <span className={`lease-status status-${lease.status}`}>
-                  {lease.status}
-                </span>
-              </div>
-              
-              <div className="lease-details">
-                <div className="detail-row">
-                  <span>Start Date: {lease.startDate}</span>
-                  <span>End Date: {lease.endDate}</span>
-                </div>
-                <div className="detail-row">
-                  <span>Monthly Rent: ₦{lease.monthlyRent.toLocaleString()}</span>
-                  <span>Total Rent: ₦{lease.totalRent?.toLocaleString()}</span>
-                </div>
-              </div>
-
-              <div className="lease-actions">
-                <button className="btn btn-outline btn-sm" onClick={() => viewAgreement(lease.id)}>
-                  View Agreement
-                </button>
-                {lease.status === 'active' && (
-                  <button className="btn btn-primary btn-sm" onClick={() => renewLease(lease.id)}>
-                    Renew Lease
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Payment Modal */}
+      {showPaymentModal && selectedLeaseForPayment && (
+        <MakePaymentModal
+          lease={selectedLeaseForPayment}
+          bankDetails={selectedLeaseForPayment.estate_firm?.bank_details || selectedLeaseForPayment.landlord?.bank_details}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={handlePaymentSuccess}
+        />
       )}
     </div>
   );

@@ -116,6 +116,7 @@ const LandlordReferrals = lazy(() => import('../modules/dashboard/components/lan
 const LandlordAnalytics = lazy(() => import('../modules/dashboard/components/landlord/Analytics'));
 const LandlordSettings = lazy(() => import('../modules/dashboard/components/landlord/Reports'));
 const LandlordProfile = lazy(() => import('../modules/profile/pages/LandlordProfile'));
+const LandlordRentTracking = lazy(() => import('../modules/dashboard/components/landlord/LandlordRentTracking'));
 
 // Estate Firm Components
 const EstateDashboard = lazy(() => import('../modules/estate-firm/pages/EstateDashboard'));
@@ -133,6 +134,9 @@ const EstatePostService = lazy(() => import('../modules/estate-firm/pages/Estate
 const EstateAddExternalProperty = lazy(() => import('../modules/estate-firm/pages/EstateAddExternalProperty'));
 const PropertyDetail = lazy(() => import('../modules/estate-firm/pages/PropertyDetail'));
 const PaymentsList = lazy(() => import('../modules/estate-firm/pages/PaymentsList'));
+const RentTracking = lazy(() => import('../modules/estate-firm/pages/RentTracking'));
+const EstateEditProperty = lazy(() => import('../modules/estate-firm/pages/EstateEditProperty'));
+
 
 // === SUPER ADMIN IMPORTS ===
 const SuperAdminLayout = lazy(() => import('../modules/super-admin/components/SuperAdminLayout'));
@@ -333,6 +337,8 @@ const AppRoutes = () => {
         <Route path="referrals" element={<LandlordReferrals />} />
         <Route path="analytics" element={<LandlordAnalytics />} />
         <Route path="settings" element={<LandlordSettings />} />
+        <Route path="rent-tracking" element={<LandlordRentTracking />} />
+      
       </Route>
       // In your AppRoutes.jsx, temporarily add this debug route
 <Route 
@@ -455,7 +461,9 @@ const AppRoutes = () => {
         <Route path="services" element={<EstateServices />} />
         <Route path="payments" element={<PaymentsList />} />
         <Route path="post-service" element={<EstatePostService />} />
+        <Route path="rent-tracking" element={<RentTracking />} />
         <Route path="add-external-property" element={<EstateAddExternalProperty />} />
+        <Route path="properties/:id/edit" element={<EstateEditProperty />} />
       </Route>
 
       {/* =================== STANDALONE POST PROPERTY =================== */}
