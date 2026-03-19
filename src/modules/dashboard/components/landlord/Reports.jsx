@@ -25,6 +25,7 @@ import {
   Bell,
   FileText,
   DollarSign,
+  ChevronRight,
   Receipt
 } from 'lucide-react';
 import './Reports.css';
@@ -92,7 +93,7 @@ const Reports = () => {
           
           // Fetch payments for these units
           // 2. Fetch payments for landlord's properties (includes utility payments)
-const { data: payments, error: payError } = await supabase
+const { data: paymentsData, error: payError } = await supabase
   .from('payments')
   .select(`
     *,
@@ -105,7 +106,7 @@ const { data: payments, error: payError } = await supabase
   .in('unit_id', unitIds)   // unitIds already fetched from properties
   .order('payment_date', { ascending: false });
           if (payError) throw payError;
-          payments = pays || [];
+          payments = paymentsData || [];
         }
       }
 

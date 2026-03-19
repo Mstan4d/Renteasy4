@@ -204,9 +204,9 @@ const EstateDashboard = () => {
       city: item.city,
       state: item.state,
       rentAmount: parseFloat(item.price) || 0,
-      rentFrequency: item.rent_frequency || 'monthly',
+      rentFrequency: item.rent_frequency || 'yearly',
       status: item.status === 'active' ? 'available' : 
-              item.status === 'rented' ? 'occupied' : item.status,
+              item.status === 'rented' ? 'occupied' : 'vacant',
       tenant: item.tenant_id ? { id: item.tenant_id } : null,
       addedDate: item.created_at,
       commissionSaved: 0, // RentEasy listings have 0% commission
@@ -224,8 +224,8 @@ const EstateDashboard = () => {
       city: item.city,
       state: item.state,
       rentAmount: parseFloat(item.rental_amount || item.price) || 0,
-      rentFrequency: item.rent_frequency || 'monthly',
-      status: item.status === 'active' ? 'available' : item.status,
+      rentFrequency: item.rent_frequency || 'Yealy',
+      status: item.status === 'occupied' ? 'occupied' : 'vacant',
       tenant: item.tenant_id ? { id: item.tenant_id } : null,
       addedDate: item.created_at,
       commissionRate: parseFloat(item.commission_rate) || 0,
@@ -237,21 +237,33 @@ const EstateDashboard = () => {
 
     // 6. Calculate stats
     const totalProperties = allProperties.length;
-    const occupiedProperties = allProperties.filter(p => 
-      p.status === 'occupied' || p.status === 'rented'
-    ).length;
-    const vacantProperties = totalProperties - occupiedProperties;
-    
+   //  occupiedProperties calculation with this:
+const occupiedProperties = allProperties.filter(p => {
+  // Check if property has a tenant AND status indicates occupancy
+  const hasTenant = p.tenant && p.tenant.id;
+  const isOccupiedStatus = p.status === 'occupied' || p.status === 'rented';
+  return hasTenant || isOccupiedStatus;
+}).length;
+
+// update vacantProperties
+const vacantProperties = allProperties.filter(p => {
+  const hasTenant = p.tenant && p.tenant.id;
+  const isOccupiedStatus = p.status === 'occupied' || p.status === 'rented';
+  return !hasTenant && !isOccupiedStatus;
+}).length;
+
     const monthlyRevenue = allProperties
-      .filter(p => p.status === 'occupied' || p.status === 'rented')
-      .reduce((sum, p) => {
-        let multiplier = 1;
-        if (p.rentFrequency === 'yearly') multiplier = 1/12;
-        else if (p.rentFrequency === 'quarterly') multiplier = 1/3;
-        else if (p.rentFrequency === 'weekly') multiplier = 4.33;
-        else if (p.rentFrequency === 'daily') multiplier = 30;
-        return sum + (p.rentAmount * multiplier);
-      }, 0);
+  .filter(p => p.status === 'occupied')
+  .reduce((sum, p) => {
+    if (p.rentFrequency === 'yearly') {
+      return sum + (p.rentAmount / 12);
+    } else if (p.rentFrequency === 'monthly') {
+      return sum + p.rentAmount;
+    } else if (p.rentFrequency === 'quarterly') {
+      return sum + (p.rentAmount / 3);
+    }
+    return sum + (p.rentAmount / 12); // Default to yearly
+  }, 0);
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
@@ -958,6 +970,15 @@ const EstateDashboard = () => {
                               <Zap size={18} className="me-2" />
                               {estateFirmData.boostStatus === 'boosted' ? 'Extend Boost' : 'Boost Profile'}
                             </Button>
+                            {/* In the Quick Actions card, add this button after Boost */}
+<Button 
+  variant="outline-info" 
+  className="d-flex align-items-center justify-content-start"
+  onClick={() => navigate('/dashboard/estate-firm/reports')}
+>
+  <BarChart3 size={18} className="me-2" />
+  View Reports
+</Button>
                           </div>
                           
                           <div className="mt-4">

@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../../shared/context/AuthContext'
 import { supabase } from '../../../shared/lib/supabaseClient'
-import VerifiedBadge, { InlineVerifiedBadge } from '../../../shared/components/VerifiedBadge'
+import VerifiedBadge from '../../../shared/components/VerifiedBadge'
 import './Home.css'
 
 const ITEMS_TO_SHOW = 8
-const BOOST_RATIO = 0.8 // 80% boosted, 20% non-boosted
+const BOOST_RATIO = 0.8
 
 const Home = () => {
   const { user } = useAuth()
@@ -74,12 +74,10 @@ const Home = () => {
     try {
       setLoading(true)
 
+      // Fetch listings without joins
       const { data: listings, error } = await supabase
         .from('listings')
-        .select(`
-          *,
-          user:user_id (id, name, email, role, verified, phone, avatar_url, created_at)
-        `)
+        .select('*')
         .in('status', ['pending', 'approved'])
         .eq('is_active', true)
         .order('created_at', { ascending: false })
@@ -87,93 +85,158 @@ const Home = () => {
 
       if (error) {
         console.error('Error fetching listings:', error)
-        loadMockListings()
         return
       }
 
-      // Transform data
-      const transformedListings = listings.map(listing => ({
-        id: listing.id,
-        title: listing.title || 'No title',
-        price: parseFloat(listing.price || listing.rent_amount || 0),
-        description: listing.description || 'No description',
-        images: listing.images || [],
-        location: listing.address || listing.landmark || 'No address',
-        state: listing.state || '',
-        lga: listing.lga || '',
-        lat: listing.lat,
-        lng: listing.lng,
-        userId: listing.user_id,
-        posterName: listing.user?.full_name || 'Unknown',
-        userVerified: listing.user?.verified || false,
-        verified: listing.is_verified || false,
-        verificationLevel: listing.verification_level || 'standard',
-        postedDate: new Date(listing.created_at).toLocaleDateString(),
-        amenities: listing.amenities || [],
-        propertyType: listing.property_type || 'Apartment',
-        category: listing.category || 'residential',
-        status: listing.status,
-        bedrooms: listing.bedrooms,
-        bathrooms: listing.bathrooms,
-        area: listing.area,
-        coordinates: listing.coordinates,
-        posterRole: listing.poster_role,
-        commissionRate: listing.commission_rate
-      }))
+      // Collect IDs for related data
+      const estateFirmIds = listings.map(l => l.estate_firm_id).filter(Boolean)
+      const landlordIds = listings.map(l => l.landlord_id).filter(Boolean)
+      const tenantIds = listings.map(l => l.tenant_id).filter(Boolean)
 
-      // 1. Sort by location relevance
-      const sorted = sortListingsByLocation(transformedListings, userLocation)
+      // Fetch related data in parallel
+      const [estateFirmsRes, landlordsRes, tenantsRes] = await Promise.all([
+        estateFirmIds.length
+          ? supabase
+              .from('estate_firm_profiles')
+              .select('id, firm_name, logo_url, verification_status')
+              .in('id', estateFirmIds)
+          : { data: [] },
+        landlordIds.length
+          ? supabase
+              .from('profiles')
+              .select('id, full_name, name, avatar_url, kyc_status')
+              .in('id', landlordIds)
+          : { data: [] },
+        tenantIds.length
+          ? supabase
+              .from('profiles')
+              .select('id, full_name, name, avatar_url, kyc_status')
+              .in('id', tenantIds)
+          : { data: [] }
+      ])
 
-      // 2. Separate boosted and non-boosted within the sorted list
-      const boosted = sorted.filter(l => boostedUserIds.includes(l.userId))
-      const nonBoosted = sorted.filter(l => !boostedUserIds.includes(l.userId))
+      // Create lookup maps
+      const estateFirmMap = Object.fromEntries((estateFirmsRes.data || []).map(ef => [ef.id, ef]))
+      const landlordMap = Object.fromEntries((landlordsRes.data || []).map(l => [l.id, l]))
+      const tenantMap = Object.fromEntries((tenantsRes.data || []).map(t => [t.id, t]))
 
-      // 3. Shuffle each group
+      // Transform data with proper poster info
+      const transformedListings = (listings || []).map(listing => {
+        let posterRole = null
+        let posterName = 'Anonymous'
+        let posterAvatar = null
+        let userVerified = false
+
+        if (listing.estate_firm_id && estateFirmMap[listing.estate_firm_id]) {
+          const firm = estateFirmMap[listing.estate_firm_id]
+          posterRole = 'estate-firm'
+          posterName = firm.firm_name || 'Estate Firm'
+          posterAvatar = firm.logo_url
+          userVerified = firm.verification_status === 'verified'
+        } else if (listing.landlord_id && landlordMap[listing.landlord_id]) {
+          const landlord = landlordMap[listing.landlord_id]
+          posterRole = 'landlord'
+          posterName = landlord.full_name || landlord.name || 'Landlord'
+          posterAvatar = landlord.avatar_url
+          userVerified = landlord.kyc_status === 'approved'
+        } else if (listing.tenant_id && tenantMap[listing.tenant_id]) {
+          const tenant = tenantMap[listing.tenant_id]
+          posterRole = 'tenant'
+          posterName = tenant.full_name || tenant.name || 'Tenant'
+          posterAvatar = tenant.avatar_url
+          userVerified = tenant.kyc_status === 'approved'
+        }
+
+        return {
+          id: listing.id,
+          title: listing.title || 'No title',
+          price: parseFloat(listing.price || listing.rent_amount || 0),
+          description: listing.description || 'No description',
+          images: listing.images || [],
+          location: listing.address || listing.landmark || 'No address',
+          state: listing.state || '',
+          lga: listing.lga || '',
+          lat: listing.lat,
+          lng: listing.lng,
+          userId: listing.estate_firm_id || listing.landlord_id || listing.tenant_id,
+          posterRole,
+          posterName,
+          posterAvatar,
+          userVerified,
+          verified: listing.verified || false,
+          verificationLevel: listing.verification_level || 'standard',
+          postedDate: new Date(listing.created_at).toLocaleDateString(),
+          amenities: listing.amenities || [],
+          propertyType: listing.property_type || 'Apartment',
+          category: listing.category || 'residential',
+          status: listing.status,
+          bedrooms: listing.bedrooms,
+          bathrooms: listing.bathrooms,
+          area: listing.area,
+          coordinates: listing.coordinates,
+          commissionRate: listing.commission_rate
+        }
+      })
+
+      setAllListings(transformedListings)
+      
+      // Apply boost and location sorting
+      //const sorted = sortListingsByLocation(transformedListings, userLocation)
+      // Inside fetchListingsFromSupabase, replace the boost logic section:
+
+// First, separate boosted and non-boosted
+       const boosted = transformedListings.filter(l => boostedUserIds.includes(l.userId))
+       const nonBoosted = transformedListings.filter(l => !boostedUserIds.includes(l.userId))
+
+// Shuffle each group
       const shuffledBoosted = shuffleArray(boosted)
       const shuffledNonBoosted = shuffleArray(nonBoosted)
 
-      // 4. Interleave to achieve desired ratio
-      const boostedNeeded = Math.round(ITEMS_TO_SHOW * BOOST_RATIO) // 6
-      const nonBoostedNeeded = ITEMS_TO_SHOW - boostedNeeded // 2
+// Calculate how many boosted we need - if not enough boosted, take all available
+  const boostedNeeded = Math.min(
+  Math.round(ITEMS_TO_SHOW * BOOST_RATIO),
+  shuffledBoosted.length
+)
 
-      const selectedBoosted = shuffledBoosted.slice(0, boostedNeeded)
-      const selectedNonBoosted = shuffledNonBoosted.slice(0, nonBoostedNeeded)
+// The rest are non-boosted
+const nonBoostedNeeded = Math.min(
+  ITEMS_TO_SHOW - boostedNeeded,
+  shuffledNonBoosted.length
+)
 
-      // Combine and interleave (alternate, but any order works)
-      const combined = []
-      for (let i = 0; i < Math.max(selectedBoosted.length, selectedNonBoosted.length); i++) {
-        if (i < selectedBoosted.length) combined.push(selectedBoosted[i])
-        if (i < selectedNonBoosted.length) combined.push(selectedNonBoosted[i])
-      }
+// If we still don't have enough total, take more from whichever group has remaining
+const selectedBoosted = shuffledBoosted.slice(0, boostedNeeded)
+const selectedNonBoosted = shuffledNonBoosted.slice(0, nonBoostedNeeded)
 
-      setAllListings(sorted)
-      setDisplayedListings(combined.slice(0, ITEMS_TO_SHOW))
+// Combine and interleave
+const combined = []
+const maxLength = Math.max(selectedBoosted.length, selectedNonBoosted.length)
+for (let i = 0; i < maxLength; i++) {
+  if (i < selectedBoosted.length) combined.push(selectedBoosted[i])
+  if (i < selectedNonBoosted.length) combined.push(selectedNonBoosted[i])
+}
+
+// If we still don't have ITEMS_TO_SHOW, fill with more from available listings
+let finalListings = combined
+if (finalListings.length < ITEMS_TO_SHOW) {
+  // Get all remaining listings not already selected
+  const selectedIds = new Set(finalListings.map(l => l.id))
+  const remaining = transformedListings.filter(l => !selectedIds.has(l.id))
+  const additionalNeeded = ITEMS_TO_SHOW - finalListings.length
+  finalListings = [...finalListings, ...remaining.slice(0, additionalNeeded)]
+}
+
+setDisplayedListings(finalListings.slice(0, ITEMS_TO_SHOW))
 
     } catch (error) {
       console.error('Error in fetchListingsFromSupabase:', error)
-      loadMockListings()
     } finally {
       setLoading(false)
     }
   }
 
-  // Fallback mock data (keep your existing mockListings array if you have one)
-  const loadMockListings = () => {
-    const mockListings = [
-      // ... your existing mock listings ...
-    ]
-    // Apply the same boost logic to mock data (if needed)
-    // For simplicity, just set allListings and then random subset
-    setAllListings(mockListings)
-    const sorted = sortListingsByLocation(mockListings, userLocation)
-    // Mock boost: assume no boosts, so just random subset
-    const shuffled = shuffleArray(sorted)
-    setDisplayedListings(shuffled.slice(0, ITEMS_TO_SHOW))
-  }
-
   // ========== LOCATION SORTING ==========
   const sortListingsByLocation = (listings, userLoc) => {
-    // If user not logged in or no location info, just shuffle randomly
     if (!user || (!userLoc.state && !userLoc.lga && !userLoc.lat && !userLoc.lng)) {
       return shuffleArray(listings)
     }
@@ -182,7 +245,6 @@ const Home = () => {
       const scoreA = getLocationScore(a, userLoc)
       const scoreB = getLocationScore(b, userLoc)
       if (scoreA !== scoreB) return scoreB - scoreA
-      // Same score: randomize
       return Math.random() - 0.5
     })
   }
@@ -190,29 +252,25 @@ const Home = () => {
   const getLocationScore = (listing, userLoc) => {
     let score = 0
 
-    // Exact LGA match gets highest score
     if (listing.lga && userLoc.lga && listing.lga.toLowerCase() === userLoc.lga.toLowerCase()) {
       score = 3
     }
-    // Same state but different LGA
     else if (listing.state && userLoc.state && listing.state.toLowerCase() === userLoc.state.toLowerCase()) {
       score = 2
     }
-    // If coordinates available, compute distance (closer = higher score)
     else if (listing.lat && listing.lng && userLoc.lat && userLoc.lng) {
       const distance = haversineDistance(
         userLoc.lat, userLoc.lng,
         listing.lat, listing.lng
       )
-      // Score based on distance: closer = higher (max 1.5, min 0)
-      score = Math.max(0, 1.5 - distance / 50) // within 50km gives positive score
+      score = Math.max(0, 1.5 - distance / 50)
     }
 
     return score
   }
 
   const haversineDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371 // Earth radius in km
+    const R = 6371
     const dLat = (lat2 - lat1) * Math.PI / 180
     const dLon = (lon2 - lon1) * Math.PI / 180
     const a =
@@ -240,10 +298,7 @@ const Home = () => {
     try {
       let query = supabase
         .from('listings')
-        .select(`
-          *,
-          user:user_id (id, name, email, role, verified, phone, avatar_url, created_at)
-        `)
+        .select('*')
         .eq('is_active', true)
         .in('status', ['pending', 'approved'])
 
@@ -275,34 +330,94 @@ const Home = () => {
 
       if (error) throw error
 
-      // Transform
-      const transformed = listings.map(listing => ({
-        id: listing.id,
-        title: listing.title || 'No title',
-        price: parseFloat(listing.price || listing.rent_amount || 0),
-        description: listing.description || 'No description',
-        images: listing.images || [],
-        location: listing.address || listing.landmark || 'No address',
-        state: listing.state || '',
-        lga: listing.lga || '',
-        lat: listing.lat,
-        lng: listing.lng,
-        userId: listing.user_id,
-        posterName: listing.user?.name || 'Unknown',
-        userVerified: listing.user?.verified || false,
-        verified: listing.is_verified || false,
-        verificationLevel: listing.verification_level || 'standard',
-        postedDate: new Date(listing.created_at).toLocaleDateString(),
-        amenities: listing.amenities || [],
-        propertyType: listing.property_type || 'Apartment',
-        category: listing.category || 'residential',
-        status: listing.status,
-        bedrooms: listing.bedrooms,
-        bathrooms: listing.bathrooms,
-        area: listing.area
-      }))
+      // Collect IDs for related data
+      const estateFirmIds = listings.map(l => l.estate_firm_id).filter(Boolean)
+      const landlordIds = listings.map(l => l.landlord_id).filter(Boolean)
+      const tenantIds = listings.map(l => l.tenant_id).filter(Boolean)
 
-      // Apply location sorting and boost logic to search results
+      // Fetch related data in parallel
+      const [estateFirmsRes, landlordsRes, tenantsRes] = await Promise.all([
+        estateFirmIds.length
+          ? supabase
+              .from('estate_firm_profiles')
+              .select('id, firm_name, logo_url, verification_status')
+              .in('id', estateFirmIds)
+          : { data: [] },
+        landlordIds.length
+          ? supabase
+              .from('profiles')
+              .select('id, full_name, name, avatar_url, kyc_status')
+              .in('id', landlordIds)
+          : { data: [] },
+        tenantIds.length
+          ? supabase
+              .from('profiles')
+              .select('id, full_name, name, avatar_url, kyc_status')
+              .in('id', tenantIds)
+          : { data: [] }
+      ])
+
+      const estateFirmMap = Object.fromEntries((estateFirmsRes.data || []).map(ef => [ef.id, ef]))
+      const landlordMap = Object.fromEntries((landlordsRes.data || []).map(l => [l.id, l]))
+      const tenantMap = Object.fromEntries((tenantsRes.data || []).map(t => [t.id, t]))
+
+      // Transform with proper poster info
+      const transformed = (listings || []).map(listing => {
+        let posterRole = null
+        let posterName = 'Anonymous'
+        let posterAvatar = null
+        let userVerified = false
+
+        if (listing.estate_firm_id && estateFirmMap[listing.estate_firm_id]) {
+          const firm = estateFirmMap[listing.estate_firm_id]
+          posterRole = 'estate-firm'
+          posterName = firm.firm_name || 'Estate Firm'
+          posterAvatar = firm.logo_url
+          userVerified = firm.verification_status === 'verified'
+        } else if (listing.landlord_id && landlordMap[listing.landlord_id]) {
+          const landlord = landlordMap[listing.landlord_id]
+          posterRole = 'landlord'
+          posterName = landlord.full_name || landlord.name || 'Landlord'
+          posterAvatar = landlord.avatar_url
+          userVerified = landlord.kyc_status === 'approved'
+        } else if (listing.tenant_id && tenantMap[listing.tenant_id]) {
+          const tenant = tenantMap[listing.tenant_id]
+          posterRole = 'tenant'
+          posterName = tenant.full_name || tenant.name || 'Tenant'
+          posterAvatar = tenant.avatar_url
+          userVerified = tenant.kyc_status === 'approved'
+        }
+
+        return {
+          id: listing.id,
+          title: listing.title || 'No title',
+          price: parseFloat(listing.price || listing.rent_amount || 0),
+          description: listing.description || 'No description',
+          images: listing.images || [],
+          location: listing.address || listing.landmark || 'No address',
+          state: listing.state || '',
+          lga: listing.lga || '',
+          lat: listing.lat,
+          lng: listing.lng,
+          userId: listing.estate_firm_id || listing.landlord_id || listing.tenant_id,
+          posterRole,
+          posterName,
+          posterAvatar,
+          userVerified,
+          verified: listing.verified || false,
+          verificationLevel: listing.verification_level || 'standard',
+          postedDate: new Date(listing.created_at).toLocaleDateString(),
+          amenities: listing.amenities || [],
+          propertyType: listing.property_type || 'Apartment',
+          category: listing.category || 'residential',
+          status: listing.status,
+          bedrooms: listing.bedrooms,
+          bathrooms: listing.bathrooms,
+          area: listing.area
+        }
+      })
+
+      // Apply location sorting and boost logic
       const sorted = sortListingsByLocation(transformed, userLocation)
       const boosted = sorted.filter(l => boostedUserIds.includes(l.userId))
       const nonBoosted = sorted.filter(l => !boostedUserIds.includes(l.userId))
@@ -323,7 +438,6 @@ const Home = () => {
 
     } catch (error) {
       console.error('Search error:', error)
-      // Fallback to client‑side filtering (keep your existing fallback)
     } finally {
       setLoading(false)
       const listingsSection = document.getElementById('listings')
@@ -339,7 +453,7 @@ const Home = () => {
     if (filterType === 'verified') {
       sourceList = sourceList.filter(l => l.verified)
     }
-    // Apply boost logic again
+    
     const boosted = sourceList.filter(l => boostedUserIds.includes(l.userId))
     const nonBoosted = sourceList.filter(l => !boostedUserIds.includes(l.userId))
     const shuffledBoosted = shuffleArray(boosted)
@@ -358,34 +472,17 @@ const Home = () => {
     setDisplayedListings(combined.slice(0, ITEMS_TO_SHOW))
   }
 
-  // (All helper functions remain the same: getFirstImage, getVerificationType, getListingStatus, etc.)
-
   const getFirstImage = (listing) => {
     if (listing.images && listing.images.length > 0) {
-      const image = listing.images[0]
-      if (image && image.startsWith('blob:')) {
-        return 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400'
-      }
-      return image
+      return listing.images[0]
     }
-    const defaultImages = {
-      'apartment': 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400',
-      'house': 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400',
-      'villa': 'https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=400',
-      'commercial': 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=400',
-      'default': 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400'
-    }
-    const type = listing.propertyType?.toLowerCase() || 'default'
-    return defaultImages[type] || defaultImages.default
+    return 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400'
   }
 
   const getVerificationType = (listing) => {
-    const role = listing.posterRole || listing.user?.role || 'user'
-    if (role === 'estate-firm') return 'estate'
-    if (role === 'landlord') return 'landlord'
-    if (role === 'tenant') return 'tenant'
-    if (listing.verificationLevel === 'premium') return 'property'
-    if (listing.userVerified) return 'landlord'
+    if (listing.posterRole === 'estate-firm') return 'estate'
+    if (listing.posterRole === 'landlord') return 'landlord'
+    if (listing.posterRole === 'tenant') return 'tenant'
     return 'user'
   }
 
@@ -394,7 +491,6 @@ const Home = () => {
     if (status === 'rejected') return { text: 'Rejected', class: 'rejected' }
     if (listing.verified && status === 'approved') return { text: 'Verified', class: 'verified' }
     if (status === 'pending' || (!listing.verified && status !== 'approved')) return { text: 'Pending', class: 'pending' }
-    if (status === 'approved') return { text: 'Available', class: 'available' }
     return { text: 'Available', class: 'available' }
   }
 
@@ -426,10 +522,9 @@ const Home = () => {
     setSearchParams(prev => ({ ...prev, [name]: value }))
   }
 
-  // ========== RENDER (unchanged) ==========
   return (
     <main className="home-container">
-      {/* HERO SECTION with integrated search */}
+      {/* HERO SECTION */}
       <section className="hero">
         <div className="hero-overlay"></div>
         <div className="hero-content">
@@ -512,7 +607,6 @@ const Home = () => {
                   const verificationType = getVerificationType(listing)
                   const status = getListingStatus(listing)
                   const isUserVerified = listing.userVerified
-                  const isPropertyVerified = listing.verified
                   const amenities = getAmenitiesArray(listing)
 
                   return (
@@ -532,19 +626,19 @@ const Home = () => {
                             <VerifiedBadge type={verificationType} size="small" showTooltip={true} />
                           </div>
                         )}
-                        {listing.verificationLevel === 'premium' && (
-                          <div className="premium-badge">👑 Premium</div>
+                        {listing.posterRole === 'estate-firm' && (
+                          <div className="estate-badge">🏢 0% Commission</div>
                         )}
                       </div>
 
                       <div className="property-content">
                         <h3 className="property-title">{listing.title}</h3>
-                        <p className="property-price">₦{listing.price?.toLocaleString()}</p>
+                        <p className="property-price">₦{listing.price?.toLocaleString()}/year</p>
 
                         <div className="property-details">
                           {listing.bedrooms && <span>🛏️ {listing.bedrooms} bed</span>}
                           {listing.bathrooms && <span>🚿 {listing.bathrooms} bath</span>}
-                          {listing.area && <span>📐 {listing.area} sq ft</span>}
+                          {listing.area && <span>📐 {listing.area} sq m</span>}
                         </div>
 
                         {amenities.length > 0 && (

@@ -8,7 +8,7 @@
   width: 92%; /* Don't touch the edges */
   max-width: 450px;
   
-  display: flex;
+  display: flex !important;
   justify-content: space-around;
   align-items: center;
   
@@ -93,7 +93,7 @@
 
 /* Responsive: Hide on Desktop */
 @media (min-width: 769px) {
-  .bottom-nav { display: none; }
+  .bottom-nav { display: none !important; }
 }
 
 /* Dark Mode Adaptation */

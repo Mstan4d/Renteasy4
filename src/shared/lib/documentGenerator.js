@@ -208,5 +208,228 @@ export const documentGenerator = {
         reject(err);
       }
     });
+  },
+
+  /**
+   * Generate a custom report PDF
+   * Returns the created document record
+   */
+  async generateReport(docDefinition, metadata = {}) {
+    if (!docDefinition) {
+      throw new Error('Report definition is required');
+    }
+
+    const { title = 'report', estate_firm_id = null } = metadata;
+
+    return new Promise((resolve, reject) => {
+      try {
+        const pdfDoc = pdfMake.createPdf(docDefinition);
+        pdfDoc.getBlob(async (blob) => {
+          try {
+            // Generate unique filename
+            const timestamp = Date.now();
+            const randomStr = Math.random().toString(36).substring(2, 8);
+            const fileName = `reports/${estate_firm_id || 'system'}/${title}-${timestamp}-${randomStr}.pdf`;
+
+            // Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+              .from('estate-documents')
+              .upload(fileName, blob, { contentType: 'application/pdf' });
+
+            if (uploadError) throw uploadError;
+
+            // Get public URL
+            const { data: urlData } = supabase.storage
+              .from('estate-documents')
+              .getPublicUrl(fileName);
+
+            // Create document record
+            const { data: doc, error: docError } = await supabase
+              .from('estate_documents')
+              .insert({
+                estate_firm_id: estate_firm_id || null,
+                name: `${title} - ${new Date().toLocaleDateString()}`,
+                file_url: urlData.publicUrl,
+                file_type: 'application/pdf',
+                file_size: blob.size,
+                category: 'report',
+                document_type: 'report',
+                metadata: {
+                  generated_at: new Date().toISOString(),
+                  ...metadata
+                }
+              })
+              .select()
+              .single();
+
+            if (docError) throw docError;
+
+            resolve(doc);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
+  },
+
+  /**
+   * Generate a custom invoice PDF
+   */
+  async generateInvoice(invoiceData) {
+    const {
+      invoiceNumber,
+      clientName,
+      clientEmail,
+      items,
+      subtotal,
+      tax,
+      total,
+      dueDate,
+      notes,
+      estate_firm_id = null
+    } = invoiceData;
+
+    const docDefinition = {
+      content: [
+        { text: 'INVOICE', style: 'header' },
+        { text: `Invoice #: ${invoiceNumber}`, alignment: 'right' },
+        { text: `Date: ${new Date().toLocaleDateString()}`, alignment: 'right' },
+        { text: `Due Date: ${new Date(dueDate).toLocaleDateString()}`, alignment: 'right' },
+        { text: '\n' },
+        {
+          columns: [
+            {
+              width: '50%',
+              text: [
+                { text: 'Bill To:\n', bold: true },
+                clientName,
+                clientEmail ? `\n${clientEmail}` : ''
+              ]
+            }
+          ]
+        },
+        { text: '\n' },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto'],
+            body: [
+              ['Description', 'Quantity', 'Amount'],
+              ...items.map(item => [
+                item.description,
+                item.quantity.toString(),
+                `₦${item.amount.toLocaleString()}`
+              ])
+            ]
+          }
+        },
+        { text: '\n' },
+        {
+          columns: [
+            { width: '*', text: '' },
+            {
+              width: 'auto',
+              text: [
+                { text: 'Subtotal: ', bold: true },
+                `₦${subtotal.toLocaleString()}\n`,
+                { text: 'Tax: ', bold: true },
+                `₦${tax.toLocaleString()}\n`,
+                { text: 'Total: ', bold: true, fontSize: 14 },
+                { text: `₦${total.toLocaleString()}`, fontSize: 14, bold: true }
+              ]
+            }
+          ]
+        },
+        { text: '\n' },
+        { text: notes || 'Thank you for your business!', italics: true }
+      ],
+      styles: {
+        header: { fontSize: 22, bold: true, margin: [0, 0, 0, 20] }
+      }
+    };
+
+    return this.generateReport(docDefinition, {
+      title: `invoice-${invoiceNumber}`,
+      estate_firm_id
+    });
+  },
+
+  /**
+   * Generate a property listing PDF
+   */
+  async generatePropertyListing(property, metadata = {}) {
+    const {
+      title,
+      description,
+      price,
+      address,
+      bedrooms,
+      bathrooms,
+      area,
+      amenities = [],
+      images = [],
+      landlordName,
+      landlordPhone,
+      estate_firm_id = null
+    } = property;
+
+    const docDefinition = {
+      content: [
+        { text: title || 'Property Listing', style: 'header' },
+        { text: '\n' },
+        {
+          columns: [
+            {
+              width: '50%',
+              text: [
+                { text: 'Price: ', bold: true },
+                `₦${(price || 0).toLocaleString()}/year\n`,
+                { text: 'Location: ', bold: true },
+                `${address || 'N/A'}\n`,
+                { text: 'Bedrooms: ', bold: true },
+                `${bedrooms || 0}\n`,
+                { text: 'Bathrooms: ', bold: true },
+                `${bathrooms || 0}\n`,
+                { text: 'Area: ', bold: true },
+                `${area || 0} sq m`
+              ]
+            }
+          ]
+        },
+        { text: '\n' },
+        { text: 'Description', style: 'subheader' },
+        { text: description || 'No description available.' },
+        { text: '\n' },
+        { text: 'Amenities', style: 'subheader' },
+        {
+          ul: amenities.map(a => a.toString())
+        },
+        { text: '\n' },
+        {
+          columns: [
+            {
+              width: '50%',
+              text: [
+                { text: 'Contact Information\n', bold: true },
+                `Landlord: ${landlordName || 'N/A'}\n`,
+                `Phone: ${landlordPhone || 'N/A'}`
+              ]
+            }
+          ]
+        }
+      ],
+      styles: {
+        header: { fontSize: 22, bold: true, margin: [0, 0, 0, 10] },
+        subheader: { fontSize: 16, bold: true, margin: [0, 10, 0, 5] }
+      }
+    };
+
+    return this.generateReport(docDefinition, {
+      title: `property-${title?.toLowerCase().replace(/\s+/g, '-') || 'listing'}`,
+      estate_firm_id
+    });
   }
 };

@@ -1,6 +1,6 @@
-// src/modules/listings/components/ListingCard.jsx
 import React, { useState, useRef } from 'react';
-import { MapPin, CheckCircle, Clock, User, Building, Home } from 'lucide-react';
+import { MapPin, Clock, User, Building, Home, Play, Shield } from 'lucide-react';
+import VerifiedBadge from '../../../shared/components/VerifiedBadge';
 import './ListingCard.css';
 
 const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) => {
@@ -18,6 +18,8 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     ? listing.images 
     : [listing.image_urls?.[0] || fallbackImage];
 
+  const isVideo = (url) => /\.(mp4|mov|webm|ogg)$/i.test(url);
+
   const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
   const isEstateFirm = listing.posterRole === 'estate-firm';
   const commission = isEstateFirm ? 0 : basePrice * 0.075;
@@ -31,7 +33,6 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     referral: commission * (1.5 / 7.5),
   };
 
-  // Carousel navigation (buttons)
   const nextImage = (e) => {
     e.stopPropagation();
     setCurrentImageIndex((prev) => (prev + 1) % images.length);
@@ -42,26 +43,16 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
   };
 
-  // Swipe handlers
-  const handleTouchStart = (e) => {
-    setTouchStartX(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e) => {
-    setTouchEndX(e.touches[0].clientX);
-  };
-
+  const handleTouchStart = (e) => setTouchStartX(e.touches[0].clientX);
+  const handleTouchMove = (e) => setTouchEndX(e.touches[0].clientX);
   const handleTouchEnd = () => {
     if (touchStartX - touchEndX > 50) {
-      // Swipe left
-      nextImage({ stopPropagation: () => {} }); // dummy event
+      nextImage({ stopPropagation: () => {} });
     } else if (touchEndX - touchStartX > 50) {
-      // Swipe right
       prevImage({ stopPropagation: () => {} });
     }
   };
 
-  // Lightbox handlers
   const openLightbox = (index, e) => {
     e.stopPropagation();
     setLightboxIndex(index);
@@ -80,15 +71,27 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     setLightboxIndex((prev) => (prev - 1 + images.length) % images.length);
   };
 
-  // Toggle extra details when clicking on card (but not on interactive elements)
+  const [lightboxTouchStart, setLightboxTouchStart] = useState(0);
+  const [lightboxTouchEnd, setLightboxTouchEnd] = useState(0);
+
+  const handleLightboxTouchStart = (e) => setLightboxTouchStart(e.touches[0].clientX);
+  const handleLightboxTouchMove = (e) => setLightboxTouchEnd(e.touches[0].clientX);
+  const handleLightboxTouchEnd = () => {
+    if (lightboxTouchStart - lightboxTouchEnd > 50) {
+      nextLightboxImage({ stopPropagation: () => {} });
+    } else if (lightboxTouchEnd - lightboxTouchStart > 50) {
+      prevLightboxImage({ stopPropagation: () => {} });
+    }
+  };
+
   const handleCardClick = (e) => {
     const target = e.target;
     const isInteractive = target.closest('.carousel-btn') || 
                          target.closest('.dot') ||
                          target.closest('.btn') ||
                          target.closest('.listing-image') ||
-                         target.closest('.remove-btn') ||
-                         target.closest('.move-btn');
+                         target.closest('.play-overlay') ||
+                         target.closest('.verified-badge');
     if (!isInteractive) {
       setShowExtraDetails(!showExtraDetails);
     }
@@ -101,20 +104,28 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   };
 
   const getRoleIcon = () => {
-    switch(listing.posterRole || listing.userRole) {
+    switch(listing.posterRole) {
       case 'estate-firm': return <Building size={14} />;
       case 'landlord': return <Home size={14} />;
+      case 'tenant': return <User size={14} />;
       default: return <User size={14} />;
     }
   };
 
   const getRoleLabel = () => {
-    switch(listing.posterRole || listing.userRole) {
+    switch(listing.posterRole) {
       case 'estate-firm': return 'Estate Firm';
       case 'landlord': return 'Landlord';
       case 'tenant': return 'Outgoing Tenant';
       default: return 'Unknown';
     }
+  };
+
+  const getVerificationType = () => {
+    if (listing.posterRole === 'estate-firm') return 'estate';
+    if (listing.posterRole === 'landlord') return 'landlord';
+    if (listing.posterRole === 'tenant') return 'tenant';
+    return 'user';
   };
 
   return (
@@ -124,38 +135,54 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
         ref={cardRef}
         onClick={handleCardClick}
       >
-        {/* Image Carousel with Swipe */}
+        {/* Image Carousel */}
         <div 
           className="listing-image-container"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <img 
-            src={images[currentImageIndex]} 
-            alt={listing.title}
-            onClick={(e) => openLightbox(currentImageIndex, e)}
-            className="listing-image"
-          />
+          {isVideo(images[currentImageIndex]) ? (
+            <div className="video-thumbnail" onClick={(e) => openLightbox(currentImageIndex, e)}>
+              <img 
+                src={images[currentImageIndex]} 
+                alt={listing.title}
+                className="listing-image"
+              />
+              <div className="play-overlay">
+                <Play size={32} />
+              </div>
+            </div>
+          ) : (
+            <img 
+              src={images[currentImageIndex]} 
+              alt={listing.title}
+              onClick={(e) => openLightbox(currentImageIndex, e)}
+              className="listing-image"
+            />
+          )}
           
-          {listing.verified && (
-            <div className="verified-badge" onClick={(e) => e.stopPropagation()}>
-              <CheckCircle size={14} />
-              <span>Verified</span>
-            </div>
-          )}
-          {!listing.verified && (
-            <div className="unverified-badge" onClick={(e) => e.stopPropagation()}>
-              <Clock size={14} />
-              <span>Pending</span>
-            </div>
-          )}
-          {listing.posterRole === 'estate-firm' && (
-            <div className="estate-firm-badge" onClick={(e) => e.stopPropagation()}>
-              <Building size={14} />
-              <span>0% Commission</span>
-            </div>
-          )}
+          {/* Badges */}
+          <div className="badges-container">
+            {listing.verified && (
+              <VerifiedBadge type="property" size="small" showTooltip={true} />
+            )}
+            {listing.userVerified && (
+              <VerifiedBadge type={getVerificationType()} size="small" showTooltip={true} />
+            )}
+            {listing.posterRole === 'estate-firm' && (
+              <div className="estate-firm-badge">
+                <Building size={14} />
+                <span>0% Commission</span>
+              </div>
+            )}
+            {!listing.verified && !listing.userVerified && listing.posterRole !== 'estate-firm' && (
+              <div className="pending-badge">
+                <Clock size={14} />
+                <span>Pending</span>
+              </div>
+            )}
+          </div>
           
           {images.length > 1 && (
             <>
@@ -179,7 +206,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
           <h3 className="listing-title">{listing.title}</h3>
           
           <div className="listing-meta">
-            <span className="property-type">{listing.propertyType}</span>
+            <span className="property-type">{listing.property_type || listing.propertyType}</span>
             <span className="separator">•</span>
             <span className="location">
               <MapPin size={14} />
@@ -209,7 +236,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             </div>
           </div>
 
-          {/* Extra Details (collapsible) */}
+          {/* Extra Details */}
           {showExtraDetails && (
             <div className="extra-details" onClick={(e) => e.stopPropagation()}>
               {!isEstateFirm && commissionBreakdown && (
@@ -235,52 +262,66 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
                   </div>
                 </div>
               )}
-              {/* Poster Info moved here */}
               <div className="poster-info">
                 {getRoleIcon()}
                 <span>
                   Posted by {listing.posterName || 'Anonymous'} • {getRoleLabel()}
                 </span>
                 <span className="listing-date">
-                  {formatDate(listing.timestamp || listing.createdAt)}
+                  {formatDate(listing.created_at || listing.posted_date)}
                 </span>
+              </div>
+
+              {/* Actions */}
+              <div className="listing-actions">
+                <button 
+                  className="btn btn-outline view-btn"
+                  onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
+                >
+                  View Details
+                </button>
+                <button 
+                  className="btn btn-primary contact-btn"
+                  onClick={(e) => { e.stopPropagation(); onContact(); }}
+                >
+                  Contact
+                </button>
+                
+                {(userRole === 'admin' || userRole === 'manager') && !listing.verified && (
+                  <button 
+                    className="btn btn-success verify-btn"
+                    onClick={(e) => { e.stopPropagation(); onVerify(); }}
+                  >
+                    Verify
+                  </button>
+                )}
               </div>
             </div>
           )}
-
-          {/* Actions (always visible) */}
-          <div className="listing-actions" onClick={(e) => e.stopPropagation()}>
-            <button 
-              className="btn btn-outline view-btn"
-              onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
-            >
-              View Details
-            </button>
-            <button 
-              className="btn btn-primary contact-btn"
-              onClick={(e) => { e.stopPropagation(); onContact(); }}
-            >
-              Contact
-            </button>
-            
-            {(userRole === 'admin' || userRole === 'manager') && !listing.verified && (
-              <button 
-                className="btn btn-success verify-btn"
-                onClick={(e) => { e.stopPropagation(); onVerify(); }}
-              >
-                Verify
-              </button>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* Lightbox Modal (same as before) */}
+      {/* Lightbox Modal */}
       {lightboxOpen && (
         <div className="lightbox-overlay" onClick={closeLightbox}>
-          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+          <div 
+            className="lightbox-content" 
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={handleLightboxTouchStart}
+            onTouchMove={handleLightboxTouchMove}
+            onTouchEnd={handleLightboxTouchEnd}
+          >
             <button className="lightbox-close" onClick={closeLightbox}>×</button>
-            <img src={images[lightboxIndex]} alt={listing.title} className="lightbox-image" />
+            
+            {isVideo(images[lightboxIndex]) ? (
+              <video controls autoPlay className="lightbox-video">
+                <source src={images[lightboxIndex]} />
+                Your browser does not support the video tag.
+              </video>
+            ) : (
+              <img src={images[lightboxIndex]} alt={listing.title} className="lightbox-image" />
+            )}
+            
             {images.length > 1 && (
               <>
                 <button className="lightbox-prev" onClick={prevLightboxImage}>‹</button>
