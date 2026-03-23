@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import ServicePostForm from '../components/ServicePostForm';
-
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 
 const EstatePostService = () => {
   const { user } = useAuth();
@@ -58,9 +58,10 @@ const EstatePostService = () => {
     navigate('/services'); // or to the service detail page
   };
 
-  if (loading) {
-    return <div className="loading">Loading...</div>;
-  }
+ 
+   if (loading) {
+  return <RentEasyLoader message="Loading your clients..." fullScreen />;
+}
 
   if (!firmDetails) {
     return <div>Could not load firm details.</div>;

@@ -12,6 +12,7 @@ import {
   ArrowUpRight, ArrowDownRight, BarChart3
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './ClientManager.css';
 
 const ClientManager = ({ estateFirmData }) => {
@@ -56,130 +57,143 @@ const ClientManager = ({ estateFirmData }) => {
     filterClients();
   }, [clients, searchTerm, clientType, clientStatus]);
 
-  const loadClients = async () => {
-    if (!estateFirmData?.id) return;
-    setLoading(true);
-    try {
-      const user = (await supabase.auth.getUser()).data.user;
-      if (!user) return;
+const loadClients = async () => {
+  if (!estateFirmData?.id) return;
+  setLoading(true);
+  try {
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user) return;
 
-      // Load clients from multiple sources
-      const [propertiesResult, messagesResult, contactsResult] = await Promise.all([
-        // Get clients from properties
-        supabase
-          .from('listings')
-          .select('landlord_id, landlord:profiles!landlord_id(*)')
-          .eq('estate_firm_id', estateFirmData.id) // use estate firm ID
-          .not('landlord_id', 'is', null),
+    // 1. Fetch landlords from listings (those who have posted properties)
+    const { data: listingsData } = await supabase
+      .from('listings')
+      .select('landlord_id, landlord:profiles!landlord_id(*)')
+      .eq('estate_firm_id', estateFirmData.id)
+      .not('landlord_id', 'is', null);
 
-        // Get clients from messages
-        supabase
-          .from('messages')
-          .select('sender_id, receiver_id, profiles!sender_id(*), profiles!receiver_id(*)')
-          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`),
+    // 2. Fetch contacts from messages (people the estate firm has chatted with)
+    const { data: messagesData } = await supabase
+      .from('messages')
+      .select('sender_id, receiver_id, profiles!sender_id(*), profiles!receiver_id(*)')
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
 
-        // Get manually added contacts
-        supabase
-          .from('contacts')
-          .select('*')
-          .eq('estate_firm_id', estateFirmData.id) // use estate firm ID
-      ]);
+    // 3. Fetch manually added contacts from `contacts` table (legacy)
+    const { data: manualContacts } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('estate_firm_id', estateFirmData.id);
 
-      const allClients = new Map();
+    // 4. **NEW: Fetch landlords from `estate_landlords` (the estate firm's own landlord contacts)**
+    const { data: estateLandlords } = await supabase
+      .from('estate_landlords')
+      .select('*')
+      .eq('estate_firm_id', estateFirmData.id);
 
-      // Add property owners
-      if (propertiesResult.data) {
-        propertiesResult.data.forEach(prop => {
-          if (prop.landlord_id && prop.landlord) {
-            allClients.set(prop.landlord_id, {
-              id: prop.landlord_id,
-              name: prop.landlord.name || 'Unknown',
-              email: prop.landlord.email,
-              phone: prop.landlord.phone,
-              type: 'landlord',
-              status: 'active',
-              source: 'properties',
-              propertyCount: 1,
-              lastContact: prop.created_at,
-              totalValue: prop.price || 0
-            });
-          }
+    const allClients = new Map();
+
+    // Add landlords from listings
+    listingsData?.forEach(prop => {
+      if (prop.landlord_id && prop.landlord) {
+        allClients.set(prop.landlord_id, {
+          id: prop.landlord_id,
+          name: prop.landlord.name || 'Unknown',
+          email: prop.landlord.email,
+          phone: prop.landlord.phone,
+          type: 'landlord',
+          status: 'active',
+          source: 'properties',
+          propertyCount: 1,
+          lastContact: prop.created_at,
+          totalValue: prop.price || 0
         });
       }
+    });
 
-      // Add message contacts
-      if (messagesResult.data) {
-        messagesResult.data.forEach(msg => {
-          const contactId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-          const contact = msg.sender_id === user.id ? msg.profiles_receiver_id : msg.profiles_sender_id;
-          
-          if (contactId && contact && contact.id !== user.id) {
-            if (allClients.has(contactId)) {
-              const existing = allClients.get(contactId);
-              existing.messageCount = (existing.messageCount || 0) + 1;
-            } else {
-              allClients.set(contactId, {
-                id: contactId,
-                name: contact.name || 'Unknown',
-                email: contact.email,
-                phone: contact.phone,
-                type: 'contact',
-                status: 'active',
-                source: 'messages',
-                messageCount: 1,
-                lastContact: msg.created_at
-              });
-            }
-          }
-        });
-      }
-
-      // Add manual contacts
-      if (contactsResult.data) {
-        contactsResult.data.forEach(contact => {
-          allClients.set(`contact_${contact.id}`, {
-            id: `contact_${contact.id}`,
-            name: contact.name,
+    // Add contacts from messages
+    messagesData?.forEach(msg => {
+      const contactId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+      const contact = msg.sender_id === user.id ? msg.profiles_receiver_id : msg.profiles_sender_id;
+      if (contactId && contact && contact.id !== user.id) {
+        if (allClients.has(contactId)) {
+          const existing = allClients.get(contactId);
+          existing.messageCount = (existing.messageCount || 0) + 1;
+        } else {
+          allClients.set(contactId, {
+            id: contactId,
+            name: contact.name || 'Unknown',
             email: contact.email,
             phone: contact.phone,
-            address: contact.address,
-            type: contact.type || 'contact',
-            status: contact.status || 'active',
-            source: 'manual',
-            notes: contact.notes,
-            createdAt: contact.created_at
+            type: 'contact',
+            status: 'active',
+            source: 'messages',
+            messageCount: 1,
+            lastContact: msg.created_at
           });
-        });
+        }
       }
+    });
 
-      const clientsArray = Array.from(allClients.values());
-      setClients(clientsArray);
-
-      // Calculate statistics
-      const landlords = clientsArray.filter(c => c.type === 'landlord').length;
-      const tenants = clientsArray.filter(c => c.type === 'tenant').length;
-      const activeClients = clientsArray.filter(c => c.status === 'active').length;
-      
-      const totalPropertyValue = clientsArray
-        .filter(c => c.type === 'landlord')
-        .reduce((sum, c) => sum + (c.totalValue || 0), 0);
-
-      setStats({
-        totalClients: clientsArray.length,
-        activeClients,
-        landlords,
-        tenants,
-        avgPropertiesPerClient: landlords > 0 ? (clientsArray.filter(c => c.propertyCount).reduce((sum, c) => sum + (c.propertyCount || 0), 0) / landlords).toFixed(1) : 0,
-        clientRetentionRate: 85,
-        totalPropertyValue
+    // Add manual contacts (legacy)
+    manualContacts?.forEach(contact => {
+      const key = `contact_${contact.id}`;
+      allClients.set(key, {
+        id: key,
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        address: contact.address,
+        type: contact.type || 'contact',
+        status: contact.status || 'active',
+        source: 'manual',
+        notes: contact.notes,
+        createdAt: contact.created_at
       });
+    });
 
-    } catch (err) {
-      console.error('Error loading clients:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // **NEW: Add estate landlords (the estate firm's own landlord contacts)**
+    estateLandlords?.forEach(landlord => {
+      const key = `estate_landlord_${landlord.id}`;
+      allClients.set(key, {
+        id: key,
+        name: landlord.name,
+        email: landlord.email,
+        phone: landlord.phone,
+        type: 'landlord',           // they are landlords
+        status: 'active',
+        source: 'estate_landlords', // so we know where they came from
+        notes: landlord.notes,
+        bank_details: landlord.bank_details,
+        createdAt: landlord.created_at
+      });
+    });
+
+    const clientsArray = Array.from(allClients.values());
+    setClients(clientsArray);
+
+    // ... rest of stats calculation (unchanged)
+    const landlords = clientsArray.filter(c => c.type === 'landlord').length;
+    const tenants = clientsArray.filter(c => c.type === 'tenant').length;
+    const activeClients = clientsArray.filter(c => c.status === 'active').length;
+    const totalPropertyValue = clientsArray
+      .filter(c => c.type === 'landlord')
+      .reduce((sum, c) => sum + (c.totalValue || 0), 0);
+
+    setStats({
+      totalClients: clientsArray.length,
+      activeClients,
+      landlords,
+      tenants,
+      avgPropertiesPerClient: landlords > 0 ? (clientsArray.filter(c => c.propertyCount).reduce((sum, c) => sum + (c.propertyCount || 0), 0) / landlords).toFixed(1) : 0,
+      clientRetentionRate: 85,
+      totalPropertyValue
+    });
+
+  } catch (err) {
+    console.error('Error loading clients:', err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filterClients = () => {
     let filtered = [...clients];
@@ -337,6 +351,11 @@ const ClientManager = ({ estateFirmData }) => {
         return null;
     }
   };
+
+ 
+ if (loading) {
+  return <RentEasyLoader message="Loading your clients..." fullScreen />;
+}
 
 
   return (

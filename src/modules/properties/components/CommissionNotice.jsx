@@ -29,7 +29,8 @@ const CommissionNotice = ({ price, userRole, extraFees = [] }) => {
   const totalExtraFees = extraFees.reduce((sum, fee) => sum + (parseFloat(fee.amount) || 0), 0);
 
   // Total payable
-  const totalPayable = baseRent + totalCommission + totalExtraFees;
+  // CommissionNotice.jsx (excerpt)
+const totalPayable = baseRent + (isEstateFirm ? 0 : totalCommission) + totalExtraFees;
 
   return (
     <div className={`commission-notice ${isEstateFirm ? 'estate' : 'regular'}`}>

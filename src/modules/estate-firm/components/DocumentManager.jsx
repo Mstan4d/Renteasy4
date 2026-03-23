@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './DocumentManager.css';
 
 const DocumentManager = () => {
@@ -288,16 +289,10 @@ const DocumentManager = () => {
 
   const totalSize = documents.reduce((sum, doc) => sum + (doc.file_size || 0), 0);
 
-  if (loading) {
-    return (
-      <div className="document-manager">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading documents...</p>
-        </div>
-      </div>
-    );
-  }
+  
+   if (loading) {
+  return <RentEasyLoader message="Loading your Documents..." fullScreen />;
+}
 
   return (
     <div className="document-manager">

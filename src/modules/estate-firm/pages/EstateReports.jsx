@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { documentGenerator } from '../../../shared/lib/documentGenerator';
 import './EstateReports.css';
 
@@ -532,16 +533,10 @@ const EstateReports = () => {
   }
 };
 
-  if (loading) {
-    return (
-      <div className="estate-reports">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading report data...</p>
-        </div>
-      </div>
-    );
-  }
+  
+   if (loading) {
+  return <RentEasyLoader message="Loading Reports..." fullScreen />;
+}
 
   return (
     <div className="estate-reports">

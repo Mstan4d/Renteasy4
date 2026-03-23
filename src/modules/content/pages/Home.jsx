@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../../shared/context/AuthContext'
 import { supabase } from '../../../shared/lib/supabaseClient'
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import VerifiedBadge from '../../../shared/components/VerifiedBadge'
 import './Home.css'
 
@@ -181,14 +182,12 @@ const Home = () => {
       setAllListings(transformedListings)
       
       // Apply boost and location sorting
-      //const sorted = sortListingsByLocation(transformedListings, userLocation)
-      // Inside fetchListingsFromSupabase, replace the boost logic section:
 
 // First, separate boosted and non-boosted
        const boosted = transformedListings.filter(l => boostedUserIds.includes(l.userId))
        const nonBoosted = transformedListings.filter(l => !boostedUserIds.includes(l.userId))
 
-// Shuffle each group
+
       const shuffledBoosted = shuffleArray(boosted)
       const shuffledNonBoosted = shuffleArray(nonBoosted)
 
@@ -521,6 +520,10 @@ setDisplayedListings(finalListings.slice(0, ITEMS_TO_SHOW))
     const { name, value } = e.target
     setSearchParams(prev => ({ ...prev, [name]: value }))
   }
+
+   if (loading) {
+  return <RentEasyLoader message="Loading..." fullScreen />;
+}
 
   return (
     <main className="home-container">

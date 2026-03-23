@@ -9,6 +9,7 @@ import LocationStep from '../components/steps/LocationStep';
 import ImagesStep from '../components/steps/ImagesStep';
 import ConfirmationStep from '../components/steps/ConfirmationStep';
 import CommissionNotice from '../components/CommissionNotice';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './PostProperty.css';
 
 const PostPropertyPage = () => {
@@ -22,7 +23,7 @@ const PostPropertyPage = () => {
   const [estateFirmId, setEstateFirmId] = useState(null);
   const [freePostsRemaining, setFreePostsRemaining] = useState(0);
   const [hasSubscription, setHasSubscription] = useState(false);
-  const [estateFirmLoaded, setEstateFirmLoaded] = useState(false);
+  
   
   // Check if this is an estate firm post
   const isEstateFirm = searchParams.get('type') === 'estate-firm';
@@ -86,15 +87,20 @@ useEffect(() => {
 // In the useEffect that loads profile, also fetch estate firm data
 useEffect(() => {
   const loadEstateFirmData = async () => {
-    if (profile?.role === 'estate-firm') {
+    if (profile?.role !== 'estate-firm') {
+      // Not an estate firm, no need to load
+      return;
+    }
+
+    try {
       // Use either the URL param or fetch by user_id
-      const firmId = estateFirmId || searchParams.get('estateFirmId');
-      if (!firmId) {
-        // Fallback: fetch by user_id
+      const firmIdParam = searchParams.get('estateFirmId');
+      if (firmIdParam) {
+        // Fetch by firm ID
         const { data, error } = await supabase
           .from('estate_firm_profiles')
           .select('id, free_posts_remaining, subscription_status')
-          .eq('user_id', user.id)
+          .eq('id', firmIdParam)
           .single();
         if (!error && data) {
           setEstateFirmId(data.id);
@@ -102,27 +108,30 @@ useEffect(() => {
           setHasSubscription(data.subscription_status === 'active');
         }
       } else {
-        // Fetch by firm ID
+        // Fallback: fetch by user_id
         const { data, error } = await supabase
           .from('estate_firm_profiles')
           .select('id, free_posts_remaining, subscription_status')
-          .eq('id', firmId)
+          .eq('user_id', user.id)
           .single();
+          console.log('Estate firm fetch result:', data, error);
         if (!error && data) {
           setEstateFirmId(data.id);
           setFreePostsRemaining(data.free_posts_remaining);
           setHasSubscription(data.subscription_status === 'active');
+        } else if (error && error.code !== 'PGRST116') {
+          console.error('Error fetching estate firm profile:', error);
         }
       }
+    } catch (err) {
+      console.error('Error loading estate firm data:', err);
     }
-    setEstateFirmLoaded(true);
   };
 
-  if (profile && !estateFirmLoaded) {
+  if (profile?.role === 'estate-firm') {
     loadEstateFirmData();
   }
-}, [profile, user, searchParams, estateFirmId, estateFirmLoaded]);
-  
+}, [profile, user, searchParams]);
   // Initial form data
   const [formData, setFormData] = useState({
     // Basic Info
@@ -352,27 +361,60 @@ const debugFormData = () => {
   console.log('8. Will be visible immediately:', true);
   console.log('=== END DEBUG ===');
 };
-
+console.log( 'estateFirmId:', estateFirmId);
 
  const submitListing = async () => {
   if (!validateCurrentStep()) return;
-  
-if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining <= 0) {
-  alert('You have no free posts remaining. Please subscribe to continue posting.');
-  navigate('/dashboard/estate-firm');
-  return;
-}
-  // Use localProfile as fallback if global profile is null
-  const currentProfile = profile || localProfile;
 
+  const currentProfile = profile || localProfile;
   if (!currentProfile) {
     alert('User profile not found. Please try refreshing the page.');
     return;
   }
-  
 
+  // For estate firms, ensure we have the latest estate_firm_id and free posts
+let finalEstateFirmId = estateFirmId;
+let currentFreePosts = freePostsRemaining;
+let currentHasSubscription = hasSubscription;
+
+if (currentProfile.role === 'estate-firm') {
+  try {
+    // Always fetch fresh data for accuracy
+    const { data, error } = await supabase
+      .from('estate_firm_profiles')
+      .select('id, free_posts_remaining, subscription_status')
+      .eq(finalEstateFirmId ? 'id' : 'user_id', finalEstateFirmId || user.id)
+      .single();
+
+    if (error) throw error;
+
+    if (data) {
+      finalEstateFirmId = data.id;
+      currentFreePosts = data.free_posts_remaining;
+      currentHasSubscription = data.subscription_status === 'active';
+      // Update state for later use
+      setEstateFirmId(data.id);
+      setFreePostsRemaining(data.free_posts_remaining);
+      setHasSubscription(currentHasSubscription);
+    } else {
+      alert('Estate firm profile not found. Please complete your profile first.');
+      return;
+    }
+  } catch (err) {
+    console.error('Error fetching estate firm data:', err);
+    alert('Failed to load estate firm profile. Please try again.');
+    return;
+  }
+
+  // Check free posts using the fresh values
+  if (!currentHasSubscription && currentFreePosts <= 0) {
+    alert('You have no free posts remaining. Please subscribe to continue posting.');
+    navigate('/dashboard/estate-firm');
+    return;
+  }
+}
   const commission = calculateCommission();
-  
+
   // Show commission confirmation for non-estate firms
   if (!commission.isEstateFirm) {
     const confirmMessage = `COMMISSION BREAKDOWN (Annual Rent: ₦${commission.annualRent.toLocaleString()})\n\n` +
@@ -382,159 +424,110 @@ if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining <=
       `• RentEasy: 3.5% = ₦${commission.rentEasyCommission.toLocaleString()}\n\n` +
       `✅ You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n` +
       `Agree to continue?`;
-    
+
     const confirmed = window.confirm(confirmMessage);
     if (!confirmed) return;
   }
-  
+
   debugFormData();
   setIsSubmitting(true);
-  
+
   try {
     const listingData = {
       // Basic Info
       title: formData.title.trim(),
       description: formData.description.trim(),
-      
-      // Price
       price: parseFloat(formData.rent_amount) || 0,
       rent_amount: formData.rent_amount,
-      
-      // Property Type
       property_type: formData.property_type,
-      
-      // Location
       address: formData.address.trim(),
       state: formData.state,
       city: formData.city,
       lga: formData.lga || '',
       landmark: formData.landmark || '',
-      
-      // Property Details
       bedrooms: parseInt(formData.bedrooms) || 1,
       bathrooms: parseInt(formData.bathrooms) || 1,
       area: formData.area || null,
       amenities: formData.amenities || [],
-      
-      // Contact Info
       contact_phone: formData.contact_phone || profile?.phone || '',
       contact_email: formData.contact_email || profile?.email || '',
-      
-      // 🟢 BUSINESS RULE: Who posted this?
-      poster_role: currentProfile.role, // ✅ Use profile.role directly (ensured not null)
+      poster_role: currentProfile.role,
       poster_name: currentProfile.full_name || user?.email,
       poster_phone: formData.contact_phone || currentProfile?.phone || '',
-      
-      // User Info
       user_id: user.id,
-      
-      // Commission
       commission_rate: currentProfile.role === 'estate-firm' ? 0 : 7.5,
-      
-      // Rent frequency (Nigeria standard)
       rent_frequency: 'yearly',
-      
-      // Status
       status: 'pending',
       is_verified: false,
       is_active: true,
       verification_level: 'pending',
       rejected: false,
-      
-      // Timestamps
       posted_date: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      
-      // Images (will be added after upload)
       images: [],
-
-      // New fields
       landlord_phone: formData.landlord_phone || null,
       verification_status: currentProfile.role === 'estate-firm' ? 'verified' : 'pending_manager',
+      extra_fees: formData.extra_fees || [],  // <-- important!
     };
-    
+
     // Add estate firm ID if applicable
-    if (currentProfile.role === 'estate-firm' && estateFirmId) {
-      listingData.estate_firm_id = estateFirmId;
+    if (currentProfile.role === 'estate-firm' && finalEstateFirmId) {
+      listingData.estate_firm_id = finalEstateFirmId;
     }
-    
+
     console.log('📤 Submitting to Supabase:', listingData);
-    
-    // ========== STEP 1: CREATE LISTING IN DATABASE ==========
+
+    // Insert listing
     const { data: listing, error: listingError } = await supabase
       .from('listings')
       .insert([listingData])
       .select()
       .single();
-    
-    if (listingError) {
-      console.error('❌ Database error:', listingError);
-      throw new Error(`Failed to save listing: ${listingError.message}`);
-    }
-    
+
+    if (listingError) throw listingError;
     console.log('✅ Listing created in database:', listing.id);
-    
-    // ========== STEP 2: UPLOAD IMAGES IF ANY ==========
+
+    // Upload images
     let imageUrls = [];
     if (formData.images.length > 0) {
       console.log('📸 Uploading images...');
       imageUrls = await uploadImages(listing.id);
-      
-      // Update listing with image URLs
       if (imageUrls.length > 0) {
         const { error: imageError } = await supabase
           .from('listings')
           .update({ images: imageUrls })
           .eq('id', listing.id);
-        
-        if (imageError) {
-          console.error('⚠️ Could not save image URLs:', imageError);
-        } else {
-          console.log(`✅ ${imageUrls.length} images uploaded`);
-        }
+        if (imageError) console.error('⚠️ Could not save image URLs:', imageError);
+        else console.log(`✅ ${imageUrls.length} images uploaded`);
       }
     }
-    
-    // ========== STEP 3: SUCCESS MESSAGE ==========
-    const successMessage = profile?.role === 'estate-firm' 
-      ? `🏢 Estate Firm Listing Posted!\n\n` +
-        `✅ 0% Commission (Subscription Model)\n` +
-        `📝 ${formData.title}\n` +
-        `📍 ${formData.address}, ${formData.city}\n` +
-        `💰 ₦${commission.annualRent.toLocaleString()}/year\n\n` +
-        `✅ Your listing is NOW LIVE with "Pending" status`
-      : `✅ Property Listed Successfully!\n\n` +
-        `📝 ${formData.title}\n` +
-        `📍 ${formData.address}, ${formData.city}\n` +
-        `💰 ₦${commission.annualRent.toLocaleString()}/year (₦${commission.monthlyEquivalent.toLocaleString()}/month)\n\n` +
-        `💰 You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n` +
-        `✅ Your listing is NOW LIVE with "Pending" status`;
-    
-    alert(successMessage);
-    
-    // ========== STEP 4: NOTIFY NEARBY MANAGERS ==========
-     // Notify nearby managers (only if not estate firm? Actually all non-estate listings need manager)
-      if (profile?.role !== 'estate-firm' && formData.coordinates?.lat && formData.coordinates?.lng) {
-        console.log('📢 Notifying nearby managers...');
-        await notifyNearbyManagers(listing.id, formData.coordinates);
-      }
 
-      // After the listing is created and images uploaded, before navigation:
-if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining > 0) {
-  const { error: updateError } = await supabase
-    .from('estate_firm_profiles')
-    .update({
-      free_posts_remaining: freePostsRemaining - 1,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', estateFirmId);
-  if (updateError) {
-    console.error('Error decrementing free posts:', updateError);
+    // Decrement free posts for estate firms (if applicable) – atomic operation
+if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentFreePosts > 0) {
+  // Use RPC for atomic decrement (must be created in Supabase first)
+  const { error: rpcError } = await supabase.rpc('decrement_free_posts', { firm_id: finalEstateFirmId });
+  if (rpcError) {
+    console.error('Error decrementing free posts via RPC:', rpcError);
+  } else {
+    // Update local state to reflect new count
+    setFreePostsRemaining(prev => prev - 1);
   }
 }
-    
-    // ========== STEP 5: NAVIGATE TO DASHBOARD ==========
+
+    // Notify nearby managers (if not estate firm)
+    if (currentProfile.role !== 'estate-firm' && formData.coordinates?.lat && formData.coordinates?.lng) {
+      await notifyNearbyManagers(listing.id, formData.coordinates);
+    }
+
+    // Success message
+    const successMessage = currentProfile.role === 'estate-firm'
+      ? `🏢 Estate Firm Listing Posted!\n\n✅ 0% Commission (Subscription Model)\n📝 ${formData.title}\n📍 ${formData.address}, ${formData.city}\n💰 ₦${commission.annualRent.toLocaleString()}/year\n\n✅ Your listing is NOW LIVE with "Pending" status`
+      : `✅ Property Listed Successfully!\n\n📝 ${formData.title}\n📍 ${formData.address}, ${formData.city}\n💰 ₦${commission.annualRent.toLocaleString()}/year (₦${commission.monthlyEquivalent.toLocaleString()}/month)\n\n💰 You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n✅ Your listing is NOW LIVE with "Pending" status`;
+
+    alert(successMessage);
+
+    // Navigate to dashboard
     setTimeout(() => {
       const roleDashboard = {
         'tenant': '/dashboard/tenant',
@@ -543,29 +536,17 @@ if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining > 
         'estate-firm': '/dashboard/estate-firm',
         'service-provider': '/dashboard/provider'
       };
-      
-      navigate(roleDashboard[profile?.role] || '/dashboard');
+      navigate(roleDashboard[currentProfile.role] || '/dashboard');
     }, 1500);
-    
+
   } catch (error) {
     console.error('❌ Error posting property:', error);
-    
-    let errorMessage = 'Failed to post property\n';
-    if (error.message.includes('permission')) {
-      errorMessage += 'You need permission to post properties.';
-    } else if (error.message.includes('network')) {
-      errorMessage += 'Network error. Check connection.';
-    } else if (error.message.includes('foreign')) {
-      errorMessage += 'User profile not found. Please complete your profile first.';
-    } else {
-      errorMessage += error.message;
-    }
-    
-    alert(`❌ ${errorMessage}`);
+    alert(`Failed to post property. ${error.message}`);
   } finally {
     setIsSubmitting(false);
   }
 };
+
   // Notify nearby managers (Business Rule)
   const notifyNearbyManagers = async (listingId, coordinates) => {
     try {
@@ -618,7 +599,7 @@ if (profile?.role === 'estate-firm' && !hasSubscription && freePostsRemaining > 
 
   if (!user) return <div>Please log in to Post a Property</div>;
 if (loadingProfile || (!profile && !localProfile)) {
-  return <div>Loading profile...</div>;
+  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
 }
 const effectiveProfile = profile || localProfile;
 console.log('Profile data:', effectiveProfile);
@@ -672,22 +653,27 @@ console.log('Profile data:', effectiveProfile);
             </div>
             
             <div className="nav-right">
-              {currentStep < 4 ? (
-                <button className="btn btn-primary" onClick={nextStep} disabled={isSubmitting}>
-                  Continue →
-                </button>
-              ) : (
-                <button 
-                  className="btn btn-success" 
-                  onClick={submitListing}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Posting...' : 'Post Property'}
-                </button>
-              )}
-            </div>
-          </div>
-          
+  {currentStep < 4 ? (
+    <button className="btn btn-primary" onClick={nextStep} disabled={isSubmitting}>
+      Continue →
+    </button>
+  ) : (
+    profile?.role === 'estate-firm' && !estateFirmId ? (
+      <button className="btn btn-secondary" disabled>
+        Loading profile...
+      </button>
+    ) : (
+      <button 
+        className="btn btn-success" 
+        onClick={submitListing}
+        disabled={isSubmitting}
+      >
+        {isSubmitting ? 'Posting...' : 'Post Property'}
+      </button>
+    )
+  )}
+</div>
+</div>
           {/* Help */}
           <div className="help-text">
             <p>Need help? Contact: support@renteasy.com | 0700-RENTEASY</p>

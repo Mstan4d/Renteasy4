@@ -21,7 +21,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   const isVideo = (url) => /\.(mp4|mov|webm|ogg)$/i.test(url);
 
   const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
-  const isEstateFirm = listing.posterRole === 'estate-firm';
+  const isEstateFirm = listing.posterRole === 'estate-firm' || listing.commission_rate === 0;
   const commission = isEstateFirm ? 0 : basePrice * 0.075;
   const extraFees = listing.extra_fees || [];
   const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);

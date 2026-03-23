@@ -7,6 +7,7 @@ import {
   Banknote, Coins, ArrowUpRight, ArrowDownRight, Target
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 
 const FinancialOverview = ({ estateFirmData, dashboardStats }) => {
   const [transactions, setTransactions] = useState([]);
@@ -165,16 +166,10 @@ const FinancialOverview = ({ estateFirmData, dashboardStats }) => {
   const commissionSaved = dashboardStats?.commissionSaved || 0;
   const hasActiveSubscription = estateFirmData?.hasActiveSubscription || false;
 
-  if (loading) {
-    return (
-      <div className="text-center py-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-        <p className="mt-3 text-muted">Loading financial data...</p>
-      </div>
-    );
-  }
+  
+ if (loading) {
+  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+}
 
   return (
     <div>

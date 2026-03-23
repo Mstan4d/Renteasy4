@@ -7,6 +7,7 @@ import {
   FileText, DollarSign, Home, Star
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './EstateProfile.css';
 
 const EstateProfile = () => {
@@ -58,66 +59,133 @@ const EstateProfile = () => {
   }, [user]);
 
   const loadProfile = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      // Load estate firm profile
-      const { data: profile, error } = await supabase
-        .from('estate_firm_profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+    // 1. Get estate firm profile
+    const { data: profile, error } = await supabase
+      .from('estate_firm_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
+    if (error && error.code !== 'PGRST116') throw error;
 
-      if (profile) {
-        setFormData({
-          firmName: profile.firm_name || '',
-          contactPerson: profile.contact_person || '',
-          email: profile.business_email || user.email || '',
-          phone: profile.business_phone || '',
-          website: profile.website || '',
-          address: profile.address || '',
-          yearEstablished: profile.year_established || '',
-          totalAgents: profile.total_agents || '',
-          propertiesManaged: profile.properties_managed || '',
-          specialties: profile.specialties || [],
-          description: profile.description || '',
-          logo: profile.logo_url || '',
-          coverImage: profile.cover_image_url || '',
-          officeHours: profile.office_hours || '',
-          socialLinks: profile.social_links || {
-            facebook: '',
-            twitter: '',
-            linkedin: '',
-            instagram: ''
-          },
-          services: profile.services || [],
-          certification: profile.certification || {
-            cacNumber: '',
-            rcNumber: '',
-            certified: false,
-            verificationStatus: 'pending'
-          }
-        });
+    if (profile) {
+      setFormData({
+        firmName: profile.firm_name || '',
+        contactPerson: profile.contact_person || '',
+        email: profile.business_email || user.email || '',
+        phone: profile.business_phone || '',
+        website: profile.website || '',
+        address: profile.address || '',
+        yearEstablished: profile.year_established || '',
+        totalAgents: profile.total_agents || '',
+        propertiesManaged: profile.properties_managed || '',
+        specialties: profile.specialties || [],
+        description: profile.description || '',
+        logo: profile.logo_url || '',
+        coverImage: profile.cover_image_url || '',
+        officeHours: profile.office_hours || '',
+        socialLinks: profile.social_links || {
+          facebook: '',
+          twitter: '',
+          linkedin: '',
+          instagram: ''
+        },
+        services: profile.services || [],
+        certification: profile.certification || {
+          cacNumber: '',
+          rcNumber: '',
+          certified: false,
+          verificationStatus: 'pending'
+        }
+      });
 
-        setStats(profile.stats || {
-          totalProperties: 0,
-          activeClients: 0,
-          monthlyRevenue: 0,
-          clientSatisfaction: 0
-        });
-      } else {
-        // Create initial profile if doesn't exist
-        await createInitialProfile();
-      }
-
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    } finally {
-      setLoading(false);
+      // 2. Compute stats
+      await computeStats(profile.id);
+    } else {
+      // Create initial profile if doesn't exist
+      await createInitialProfile();
     }
-  };
+
+  } catch (error) {
+    console.error('Error loading profile:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const computeStats = async (estateFirmId) => {
+  try {
+    // Count properties managed by this firm
+    const { count: totalProperties, error: propError } = await supabase
+      .from('properties')
+      .select('*', { count: 'exact', head: true })
+      .eq('estate_firm_id', estateFirmId);
+
+    if (propError) console.warn('Error counting properties:', propError);
+
+    // Count active clients (landlords) from estate_landlords
+    const { count: activeClients, error: clientError } = await supabase
+      .from('estate_landlords')
+      .select('*', { count: 'exact', head: true })
+      .eq('estate_firm_id', estateFirmId);
+
+    if (clientError) console.warn('Error counting landlords:', clientError);
+
+    // Calculate monthly revenue (current month's confirmed rent payments)
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // First get all property IDs for this firm
+    const { data: properties } = await supabase
+      .from('properties')
+      .select('id')
+      .eq('estate_firm_id', estateFirmId);
+
+    let monthlyRevenue = 0;
+    if (properties && properties.length > 0) {
+      const propertyIds = properties.map(p => p.id);
+
+      // Get all units for those properties
+      const { data: units } = await supabase
+        .from('units')
+        .select('id')
+        .in('property_id', propertyIds);
+
+      if (units && units.length > 0) {
+        const unitIds = units.map(u => u.id);
+
+        // Sum confirmed payments in this month
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('payment_type', 'rent')
+          .eq('status', 'confirmed')
+          .in('unit_id', unitIds)
+          .gte('created_at', startOfMonth.toISOString())
+          .lte('created_at', endOfMonth.toISOString());
+
+        if (payments) {
+          monthlyRevenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        }
+      }
+    }
+
+    // Update stats state
+    setStats({
+      totalProperties: totalProperties || 0,
+      activeClients: activeClients || 0,
+      monthlyRevenue,
+      clientSatisfaction: 0 // You can calculate this later if needed
+    });
+
+  } catch (error) {
+    console.error('Error computing stats:', error);
+  }
+};
 
   const createInitialProfile = async () => {
     try {
@@ -319,15 +387,8 @@ const EstateProfile = () => {
   };
 
   if (loading) {
-    return (
-      <div className="estate-profile">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading profile...</p>
-        </div>
-      </div>
-    );
-  }
+  return <RentEasyLoader message="Loading your Profile..." fullScreen />;
+}
 
   return (
     <div className="estate-profile">

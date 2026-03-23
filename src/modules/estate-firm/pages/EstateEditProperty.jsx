@@ -52,51 +52,66 @@ const EstateEditProperty = () => {
     if (user && id) fetchProperty();
   }, [user, id]);
 
-  const fetchProperty = async () => {
-    setFetching(true);
-    setError(null);
-    try {
-      // Fetch property with landlord info and units
-      const { data: property, error: propError } = await supabase
-        .from('properties')
-        .select(`
-          *,
-          landlord:landlord_id (id, name, phone, email),
-          units (id, unit_number, rent_amount, rent_frequency, status, bedrooms, bathrooms)
-        `)
-        .eq('id', id)
+  // Replace the fetchProperty function
+const fetchProperty = async () => {
+  setFetching(true);
+  setError(null);
+  try {
+    // 1. Fetch property (without join)
+    const { data: property, error: propError } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (propError) throw propError;
+    if (!property) throw new Error('Property not found');
+
+    // 2. Fetch landlord if landlord_id exists
+    let landlord = null;
+    if (property.landlord_id) {
+      const { data: landlordData, error: landlordError } = await supabase
+        .from('estate_landlords')
+        .select('*')
+        .eq('id', property.landlord_id)
         .single();
-
-      if (propError) throw propError;
-      if (!property) throw new Error('Property not found');
-
-      // Populate form
-      setFormData({
-        propertyName: property.title || '',
-        address: property.address || '',
-        city: property.city || '',
-        state: property.state || '',
-        lga: property.lga || '',
-        clientName: property.landlord?.name || '',
-        clientPhone: property.landlord?.phone || '',
-        clientEmail: property.landlord?.email || '',
-        propertyType: property.property_type || 'residential',
-        rentAmount: property.units?.[0]?.rent_amount || '',
-        rentFrequency: property.units?.[0]?.rent_frequency || 'monthly',
-        commissionRate: property.commission_rate || 7.5,
-        managementLevel: property.management_level || 'full',
-        nextRentDue: property.contract_next_due || '', // you may need to add this column
-        contractStart: property.contract_start || '',
-        contractEnd: property.contract_end || '',
-        notes: property.description || ''
-      });
-    } catch (err) {
-      console.error('Error fetching property:', err);
-      setError(err.message);
-    } finally {
-      setFetching(false);
+      if (!landlordError) landlord = landlordData;
     }
-  };
+
+    // 3. Fetch units for this property
+    const { data: units, error: unitsError } = await supabase
+      .from('units')
+      .select('*')
+      .eq('property_id', id);
+    if (unitsError) throw unitsError;
+
+    // 4. Populate form data
+    setFormData({
+      propertyName: property.title || '',
+      address: property.address || '',
+      city: property.city || '',
+      state: property.state || '',
+      lga: property.lga || '',
+      clientName: landlord?.name || '',
+      clientPhone: landlord?.phone || '',
+      clientEmail: landlord?.email || '',
+      propertyType: property.property_type || 'residential',
+      rentAmount: units?.[0]?.rent_amount || '',
+      rentFrequency: units?.[0]?.rent_frequency || 'monthly',
+      commissionRate: property.commission_rate || 7.5,
+      managementLevel: property.management_level || 'full',
+      nextRentDue: property.contract_next_due || '',
+      contractStart: property.contract_start || '',
+      contractEnd: property.contract_end || '',
+      notes: property.description || ''
+    });
+  } catch (err) {
+    console.error('Error fetching property:', err);
+    setError(err.message);
+  } finally {
+    setFetching(false);
+  }
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -146,28 +161,30 @@ const EstateEditProperty = () => {
         if (unitError) throw unitError;
       }
 
-      // Update landlord contact if changed
-      if (formData.clientName) {
-        // First get current landlord id
-        const { data: property } = await supabase
-          .from('properties')
-          .select('landlord_id')
-          .eq('id', id)
-          .single();
+      // Inside handleSubmit, after updating property and unit
+// Update landlord contact if changed and landlord exists
+if (formData.clientName) {
+  // First get current landlord_id from property
+  const { data: propertyData } = await supabase
+    .from('properties')
+    .select('landlord_id')
+    .eq('id', id)
+    .single();
 
-        if (property?.landlord_id) {
-          // Update existing contact
-          await supabase
-            .from('contacts')
-            .update({
-              name: formData.clientName,
-              phone: formData.clientPhone || null,
-              email: formData.clientEmail || null
-            })
-            .eq('id', property.landlord_id);
-        }
-      }
-
+  if (propertyData?.landlord_id) {
+    // Update the estate_landlords record
+    const { error: updateError } = await supabase
+      .from('estate_landlords')
+      .update({
+        name: formData.clientName,
+        phone: formData.clientPhone || null,
+        email: formData.clientEmail || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', propertyData.landlord_id);
+    if (updateError) console.warn('Failed to update landlord', updateError);
+  }
+}
       alert('Property updated successfully!');
       navigate(`/dashboard/estate-firm/properties/${id}`);
     } catch (err) {

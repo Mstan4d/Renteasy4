@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import ClientManager from '../components/ClientManager';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './EstateClients.css';
 
 const EstateClients = () => {
@@ -31,7 +32,10 @@ const EstateClients = () => {
     }
   };
 
-  if (loading) return <div className="estate-clients"><div className="loading">Loading...</div></div>;
+  
+ if (loading) {
+  return <RentEasyLoader message="Loading your clients..." fullScreen />;
+}
 
   return (
     <div className="estate-clients">

@@ -4,11 +4,15 @@ import {
   Building, PlusCircle, Upload, Filter, Download,
   Edit, Trash2, Eye, DollarSign, MapPin,
   CheckCircle, XCircle, MoreVertical, Search,
-  Home, Users, TrendingUp, ArrowUpRight, Zap
+  Home, Users, TrendingUp, ArrowUpRight, Zap,
+  ChevronDown, ChevronUp, User, Calendar,
+  FileText, ClipboardList, Tag
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { createListingFromUnit } from '../../../shared/utils/listingUtils';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import ConvertListingModal from '../components/ConvertListingModal';
 import './PortfolioManager.css';
 
 const PortfolioManager = () => {
@@ -18,20 +22,36 @@ const PortfolioManager = () => {
 
   const [estateFirmProfileId, setEstateFirmProfileId] = useState(null);
   const [viewMode, setViewMode] = useState('grid');
-  const [selectedProperties, setSelectedProperties] = useState([]);
+  
   const [sortBy, setSortBy] = useState('recent');
   const [searchQuery, setSearchQuery] = useState('');
+  const [groupByLandlord, setGroupByLandlord] = useState(true);
+  const [expandedLandlords, setExpandedLandlords] = useState({});
+  
   const [properties, setProperties] = useState([]);
+  const [landlords, setLandlords] = useState([]);
   const [loading, setLoading] = useState(true);
+ 
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [selectedUnit, setSelectedUnit] = useState(null);
+  const [selectedProperty, setSelectedProperty] = useState(null);
+   // State for bulk posting
+  const [bulkUnits, setBulkUnits] = useState([]);
+  const [currentBulkIndex, setCurrentBulkIndex] = useState(0);
+const [showBulkModal, setShowBulkModal] = useState(false);
+
+
+// Inside the component:
+const [showConvertModal, setShowConvertModal] = useState(false);
+const [selectedListingForConvert, setSelectedListingForConvert] = useState(null);
   const [portfolioStats, setPortfolioStats] = useState({
     totalProperties: 0,
-    rentEasyListings: 0,
-    externalProperties: 0,
-    managedProperties: 0,
-    occupiedProperties: 0,
-    totalValue: 0,
+    totalUnits: 0,
+    occupiedUnits: 0,
+    vacantUnits: 0,
+    listedUnits: 0,
     monthlyRevenue: 0,
-    vacantUnits: 0
+    totalLandlords: 0
   });
 
   useEffect(() => {
@@ -53,145 +73,238 @@ const PortfolioManager = () => {
 
   useEffect(() => {
     if (estateFirmProfileId) {
-      loadProperties();
+      loadPortfolioData();
     }
   }, [estateFirmProfileId, location.key]);
 
-  const loadProperties = async () => {
-    if (!estateFirmProfileId) return;
+const loadPortfolioData = async () => {
+  if (!estateFirmProfileId) return;
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
+    console.log('Loading portfolio data for estate firm ID:', estateFirmProfileId);
 
-      // Fetch external properties
-      const { data: externalProps, error: externalError } = await supabase
-        .from('properties')
-        .select(`
-          *,
-          landlord:landlord_id (id, name, email, phone)
-        `)
-        .eq('estate_firm_id', estateFirmProfileId)
-        .order('created_at', { ascending: false });
+    // 1. Load all landlords for this estate firm
+    const { data: landlordsData, error: landlordsError } = await supabase
+      .from('estate_landlords')
+      .select('*')
+      .eq('estate_firm_id', estateFirmProfileId)
+      .order('name');
 
-      if (externalError) throw externalError;
+    if (landlordsError) throw landlordsError;
+    setLandlords(landlordsData || []);
+    console.log('Landlords loaded:', landlordsData?.length);
 
-      // Fetch RentEasy listings
-      const { data: listings, error: listingsError } = await supabase
-        .from('listings')
-        .select(`
-          *,
-          landlord:profiles!landlord_id (id, name, email, phone)
-        `)
-        .eq('estate_firm_id', estateFirmProfileId)
-        .order('created_at', { ascending: false });
+    // 2. Load all properties with their units
+    const { data: propertiesData, error: propertiesError } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('estate_firm_id', estateFirmProfileId)
+      .order('created_at', { ascending: false });
 
-      if (listingsError) throw listingsError;
+    if (propertiesError) throw propertiesError;
+    console.log('Properties loaded:', propertiesData?.length);
 
-      // Transform listings into property-like objects
-      const rentEasyProps = (listings || []).map(listing => ({
-        id: listing.id,
-        estate_firm_id: listing.estate_firm_id,
-        name: listing.title,
-        address: listing.address,
-        city: listing.city,
-        state: listing.state,
-        description: listing.description,
-        landlord_id: listing.landlord_id,
-        landlord: listing.landlord,
-        source: 'rent-easy',
-        listing_id: listing.id,
-        created_at: listing.created_at,
-        units: [{
-          id: `unit-${listing.id}`,
-          property_id: listing.id,
-          unit_number: '1',
-          rent_amount: listing.price,
-          rent_frequency: listing.rent_frequency || 'yearly',
-          status: listing.status === 'rented' ? 'occupied' : 'vacant',
-          tenant_id: listing.tenant_id,
-        }],
-        occupiedCount: listing.status === 'rented' ? 1 : 0,
-        monthlyRent: listing.price && listing.rent_frequency === 'yearly' ? listing.price / 12 : listing.price,
-      }));
-
-      // Combine and enrich
-      const allProperties = [
-        ...(externalProps || []).map(p => ({ ...p, source: 'external' })),
-        ...rentEasyProps
-      ];
-
-      const enriched = await Promise.all(allProperties.map(async (property) => {
-        let units = [];
-        if (property.source === 'external') {
-          const { data: unitData } = await supabase
-            .from('units')
-            .select('*')
-            .eq('property_id', property.id);
-          units = unitData || [];
-        } else {
-          units = property.units || [];
-        }
-
-        const occupiedUnits = units.filter(u => u.status === 'occupied');
-        const vacantUnits = units.filter(u => u.status === 'vacant');
-        const monthlyRent = occupiedUnits.reduce((sum, u) => {
-          let multiplier = 1;
-          if (u.rent_frequency === 'yearly') multiplier = 1/12;
-          if (u.rent_frequency === 'quarterly') multiplier = 1/3;
-          return sum + (u.rent_amount * multiplier);
-        }, 0);
-
-        const totalRent = units.reduce((sum, u) => sum + (u.rent_amount || 0), 0);
-
-        return {
-          ...property,
-          units,
-          occupiedCount: occupiedUnits.length,
-          vacantCount: vacantUnits.length, // explicitly store vacant count
-          monthlyRent,
-          totalRent,
-        };
-      }));
-
-      setProperties(enriched);
-
-      // Calculate stats using the new vacantCount
-      const totalProperties = enriched.length;
-      const rentEasyCount = enriched.filter(p => p.source === 'rent-easy').length;
-      const externalCount = totalProperties - rentEasyCount;
-      const occupiedProperties = enriched.reduce((sum, p) => sum + p.occupiedCount, 0);
-      const monthlyRevenue = enriched.reduce((sum, p) => sum + p.monthlyRent, 0);
-      const totalValue = enriched.reduce((sum, p) => sum + (p.totalRent * 5 || 0), 0);
-      const vacantUnits = enriched.reduce((sum, p) => sum + p.vacantCount, 0); // use vacantCount
-
-      setPortfolioStats({
-        totalProperties,
-        rentEasyListings: rentEasyCount,
-        externalProperties: externalCount,
-        managedProperties: totalProperties,
-        occupiedProperties,
-        totalValue,
-        monthlyRevenue,
-        vacantUnits
-      });
-
-    } catch (error) {
-      console.error('Error loading properties:', error);
-    } finally {
-      setLoading(false);
+    // 3. Load units for these properties
+    const propertyIds = (propertiesData || []).map(p => p.id);
+    let unitsData = [];
+    if (propertyIds.length > 0) {
+      const { data: units, error: unitsError } = await supabase
+        .from('units')
+        .select('*')
+        .in('property_id', propertyIds);
+      if (!unitsError) unitsData = units || [];
+      console.log('Units loaded:', unitsData.length);
     }
-  };
+
+    // 4. Load RentEasy listings that haven't been converted yet
+    const { data: listingsData, error: listingsError } = await supabase
+      .from('listings')
+      .select(`
+        *,
+        landlord:landlord_id (*)
+      `)
+      .eq('estate_firm_id', estateFirmProfileId)
+      .is('unit_id', null)
+      .in('status', ['pending', 'approved', 'rented']);
+
+    if (listingsError) throw listingsError;
+    console.log('Unconverted listings loaded:', listingsData?.length);
+
+    // 5. Group units by property
+    const unitsByProperty = {};
+    unitsData.forEach(unit => {
+      if (!unitsByProperty[unit.property_id]) {
+        unitsByProperty[unit.property_id] = [];
+      }
+      unitsByProperty[unit.property_id].push(unit);
+    });
+
+    // 6. Transform regular properties with their units
+    const regularProperties = (propertiesData || []).map(property => {
+      const units = unitsByProperty[property.id] || [];
+      const occupiedUnits = units.filter(u => u.status === 'occupied');
+      const vacantUnits = units.filter(u => u.status === 'vacant');
+      
+      const monthlyRent = occupiedUnits.reduce((sum, u) => {
+        if (u.rent_frequency === 'yearly') return sum + (u.rent_amount / 12);
+        if (u.rent_frequency === 'monthly') return sum + u.rent_amount;
+        if (u.rent_frequency === 'quarterly') return sum + (u.rent_amount / 3);
+        return sum + (u.rent_amount / 12);
+      }, 0);
+
+      return {
+        ...property,
+        is_listing: false,
+        source: 'external',
+        units,
+        unitCount: units.length,
+        occupiedCount: occupiedUnits.length,
+        vacantCount: vacantUnits.length,
+        monthlyRent
+      };
+    });
+
+    // 7. Transform listings into virtual properties for display
+    const listingProperties = (listingsData || []).map(listing => ({
+      id: listing.id,
+      is_listing: true,
+      listing_id: listing.id,
+      estate_firm_id: listing.estate_firm_id,
+      landlord_id: listing.landlord_id,
+      landlord: listing.landlord,
+      name: listing.title || 'Untitled Listing',
+      address: listing.address,
+      city: listing.city,
+      state: listing.state,
+      lga: listing.lga,
+      property_type: listing.property_type,
+      status: listing.status,
+      source: 'rent-easy-listing',
+      created_at: listing.created_at,
+      units: [],
+      unitCount: 1,
+      occupiedCount: listing.status === 'rented' ? 1 : 0,
+      vacantCount: listing.status !== 'rented' ? 1 : 0,
+      monthlyRent: listing.price && listing.rent_frequency === 'yearly' ? listing.price / 12 : listing.price
+    }));
+
+    // 8. Combine all
+    const allProperties = [...regularProperties, ...listingProperties];
+
+    // 9. Calculate stats
+    const totalUnits = allProperties.reduce((sum, p) => sum + (p.unitCount || 0), 0);
+    const occupiedUnits = allProperties.reduce((sum, p) => sum + (p.occupiedCount || 0), 0);
+    const vacantUnits = allProperties.reduce((sum, p) => sum + (p.vacantCount || 0), 0);
+    const listedUnits = allProperties.filter(p => p.source === 'rent-easy-listing').length;
+    const monthlyRevenue = allProperties.reduce((sum, p) => sum + (p.monthlyRent || 0), 0);
+
+    setProperties(allProperties);
+    setPortfolioStats({
+      totalProperties: allProperties.length,
+      totalUnits,
+      occupiedUnits,
+      vacantUnits,
+      listedUnits,
+      monthlyRevenue,
+      totalLandlords: landlordsData?.length || 0
+    });
+
+    console.log('Portfolio stats calculated:', {
+      totalProperties: allProperties.length,
+      totalUnits,
+      occupiedUnits,
+      vacantUnits,
+      monthlyRevenue
+    });
+
+    // Initialize all landlords as expanded
+    const initialExpanded = {};
+    (landlordsData || []).forEach(l => {
+      initialExpanded[l.id] = true;
+    });
+    setExpandedLandlords(initialExpanded);
+
+  } catch (error) {
+    console.error('Error loading portfolio data:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const handleExportCSV = () => {
+  const csvContent = [
+    ['Property Name', 'Address', 'Landlord', 'Units', 'Occupied', 'Vacant', 'Monthly Revenue', 'Source'],
+    ...properties.map(p => [
+      `"${p.name || ''}"`,
+      `"${p.address || ''}"`,
+      `"${p.landlord?.name || 'None'}"`,
+      p.unitCount || 0,
+      p.occupiedCount || 0,
+      p.vacantCount || 0,
+      `₦${(p.monthlyRent || 0).toLocaleString()}`,
+      p.source || 'external'
+    ])
+  ].map(row => row.join(',')).join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
+
+const handleBulkUpload = () => {
+  navigate('/dashboard/estate-firm/bulk-upload');
+};
 
   const handleAddProperty = () => {
     navigate('/dashboard/estate-firm/add-external-property');
   };
 
-  const handleBulkUpload = () => {
-    navigate('/dashboard/estate-firm/bulk-upload');
-  };
+// Replace the bulk post handler
+const handlePostAllVacant = async () => {
+  const vacantUnits = [];
+  properties.forEach(prop => {
+    prop.units?.forEach(unit => {
+      if (unit.status === 'vacant' && !unit.is_listed_on_renteasy) {
+        vacantUnits.push({ unit, property: prop });
+      }
+    });
+  });
 
+  if (vacantUnits.length === 0) {
+    alert('No vacant units found.');
+    return;
+  }
+
+  if (!window.confirm(`Post ${vacantUnits.length} vacant unit(s) to RentEasy? You'll be able to add extra fees and images for each.`)) return;
+
+  setBulkUnits(vacantUnits);
+  setCurrentBulkIndex(0);
+  setShowBulkModal(true);
+};
+
+const handleBulkUnitSuccess = (postedListing) => {
+  const nextIndex = currentBulkIndex + 1;
+  if (nextIndex < bulkUnits.length) {
+    setCurrentBulkIndex(nextIndex);
+  } else {
+    alert(`All ${bulkUnits.length} units have been posted successfully!`);
+    setShowBulkModal(false);
+    setBulkUnits([]);
+    setCurrentBulkIndex(0);
+    loadPortfolioData();
+  }
+};
   const handleEditProperty = (property) => {
-    navigate(`/dashboard/estate-firm/properties/${property.id}/edit`);
+    if (property.is_listing) {
+      navigate(`/dashboard/estate-firm/my-listings`);
+    } else {
+      navigate(`/dashboard/estate-firm/properties/${property.id}/edit`);
+    }
   };
 
   const handleDeleteProperty = async (propertyId, propertyName, source) => {
@@ -199,49 +312,19 @@ const PortfolioManager = () => {
 
     try {
       if (source === 'external') {
-        // First check if property exists and belongs to this estate firm
-        const { data: property, error: checkError } = await supabase
-          .from('properties')
-          .select('id')
-          .eq('id', propertyId)
-          .eq('estate_firm_id', estateFirmProfileId)
-          .single();
-
-        if (checkError || !property) {
-          alert('Property not found or you do not have permission to delete it.');
-          return;
-        }
-
-        // Perform deletion and get number of affected rows
-        const { error: deleteError, count } = await supabase
+        const { error: deleteError } = await supabase
           .from('properties')
           .delete()
           .eq('id', propertyId)
-          .eq('estate_firm_id', estateFirmProfileId)
-          .select('id'); // using select to get affected rows
+          .eq('estate_firm_id', estateFirmProfileId);
 
         if (deleteError) throw deleteError;
-
-        if (count === 0) {
-          alert('No rows were deleted. Please try again.');
-          return;
-        }
       } else {
-        alert('RentEasy properties cannot be deleted directly from portfolio. You can archive them in the RentEasy section.');
+        alert('Listings cannot be deleted here. Go to "My Listings" to manage them.');
         return;
       }
 
-      setSelectedProperties(prev => prev.filter(id => id !== propertyId));
-      await loadProperties();
-
-      await supabase.from('activities').insert({
-        user_id: user.id,
-        type: 'property',
-        action: 'delete',
-        description: `Deleted property: ${propertyName}`,
-        created_at: new Date().toISOString()
-      });
-
+      await loadPortfolioData();
       alert('Property deleted successfully!');
     } catch (error) {
       console.error('Error deleting property:', error);
@@ -249,169 +332,97 @@ const PortfolioManager = () => {
     }
   };
 
-  const handleBulkDelete = async () => {
-    if (!window.confirm(`Delete ${selectedProperties.length} selected properties?`)) return;
+  // Update the handler
+const handlePostToRentEasy = (unit, property) => {
+  setSelectedUnit(unit);
+  setSelectedProperty(property);
+  setShowPostModal(true);
+};
 
-    try {
-      const externalIds = properties
-        .filter(p => selectedProperties.includes(p.id) && p.source === 'external')
-        .map(p => p.id);
-
-      if (externalIds.length > 0) {
-        // Verify all belong to this estate firm
-        const { data: existing, error: verifyError } = await supabase
-          .from('properties')
-          .select('id')
-          .in('id', externalIds)
-          .eq('estate_firm_id', estateFirmProfileId);
-
-        if (verifyError) throw verifyError;
-        if (existing.length !== externalIds.length) {
-          alert('Some properties do not belong to you and will be skipped.');
-        }
-
-        const { error: deleteError, count } = await supabase
-          .from('properties')
-          .delete()
-          .in('id', externalIds)
-          .eq('estate_firm_id', estateFirmProfileId)
-          .select('id');
-
-        if (deleteError) throw deleteError;
-
-        if (count !== externalIds.length) {
-          console.warn(`Expected to delete ${externalIds.length}, but deleted ${count}`);
-        }
-      }
-
-      const rentEasyIds = selectedProperties.filter(id =>
-        properties.find(p => p.id === id)?.source === 'rent-easy'
-      );
-      if (rentEasyIds.length > 0) {
-        alert('RentEasy properties cannot be bulk deleted. They will be ignored.');
-      }
-
-      await loadProperties();
-      setSelectedProperties([]);
-
-      await supabase.from('activities').insert({
-        user_id: user.id,
-        type: 'property',
-        action: 'bulk_delete',
-        description: `Deleted ${externalIds.length} external properties`,
-        created_at: new Date().toISOString()
-      });
-
-      alert(`${externalIds.length} properties deleted successfully!`);
-    } catch (error) {
-      console.error('Error bulk deleting properties:', error);
-      alert('Failed to delete properties. Please try again.');
-    }
+  const handleConvertListing = (listing) => {
+    navigate('/dashboard/estate-firm/my-listings', { state: { highlightListing: listing.id } });
   };
 
-  const handlePostAllVacant = async () => {
-    const vacantUnits = [];
-    properties.forEach(prop => {
-      prop.units?.forEach(unit => {
-        if (unit.status === 'vacant') {
-          vacantUnits.push({ unit, property: prop });
-        }
-      });
+  const toggleLandlord = (landlordId) => {
+    setExpandedLandlords(prev => ({
+      ...prev,
+      [landlordId]: !prev[landlordId]
+    }));
+  };
+
+  const getPropertiesByLandlord = () => {
+    const grouped = {};
+    
+    // Initialize with all landlords
+    landlords.forEach(landlord => {
+      grouped[landlord.id] = {
+        landlord,
+        properties: []
+      };
     });
 
-    if (vacantUnits.length === 0) {
-      alert('No vacant units found.');
-      return;
-    }
+    // Add unassigned group
+    grouped['unassigned'] = {
+      landlord: { id: 'unassigned', name: 'Unassigned', phone: '', email: '' },
+      properties: []
+    };
 
-    if (!window.confirm(`Post ${vacantUnits.length} vacant unit(s) to RentEasy marketplace?`)) return;
-
-    setLoading(true);
-    let success = 0;
-    let failed = 0;
-
-    for (const { unit, property } of vacantUnits) {
-      try {
-        await createListingFromUnit(unit, property, estateFirmProfileId);
-        success++;
-      } catch (err) {
-        console.error(err);
-        failed++;
+    // Group properties
+    properties.forEach(property => {
+      const landlordId = property.landlord_id || 'unassigned';
+      if (!grouped[landlordId]) {
+        grouped[landlordId] = {
+          landlord: property.landlord || { id: landlordId, name: 'Unknown', phone: '', email: '' },
+          properties: []
+        };
       }
-    }
+      grouped[landlordId].properties.push(property);
+    });
 
-    alert(`Posted ${success} listings. ${failed} failed.`);
-    setLoading(false);
-    await loadProperties();
+    return grouped;
   };
-
-  const handleExportCSV = () => {
-    const csvContent = [
-      ['ID', 'Name', 'Address', 'Units', 'Occupied Units', 'Monthly Revenue', 'Landlord', 'Source', 'Created Date'],
-      ...filteredProperties.map(p => [
-        p.id.substring(0, 8),
-        `"${p.name}"`,
-        `"${p.address}"`,
-        p.units?.length || 0,
-        p.occupiedCount,
-        `₦${p.monthlyRent.toLocaleString()}`,
-        p.landlord?.name || 'None',
-        p.source,
-        new Date(p.created_at).toLocaleDateString()
-      ])
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-  };
-
-  const propertyTypes = [
-    { id: 'all', label: 'All Properties', count: portfolioStats.totalProperties, color: 'blue' },
-    { id: 'occupied', label: 'Occupied', count: portfolioStats.occupiedProperties, color: 'purple' },
-    { id: 'vacant', label: 'Vacant Units', count: portfolioStats.vacantUnits, color: 'orange' },
-  ];
 
   const filteredProperties = properties.filter(property => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
-      property.name.toLowerCase().includes(query) ||
-      property.address.toLowerCase().includes(query) ||
-      (property.landlord?.name || '').toLowerCase().includes(query)
+      property.name?.toLowerCase().includes(query) ||
+      property.address?.toLowerCase().includes(query) ||
+      property.landlord?.name?.toLowerCase().includes(query)
     );
   }).sort((a, b) => {
     if (sortBy === 'recent') return new Date(b.created_at) - new Date(a.created_at);
     if (sortBy === 'rent-high') return (b.monthlyRent || 0) - (a.monthlyRent || 0);
     if (sortBy === 'rent-low') return (a.monthlyRent || 0) - (b.monthlyRent || 0);
-    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
     return 0;
   });
 
-  const formatCurrency = (amount) => {
-    return `₦${(amount || 0).toLocaleString()}`;
+  const groupedProperties = getPropertiesByLandlord();
+
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
+
+  const getStatusBadge = (status) => {
+    switch(status) {
+      case 'occupied':
+        return <span className="status-badge occupied"><CheckCircle size={12} /> Occupied</span>;
+      case 'vacant':
+        return <span className="status-badge vacant"><Home size={12} /> Vacant</span>;
+      default:
+        return <span className="status-badge">{status}</span>;
+    }
   };
 
   const getSourceBadge = (source) => {
-    if (source === 'rent-easy') {
-      return <span className="badge badge-info">RentEasy</span>;
+    if (source === 'rent-easy-listing') {
+      return <span className="badge badge-warning">RentEasy Listing</span>;
     }
     return <span className="badge badge-secondary">External</span>;
   };
 
-  if (loading) {
-    return (
-      <div className="portfolio-manager">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading portfolio...</p>
-        </div>
-      </div>
-    );
-  }
+   if (loading) {
+  return <RentEasyLoader message="Loading your Portfolio..." fullScreen />;
+}
 
   return (
     <div className="portfolio-manager">
@@ -420,7 +431,8 @@ const PortfolioManager = () => {
         <div>
           <h2>Property Portfolio</h2>
           <p className="subtitle">
-            Managing {portfolioStats.totalProperties} properties •
+            Managing {portfolioStats.totalProperties} properties • 
+            {portfolioStats.totalUnits} units •
             <span className="revenue"> {formatCurrency(portfolioStats.monthlyRevenue)}/month</span>
           </p>
         </div>
@@ -447,72 +459,51 @@ const PortfolioManager = () => {
             <Download size={18} />
             Export CSV
           </button>
-          {portfolioStats.vacantUnits > 0 && (
-            <button
-              className="btn btn-success"
-              onClick={handlePostAllVacant}
-            >
-              <Zap size={18} />
-              Post Vacant ({portfolioStats.vacantUnits})
-            </button>
-          )}
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="portfolio-stats">
-        {propertyTypes.map(type => (
-          <div
-            key={type.id}
-            className="stat-card"
-            style={{ borderLeftColor: type.color }}
-          >
-            <Building size={24} color={type.color} />
-            <div className="stat-info">
-              <span className="stat-label">{type.label}</span>
-              <span className="stat-value">{type.count}</span>
-              {type.id === 'all' && (
-                <small>Value: {formatCurrency(portfolioStats.totalValue)}</small>
-              )}
-            </div>
+        <div className="stat-card">
+          <Building size={24} color="#3b82f6" />
+          <div className="stat-info">
+            <span className="stat-label">Properties</span>
+            <span className="stat-value">{portfolioStats.totalProperties}</span>
           </div>
-        ))}
-      </div>
-
-      {/* Portfolio Performance - Removed hardcoded growth */}
-      <div className="portfolio-performance">
-        <div className="performance-card">
-          <div className="performance-header">
-            <h4>Portfolio Performance</h4>
-            {/* Growth removed – add real calculation later if needed */}
+        </div>
+        <div className="stat-card">
+          <Home size={24} color="#10b981" />
+          <div className="stat-info">
+            <span className="stat-label">Total Units</span>
+            <span className="stat-value">{portfolioStats.totalUnits}</span>
           </div>
-          <div className="performance-metrics">
-            <div className="metric">
-              <Home size={16} />
-              <div>
-                <span className="metric-value">{portfolioStats.occupiedProperties}</span>
-                <span className="metric-label">Occupied Properties</span>
-              </div>
-            </div>
-            <div className="metric">
-              <Users size={16} />
-              <div>
-                <span className="metric-value">{portfolioStats.vacantUnits}</span>
-                <span className="metric-label">Vacant Units</span>
-              </div>
-            </div>
-            <div className="metric">
-              <TrendingUp size={16} />
-              <div>
-                <span className="metric-value">
-                  {portfolioStats.totalProperties > 0
-                    ? `${Math.round((portfolioStats.occupiedProperties / portfolioStats.totalProperties) * 100)}%`
-                    : '0%'
-                  }
-                </span>
-                <span className="metric-label">Occupancy Rate</span>
-              </div>
-            </div>
+        </div>
+        <div className="stat-card">
+          <Users size={24} color="#8b5cf6" />
+          <div className="stat-info">
+            <span className="stat-label">Landlords</span>
+            <span className="stat-value">{portfolioStats.totalLandlords}</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <CheckCircle size={24} color="#059669" />
+          <div className="stat-info">
+            <span className="stat-label">Occupied</span>
+            <span className="stat-value">{portfolioStats.occupiedUnits}</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <XCircle size={24} color="#dc2626" />
+          <div className="stat-info">
+            <span className="stat-label">Vacant</span>
+            <span className="stat-value">{portfolioStats.vacantUnits}</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <Tag size={24} color="#f59e0b" />
+          <div className="stat-info">
+            <span className="stat-label">Listed</span>
+            <span className="stat-value">{portfolioStats.listedUnits}</span>
           </div>
         </div>
       </div>
@@ -531,6 +522,14 @@ const PortfolioManager = () => {
         </div>
 
         <div className="control-group">
+          <button
+            className={`group-toggle ${groupByLandlord ? 'active' : ''}`}
+            onClick={() => setGroupByLandlord(!groupByLandlord)}
+          >
+            <Users size={16} />
+            {groupByLandlord ? 'Grouped by Landlord' : 'Flat View'}
+          </button>
+
           <div className="view-toggle">
             <button
               className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
@@ -559,197 +558,271 @@ const PortfolioManager = () => {
         </div>
       </div>
 
-      {/* Selection Actions */}
-      {selectedProperties.length > 0 && (
-        <div className="selection-bar">
-          <div className="selection-info">
-            <CheckCircle size={16} />
-            <span>{selectedProperties.length} properties selected</span>
-          </div>
-          <div className="selection-actions">
-            <button
-              className="btn btn-sm"
-              onClick={() => {
-                // Bulk edit – could navigate to a bulk edit page or open modal
-                alert('Bulk edit not implemented yet');
-              }}
-            >
-              <Edit size={16} />
-              Edit Selected
-            </button>
-            <button
-              className="btn btn-sm btn-danger"
-              onClick={handleBulkDelete}
-            >
-              <Trash2 size={16} />
-              Delete
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Properties Display */}
-      {viewMode === 'grid' ? (
-        <div className="properties-grid">
-          {filteredProperties.map(property => (
-            <div key={property.id} className="property-card">
-              <div className="property-header">
-                <input
-                  type="checkbox"
-                  checked={selectedProperties.includes(property.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedProperties([...selectedProperties, property.id]);
-                    } else {
-                      setSelectedProperties(selectedProperties.filter(id => id !== property.id));
-                    }
-                  }}
-                />
-                <div className="property-header-right">
-                  {getSourceBadge(property.source)}
-                  <span className="property-status-badge">
-                    {property.occupiedCount > 0 ? (
-                      <span className="status occupied">Occupied</span>
-                    ) : (
-                      <span className="status vacant">Vacant</span>
-                    )}
-                  </span>
-                </div>
-              </div>
+      {groupByLandlord ? (
+        <div className="landlord-groups">
+          {Object.entries(groupedProperties).map(([landlordId, group]) => {
+            if (group.properties.length === 0) return null;
+            
+            const isExpanded = expandedLandlords[landlordId];
+            const landlordTotalUnits = group.properties.reduce((sum, p) => sum + (p.unitCount || 0), 0);
+            const landlordOccupied = group.properties.reduce((sum, p) => sum + (p.occupiedCount || 0), 0);
+            const landlordRevenue = group.properties.reduce((sum, p) => sum + (p.monthlyRent || 0), 0);
 
-              <div className="property-body">
-                <div className="property-title-section">
-                  <h4 title={property.name}>{property.name}</h4>
-                  <div className="property-location">
-                    <MapPin size={14} />
-                    <span title={property.address}>{property.address}</span>
+            return (
+              <div key={landlordId} className="landlord-group">
+                <div 
+                  className="landlord-header"
+                  onClick={() => toggleLandlord(landlordId)}
+                >
+                  <div className="landlord-info">
+                    <User size={20} />
+                    <div>
+                      <h3>{group.landlord.name}</h3>
+                      <div className="landlord-meta">
+                        <span>{group.properties.length} properties</span>
+                        <span>•</span>
+                        <span>{landlordTotalUnits} units</span>
+                        <span>•</span>
+                        <span>{landlordOccupied} occupied</span>
+                        <span>•</span>
+                        <span>{formatCurrency(landlordRevenue)}/month</span>
+                      </div>
+                    </div>
                   </div>
+                  <button className="expand-btn">
+                    {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                  </button>
                 </div>
 
-                <div className="property-details">
-                  <div className="detail-row">
-                    <span className="label">Units:</span>
-                    <span className="value">{property.units?.length || 0}</span>
+                {isExpanded && (
+                  <div className="landlord-properties">
+                    {group.properties.map(property => (
+                      <div key={property.id} className="property-item">
+                        <div className="property-main">
+                          <div className="property-icon">
+                            {property.is_listing ? <Tag size={20} /> : <Building size={20} />}
+                          </div>
+                          <div className="property-info">
+                            <h4>{property.name}</h4>
+                            <div className="property-meta">
+                              <span>{property.address || 'No address'}</span>
+                              <span className="badge">{property.property_type}</span>
+                              {getSourceBadge(property.source)}
+                            </div>
+                            <div className="unit-preview">
+                              <span>{property.unitCount} units</span>
+                              <span className="occupied">{property.occupiedCount} occupied</span>
+                              <span className="vacant">{property.vacantCount} vacant</span>
+                            </div>
+                          </div>
+                          <div className="property-actions">
+                            <button
+  className="btn-icon"
+  onClick={() => {
+    if (property.is_listing) {
+      // Navigate to My Listings page (where the user can manage the listing)
+      navigate('/dashboard/estate-firm/my-listings');
+    } else {
+      navigate(`/dashboard/estate-firm/properties/${property.id}`);
+    }
+  }}
+  title="View Details"
+>
+  <Eye size={16} />
+</button>
+                            <button
+                              className="btn-icon"
+                              onClick={() => handleEditProperty(property)}
+                              title="Edit"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            {property.is_listing && (
+                           <button
+                            className="btn-icon success"
+                             onClick={() => {
+                                 setSelectedListingForConvert(property);
+                                 setShowConvertModal(true);
+                                }}
+                               title="Convert to Unit"
+                             >
+                                    <FileText size={16} />
+                              </button>
+                             )}
+                            {!property.is_listing && property.vacantCount > 0 && (
+                              <button
+                                className="btn-icon warning"
+                                onClick={() => handlePostToRentEasy(property.units[0], property)}
+                                title="Post to RentEasy"
+                              >
+                                <Upload size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="detail-row">
-                    <span className="label">Occupied:</span>
-                    <span className="value">{property.occupiedCount}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="label">Monthly Rent:</span>
-                    <span className="value highlight">{formatCurrency(property.monthlyRent)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="label">Landlord:</span>
-                    <span className="value">{property.landlord?.name || 'None'}</span>
-                  </div>
-                </div>
+                )}
               </div>
-
-              <div className="property-footer">
-                <button
-                  className="btn-icon"
-                  onClick={() => navigate(`/dashboard/estate-firm/properties/${property.id}`)}
-                  title="View Details"
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="btn-icon"
-                  onClick={() => handleEditProperty(property)}
-                  title="Edit"
-                >
-                  <Edit size={16} />
-                </button>
-                <button
-                  className="btn-icon danger"
-                  onClick={() => handleDeleteProperty(property.id, property.name, property.source)}
-                  title="Delete"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
-        <div className="properties-list">
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '30px' }}>
-                  <input
-                    type="checkbox"
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedProperties(filteredProperties.map(p => p.id));
-                      } else {
-                        setSelectedProperties([]);
-                      }
-                    }}
-                    checked={selectedProperties.length === filteredProperties.length && filteredProperties.length > 0}
-                  />
-                </th>
-                <th>Property Name</th>
-                <th>Address</th>
-                <th>Units</th>
-                <th>Occupied</th>
-                <th>Monthly Rent</th>
-                <th>Landlord</th>
-                <th>Source</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProperties.map(property => (
-                <tr key={property.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedProperties.includes(property.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedProperties([...selectedProperties, property.id]);
-                        } else {
-                          setSelectedProperties(selectedProperties.filter(id => id !== property.id));
-                        }
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <div className="list-property-info">
-                      <strong>{property.name}</strong>
-                      <small>{property.address}</small>
+        // Flat view (existing grid/list code)
+        viewMode === 'grid' ? (
+          <div className="properties-grid">
+            {filteredProperties.map(property => (
+              <div key={property.id} className="property-card">
+                <div className="property-header">
+                  {getSourceBadge(property.source)}
+                  <span className="property-status-badge">
+                    {property.occupiedCount > 0 ? 'Occupied' : 'Vacant'}
+                  </span>
+                </div>
+
+                <div className="property-body">
+                  <h4>{property.name}</h4>
+                  <div className="property-location">
+                    <MapPin size={14} />
+                    <span>{property.address || 'No address'}</span>
+                  </div>
+
+                  <div className="property-details">
+                    <div className="detail-row">
+                      <span className="label">Units:</span>
+                      <span className="value">{property.unitCount || 0}</span>
                     </div>
-                  </td>
-                  <td>{property.address}</td>
-                  <td>{property.units?.length || 0}</td>
-                  <td>{property.occupiedCount}</td>
-                  <td>{formatCurrency(property.monthlyRent)}</td>
-                  <td>{property.landlord?.name || 'None'}</td>
-                  <td>{getSourceBadge(property.source)}</td>
-                  <td>
-                    <div className="list-actions">
-                      <button className="btn-icon-sm" onClick={() => navigate(`/dashboard/estate-firm/properties/${property.id}`)}>
-                        <Eye size={14} />
-                      </button>
-                      <button className="btn-icon-sm" onClick={() => handleEditProperty(property)}>
-                        <Edit size={14} />
-                      </button>
+                    <div className="detail-row">
+                      <span className="label">Occupied:</span>
+                      <span className="value">{property.occupiedCount || 0}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="label">Monthly Rent:</span>
+                      <span className="value highlight">{formatCurrency(property.monthlyRent)}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="label">Landlord:</span>
+                      <span className="value">{property.landlord?.name || 'None'}</span>
+                    </div>
+                  </div>
+
+                  <div className="property-actions">
+                    <button
+                      className="btn-icon"
+                      onClick={() => navigate(`/dashboard/estate-firm/properties/${property.id}`)}
+                    >
+                      <Eye size={16} />
+                    </button>
+                    <button
+                      className="btn-icon"
+                      onClick={() => handleEditProperty(property)}
+                    >
+                      <Edit size={16} />
+                    </button>
+                    {property.is_listing && property.status !== 'rented' && (
                       <button
-                        className="btn-icon-sm danger"
-                        onClick={() => handleDeleteProperty(property.id, property.name, property.source)}
+                        className="btn-icon success"
+                        onClick={() => handleConvertListing(property)}
                       >
-                        <Trash2 size={14} />
+                        <FileText size={16} />
                       </button>
-                    </div>
-                  </td>
+                    )}
+                    {!property.is_listing && property.vacantCount > 0 && (
+                      <button
+                        className="btn-icon warning"
+                        onClick={() => handlePostToRentEasy(property.units[0], property)}
+                      >
+                        <Upload size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="properties-list">
+            <table>
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th>Address</th>
+                  <th>Units</th>
+                  <th>Occupied</th>
+                  <th>Monthly Rent</th>
+                  <th>Landlord</th>
+                  <th>Source</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredProperties.map(property => (
+                  <tr key={property.id}>
+                    <td>
+                      <div className="list-property-info">
+                        <strong>{property.name}</strong>
+                        <small>{property.property_type}</small>
+                      </div>
+                    </td>
+                    <td>{property.address || 'N/A'}</td>
+                    <td>{property.unitCount || 0}</td>
+                    <td>{property.occupiedCount || 0}</td>
+                    <td>{formatCurrency(property.monthlyRent)}</td>
+                    <td>{property.landlord?.name || 'None'}</td>
+                    <td>{getSourceBadge(property.source)}</td>
+                    <td>
+                      <div className="list-actions">
+                        <button className="btn-icon-sm" onClick={() => navigate(`/dashboard/estate-firm/properties/${property.id}`)}>
+                          <Eye size={14} />
+                        </button>
+                        <button className="btn-icon-sm" onClick={() => handleEditProperty(property)}>
+                          <Edit size={14} />
+                        </button>
+                        {property.is_listing && property.status !== 'rented' && (
+                          <button className="btn-icon-sm success" onClick={() => handleConvertListing(property)}>
+                            <FileText size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
+
+      
+{showPostModal && selectedUnit && selectedProperty && (
+  <PostVacantModal
+    unit={selectedUnit}
+    property={selectedProperty}
+    estateFirmId={estateFirmProfileId}
+    onClose={() => setShowPostModal(false)}
+    onSuccess={() => {
+      loadPortfolioData(); // refresh
+    }}
+  />
+)}
+
+{showConvertModal && selectedListingForConvert && (
+  <ConvertListingModal
+    listing={selectedListingForConvert}
+    estateFirmId={estateFirmProfileId}
+    onClose={() => {
+      setShowConvertModal(false);
+      setSelectedListingForConvert(null);
+    }}
+    onSuccess={() => {
+      loadPortfolioData(); // refresh
+      setShowConvertModal(false);
+      setSelectedListingForConvert(null);
+    }}
+  />
+)}
 
       {/* Empty State */}
       {filteredProperties.length === 0 && (
@@ -764,17 +837,6 @@ const PortfolioManager = () => {
             <PlusCircle size={18} />
             Add Your First Property
           </button>
-        </div>
-      )}
-
-      {/* Pagination */}
-      {filteredProperties.length > 0 && (
-        <div className="pagination">
-          <button className="pagination-btn" disabled>Previous</button>
-          <span className="pagination-info">
-            Showing {filteredProperties.length} of {properties.length} properties
-          </span>
-          <button className="pagination-btn">Next</button>
         </div>
       )}
     </div>

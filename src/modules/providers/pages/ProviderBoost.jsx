@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
-import { supabase } from '../../../shared/lib/supabaseClient';
 import { paymentService } from '../../../shared/lib/paymentService';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './ProviderBoost.css';
 
 const ProviderBoost = () => {

@@ -5,6 +5,7 @@ import { useAuth } from '../../../shared/context/AuthContext';
 import { useManager } from '../../../shared/context/ManagerContext';
 import { listingsService } from '../../../shared/services/listingsService';
 import { messagesService } from '../../../shared/services/messagesService';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import ListingDetails from '../components/ListingDetails';
 import './ListingDetailsPage.css';
 
@@ -16,7 +17,7 @@ const ListingDetailsPage = () => {
   const { canManagerVerify, canManagerAccept, getNearbyManagers } = useManager();
   
   const [listing, setListing] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setloading] = useState(true);
   const [isNearby, setIsNearby] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
 
@@ -262,14 +263,10 @@ const ListingDetailsPage = () => {
     return 'unknown';
   };
 
-  if (isLoading) {
-    return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Loading listing details...</p>
-      </div>
-    );
-  }
+
+if (loading) {
+  return <RentEasyLoader message="Loading Listings..." fullScreen />;
+}
 
   if (!listing) {
     return (

@@ -99,8 +99,21 @@ export async function createNewListing(listingData, user) {
 
 /**
  * Create a listing directly from a unit (convenience wrapper for estate firms)
+ * @param {Object} unit - The unit object (must have rent_amount, unit_number, etc.)
+ * @param {Object} property - The property object (must have name, address, etc.)
+ * @param {string} estateFirmId - The estate firm profile ID
+ * @param {Array} extraFees - Optional extra fees to include in the listing
+ * @returns {Promise<Object>} The created listing record
  */
-export async function createListingFromUnit(unit, property, estateFirmId = null) {
+export async function createListingFromUnit(unit, property, estateFirmId = null, extraFees = []) {
+  // Build a user-like object for the estate firm
+  const user = {
+    id: estateFirmId,
+    role: 'estate_firm',
+    name: 'Estate Firm', // You can later fetch the actual firm name
+    verified: true,
+  };
+
   const listingData = {
     title: `${property.name} - Unit ${unit.unit_number}`,
     description: property.description || `${unit.bedrooms} bedroom, ${unit.bathrooms} bathroom unit available.`,
@@ -114,13 +127,30 @@ export async function createListingFromUnit(unit, property, estateFirmId = null)
     bathrooms: unit.bathrooms,
     area: unit.area_sqm,
     images: property.images || [],
+    extra_fees: extraFees,         // <-- add extra fees
+    commission_rate: 0,            // <-- estate firm pays 0% commission
+    estate_firm_id: estateFirmId,  // <-- set the estate firm ID
   };
-  // Create a user-like object for the poster (estate firm)
-  const user = {
-    id: estateFirmId,
-    role: 'estate_firm',
-    name: 'Estate Firm', // You might fetch the actual name from estate_firms table
-    verified: true,
-  };
-  return createNewListing(listingData, user);
+
+  // Pass the user object to the generic create function
+  const createdListing = await createNewListing(listingData, user);
+  return createdListing;
+}
+
+/**
+ * Update an existing listing (for editing)
+ * @param {string} listingId - The ID of the listing to update
+ * @param {Object} updateData - The fields to update (e.g., extra_fees, images, title, etc.)
+ * @returns {Promise<Object>} The updated listing record
+ */
+export async function updateListing(listingId, updateData) {
+  const { data, error } = await supabase
+    .from('listings')
+    .update(updateData)
+    .eq('id', listingId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }

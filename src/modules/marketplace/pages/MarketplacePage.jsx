@@ -11,10 +11,11 @@ import {
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { messagesService } from '../../../shared/services/messagesService';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { locationService } from '../../../shared/services/locationService';
 import './Marketplace.css';
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 15;
 const BOOST_RATIO = 0.8; // 80% boosted, 20% non-boosted
 
 const MarketplacePage = () => {
@@ -623,14 +624,9 @@ const MarketplacePage = () => {
     return badges;
   };
 
-  if (isLoading) {
-    return (
-      <div className="marketplace-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading marketplace...</p>
-      </div>
-    );
-  }
+if (isLoading) {
+  return <RentEasyLoader message="Loading Market..." fullScreen />;
+}
 
   if (error) {
     return (

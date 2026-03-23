@@ -63,7 +63,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
   const addFee = () => {
     const currentFees = formData.extra_fees || [];
     updateFormData({
-      extra_fees: [...currentFees, { name: '', amount: 0, description: '' }]
+      extra_fees: [...currentFees, { name: '', amount: '', description: '' }]
     });
   };
 

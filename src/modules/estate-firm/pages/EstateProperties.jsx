@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
-import PortfolioManager from '../components/PortfolioManager'; // ✅ import the component
+import PortfolioManager from '../components/PortfolioManager';
 import './EstateProperties.css';
 
 const EstateProperties = () => {
@@ -22,48 +22,82 @@ const EstateProperties = () => {
     try {
       setLoading(true);
 
-      // Load RentEasy properties
-      const { data: rentEasyData, error: rentEasyError } = await supabase
-        .from('listings')
-        .select('*, landlord:profiles!landlord_id(name, email), tenant:profiles!tenant_id(name, email)')
-        .eq('estate_firm_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (rentEasyError) throw rentEasyError;
-
-      // Load external properties
-      const { data: externalData, error: externalError } = await supabase
-        .from('external_properties')
-        .select('*')
+      // 1. Get estate firm profile id
+      const { data: profile } = await supabase
+        .from('estate_firm_profiles')
+        .select('id')
         .eq('user_id', user.id)
-        .eq('status', 'active')
+        .single();
+
+      if (!profile) {
+        console.warn('No estate firm profile found');
+        setLoading(false);
+        return;
+      }
+
+      // 2. Load RentEasy listings (without ambiguous joins)
+      const { data: listings, error: listingsError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('estate_firm_id', profile.id)
         .order('created_at', { ascending: false });
 
-      if (externalError) throw externalError;
+      if (listingsError) throw listingsError;
 
-      // Transform external properties to match RentEasy properties format
-      const transformedExternal = (externalData || []).map(prop => ({
-        id: prop.id,
-        title: prop.property_name,
-        address: prop.address,
-        property_type: prop.property_type,
-        price: prop.rent_amount,
-        rent_frequency: prop.rent_frequency,
-        status: 'occupied', // Assume external properties are occupied
-        source: 'external',
-        client: {
-          name: prop.client_name,
-          email: prop.client_email,
-          phone: prop.client_phone
-        },
-        commission_rate: prop.commission_rate,
-        management_level: prop.management_level,
-        rent_due_date: prop.next_rent_due,
-        created_at: prop.created_at
+      // 3. Load landlord names separately (optional)
+      const landlordIds = listings.map(l => l.landlord_id).filter(Boolean);
+      let landlordMap = {};
+      if (landlordIds.length > 0) {
+        const { data: landlords } = await supabase
+          .from('profiles')
+          .select('id, name, email, phone')
+          .in('id', landlordIds);
+        landlordMap = Object.fromEntries(landlords?.map(l => [l.id, l]) || []);
+      }
+
+      // 4. Attach landlord info to listings
+      const enhancedListings = listings.map(l => ({
+        ...l,
+        landlord: landlordMap[l.landlord_id] || null,
+        source: 'rent-easy',
       }));
 
-      setProperties(rentEasyData || []);
-      setExternalProperties(transformedExternal);
+      // 5. Load external properties from `properties` table (not `external_properties`)
+      const { data: props, error: propsError } = await supabase
+        .from('properties')
+        .select('*, landlord:landlord_id(*)')
+        .eq('estate_firm_id', profile.id)
+        .order('created_at', { ascending: false });
+
+      if (propsError) throw propsError;
+
+      // 6. Load units for these properties
+      const propertyIds = props.map(p => p.id).filter(Boolean);
+      let unitsByProperty = {};
+      if (propertyIds.length > 0) {
+        const { data: units } = await supabase
+          .from('units')
+          .select('*')
+          .in('property_id', propertyIds);
+        unitsByProperty = (units || []).reduce((acc, u) => {
+          if (!acc[u.property_id]) acc[u.property_id] = [];
+          acc[u.property_id].push(u);
+          return acc;
+        }, {});
+      }
+
+      // 7. Enhance external properties with units and stats
+      const enhancedExternal = (props || []).map(p => ({
+        ...p,
+        source: 'external',
+        units: unitsByProperty[p.id] || [],
+        unitCount: (unitsByProperty[p.id] || []).length,
+        occupiedCount: (unitsByProperty[p.id] || []).filter(u => u.status === 'occupied').length,
+        vacantCount: (unitsByProperty[p.id] || []).filter(u => u.status === 'vacant').length,
+      }));
+
+      setProperties(enhancedListings);
+      setExternalProperties(enhancedExternal);
 
     } catch (error) {
       console.error('Error loading properties:', error);
@@ -72,13 +106,11 @@ const EstateProperties = () => {
     }
   };
 
-  // Handlers for PortfolioManager props
   const handleAddProperty = (type) => {
     if (type === 'rent-easy') {
       navigate('/post-property?type=estate-firm');
     } else {
-      // For external properties, open a modal or navigate to external property form
-      alert('Add external property – feature coming soon');
+      navigate('/dashboard/estate-firm/add-external-property');
     }
   };
 
@@ -87,30 +119,34 @@ const EstateProperties = () => {
   };
 
   const handleEditProperty = (property) => {
-    // For now, just navigate to the listing detail page (if it's a RentEasy property)
     if (property.source === 'external') {
-      alert('Edit external property – feature coming soon');
+      navigate(`/dashboard/estate-firm/properties/${property.id}/edit`);
     } else {
       navigate(`/listings/${property.id}`);
     }
   };
 
-  // Calculate stats (optional, for page header)
   const allProperties = [...properties, ...externalProperties];
   const portfolioStats = {
     totalProperties: allProperties.length,
     rentEasyListings: properties.length,
     externalProperties: externalProperties.length,
-    occupiedProperties: allProperties.filter(p => p.status === 'occupied').length,
-    totalValue: allProperties.reduce((sum, p) => sum + ((p.price || 0) * 5), 0),
+    occupiedProperties: allProperties.reduce((sum, p) => sum + (p.occupiedCount || 0), 0),
+    totalUnits: allProperties.reduce((sum, p) => sum + (p.unitCount || 1), 0),
     monthlyRevenue: allProperties.reduce((sum, p) => {
-      if (p.status !== 'occupied') return sum;
-      let multiplier = 1;
-      if (p.rent_frequency === 'yearly') multiplier = 1/12;
-      if (p.rent_frequency === 'quarterly') multiplier = 1/3;
-      if (p.rent_frequency === 'weekly') multiplier = 52/12;
-      return sum + ((p.price || 0) * multiplier);
-    }, 0)
+      if (p.source === 'external') {
+        return sum + (p.monthlyRent || 0);
+      } else {
+        // For listings, compute monthly rent
+        const price = parseFloat(p.price) || 0;
+        const freq = p.rent_frequency || 'yearly';
+        let monthly = 0;
+        if (freq === 'yearly') monthly = price / 12;
+        else if (freq === 'monthly') monthly = price;
+        else if (freq === 'quarterly') monthly = price / 3;
+        return sum + (p.status === 'rented' ? monthly : 0);
+      }
+    }, 0),
   };
 
   if (loading) {
@@ -126,13 +162,13 @@ const EstateProperties = () => {
 
   return (
     <div className="estate-properties">
-      {/* Optional: display stats header */}
       <div className="portfolio-header">
         <h2>Property Portfolio</h2>
         <div className="stats">
           <span>Total: {portfolioStats.totalProperties}</span>
           <span>RentEasy: {portfolioStats.rentEasyListings}</span>
           <span>External: {portfolioStats.externalProperties}</span>
+          <span>Units: {portfolioStats.totalUnits}</span>
         </div>
       </div>
 
@@ -140,9 +176,6 @@ const EstateProperties = () => {
         onAddProperty={handleAddProperty}
         onBulkUpload={handleBulkUpload}
         onEditProperty={handleEditProperty}
-        // You could also pass the pre‑loaded properties if you want to avoid duplicate fetching,
-        // but PortfolioManager currently fetches its own data. If you prefer to pass them,
-        // you'd need to modify PortfolioManager to accept a `properties` prop.
       />
     </div>
   );

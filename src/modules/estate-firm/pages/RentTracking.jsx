@@ -1,6 +1,8 @@
+// src/modules/estate-firm/pages/RentTracking.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   DollarSign, Calendar, CheckCircle, XCircle, Clock,
@@ -12,19 +14,18 @@ import './RentTracking.css';
 const RentTracking = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  // State for data
+
   const [payments, setPayments] = useState([]);
   const [filteredPayments, setFilteredPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   // Filters
   const [statusFilter, setStatusFilter] = useState('all');
   const [propertyFilter, setPropertyFilter] = useState('all');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Stats
   const [stats, setStats] = useState({
     totalDue: 0,
@@ -40,115 +41,132 @@ const RentTracking = () => {
     if (user) loadData();
   }, [user]);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // 1. Get estate firm profile ID
-      const { data: profile, error: profileError } = await supabase
-        .from('estate_firm_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
+ const loadData = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    // 1. Get estate firm profile ID
+    const { data: profile, error: profileError } = await supabase
+      .from('estate_firm_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .single();
 
-      if (profileError) throw profileError;
-      if (!profile) throw new Error('Estate firm profile not found');
+    if (profileError) throw profileError;
+    if (!profile) throw new Error('Estate firm profile not found');
 
-      // 2. Fetch all properties for this firm
-      const { data: props, error: propsError } = await supabase
-        .from('properties')
-        .select('id, name, title, address')
-        .eq('estate_firm_id', profile.id);
+    // 2. Fetch all properties for this firm
+    const { data: props, error: propsError } = await supabase
+      .from('properties')
+      .select('id, name, address')
+      .eq('estate_firm_id', profile.id);
 
-      if (propsError) throw propsError;
-      setProperties(props || []);
+    if (propsError) throw propsError;
+    setProperties(props || []);
 
-      // 3. Get all units for these properties
-      const propertyIds = (props || []).map(p => p.id);
-      let units = [];
-      if (propertyIds.length > 0) {
-        const { data: unitsData, error: unitsError } = await supabase
-          .from('units')
-          .select('id, unit_number, property_id, tenant_id')
-          .in('property_id', propertyIds);
-        if (unitsError) throw unitsError;
-        units = unitsData || [];
-      }
-
-      // 4. Fetch rent payments for these units
-      const unitIds = units.map(u => u.id);
-      let paymentsData = [];
-      if (unitIds.length > 0) {
-        const { data: pays, error: paysError } = await supabase
-          .from('rent_payments')
-          .select(`
-            *,
-            unit:unit_id (
-              unit_number,
-              property:property_id (id, name, title)
-            ),
-            tenant:tenant_id (id, name, email, phone)
-          `)
-          .in('unit_id', unitIds)
-          .order('due_date', { ascending: false });
-        if (paysError) throw paysError;
-        paymentsData = pays || [];
-      }
-
-      setPayments(paymentsData);
-      applyFilters(paymentsData, statusFilter, propertyFilter, dateRange, searchTerm);
-      calculateStats(paymentsData);
-    } catch (err) {
-      console.error('Error loading rent payments:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    // 3. Get all units for these properties (only columns that exist)
+    const propertyIds = (props || []).map(p => p.id);
+    let units = [];
+    let unitsMap = {};
+    if (propertyIds.length > 0) {
+      // Select only columns that exist in your units table
+      const { data: unitsData, error: unitsError } = await supabase
+        .from('units')
+        .select('id, unit_number, property_id, tenant_name, tenant_phone')
+        .in('property_id', propertyIds);
+      if (unitsError) throw unitsError;
+      units = unitsData || [];
+      unitsMap = units.reduce((acc, u) => {
+        acc[u.id] = u;
+        return acc;
+      }, {});
     }
-  };
+
+    // 4. Fetch rent payments from unified payments table
+    const unitIds = units.map(u => u.id);
+    let paymentsData = [];
+    if (unitIds.length > 0) {
+      const { data: pays, error: paysError } = await supabase
+        .from('payments')
+        .select(`
+          *,
+          unit:unit_id (
+            unit_number,
+            property:property_id (id, name)
+          )
+        `)
+        .in('unit_id', unitIds)
+        .eq('payment_type', 'rent')
+        .order('payment_date', { ascending: false });
+
+      if (paysError) throw paysError;
+
+      paymentsData = (pays || []).map(payment => {
+        const unit = unitsMap[payment.unit_id];
+        return {
+          ...payment,
+          tenant_name: unit?.tenant_name || 'Unknown',
+          tenant_phone: unit?.tenant_phone || '',
+          unit_number: unit?.unit_number,
+          property_name: payment.unit?.property?.name
+        };
+      });
+    }
+
+    setPayments(paymentsData);
+    applyFilters(paymentsData, statusFilter, propertyFilter, dateRange, searchTerm);
+    calculateStats(paymentsData);
+  } catch (err) {
+    console.error('Error loading rent payments:', err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const applyFilters = (data, status, property, date, search) => {
     let filtered = [...data];
-    
+
     if (status !== 'all') {
       filtered = filtered.filter(p => p.status === status);
     }
-    
+
     if (property !== 'all') {
       filtered = filtered.filter(p => p.unit?.property?.id === property);
     }
-    
+
     if (date.start && date.end) {
       const start = new Date(date.start);
       const end = new Date(date.end);
       filtered = filtered.filter(p => {
-        const due = new Date(p.due_date);
+        const due = new Date(p.payment_date);
         return due >= start && due <= end;
       });
     }
-    
+
     if (search.trim()) {
       const term = search.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.tenant?.name?.toLowerCase().includes(term) ||
-        p.unit?.unit_number?.toLowerCase().includes(term) ||
-        p.unit?.property?.name?.toLowerCase().includes(term)
+      filtered = filtered.filter(p =>
+        p.tenant_name?.toLowerCase().includes(term) ||
+        p.unit_number?.toLowerCase().includes(term) ||
+        p.property_name?.toLowerCase().includes(term)
       );
     }
-    
+
     setFilteredPayments(filtered);
   };
 
   const calculateStats = (data) => {
-    const totalDue = data.reduce((sum, p) => sum + (p.amount_due || 0), 0);
+    const totalDue = data.reduce((sum, p) => sum + (p.amount || 0), 0);
     const totalPaid = data
       .filter(p => p.status === 'confirmed')
-      .reduce((sum, p) => sum + (p.amount_due || 0), 0);
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
     const pendingAmount = data
       .filter(p => p.status === 'pending')
-      .reduce((sum, p) => sum + (p.amount_due || 0), 0);
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
     const today = new Date();
-    const overdueCount = data.filter(p => 
-      p.status !== 'confirmed' && new Date(p.due_date) < today
+    const overdueCount = data.filter(p =>
+      p.status !== 'confirmed' && new Date(p.payment_date) < today
     ).length;
 
     setStats({ totalDue, totalPaid, pendingAmount, overdueCount });
@@ -176,9 +194,9 @@ const RentTracking = () => {
     if (!window.confirm('Confirm this payment? It will be marked as confirmed.')) return;
     try {
       const { error } = await supabase
-        .from('rent_payments')
-        .update({ 
-          status: 'confirmed', 
+        .from('payments')
+        .update({
+          status: 'confirmed',
           confirmed_by: user.id,
           confirmed_at: new Date().toISOString()
         })
@@ -194,9 +212,9 @@ const RentTracking = () => {
     const reason = prompt('Enter rejection reason (optional)');
     try {
       const { error } = await supabase
-        .from('rent_payments')
-        .update({ 
-          status: 'rejected', 
+        .from('payments')
+        .update({
+          status: 'rejected',
           notes: reason || 'Rejected by estate firm'
         })
         .eq('id', paymentId);
@@ -231,12 +249,8 @@ const RentTracking = () => {
   };
 
   if (loading) {
-    return (
-      <div className="rent-tracking-page">
-        <div className="loading-spinner">Loading payments...</div>
-      </div>
-    );
-  }
+  return <RentEasyLoader message="Loading your Profile..." fullScreen />;
+}
 
   if (error) {
     return (
@@ -312,22 +326,22 @@ const RentTracking = () => {
           <select value={propertyFilter} onChange={(e) => handleFilterChange('property', e.target.value)}>
             <option value="all">All Properties</option>
             {properties.map(p => (
-              <option key={p.id} value={p.id}>{p.name || p.title || p.address}</option>
+              <option key={p.id} value={p.id}>{p.name || p.address}</option>
             ))}
           </select>
         </div>
 
         <div className="filter-group">
           <label>Date Range:</label>
-          <input 
-            type="date" 
-            value={dateRange.start} 
+          <input
+            type="date"
+            value={dateRange.start}
             onChange={(e) => handleFilterChange('date', { ...dateRange, start: e.target.value })}
           />
           <span>to</span>
-          <input 
-            type="date" 
-            value={dateRange.end} 
+          <input
+            type="date"
+            value={dateRange.end}
             onChange={(e) => handleFilterChange('date', { ...dateRange, end: e.target.value })}
           />
         </div>
@@ -354,10 +368,10 @@ const RentTracking = () => {
             <tr>
               <th>Property / Unit</th>
               <th>Tenant</th>
-              <th>Due Date</th>
+              <th>Payment Date</th>
               <th>Amount</th>
               <th>Status</th>
-              <th>Proof</th>
+              <th>Receipt</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -367,26 +381,26 @@ const RentTracking = () => {
                 <tr key={payment.id}>
                   <td>
                     <div className="property-info">
-                      <strong>{payment.unit?.property?.name || payment.unit?.property?.title}</strong>
-                      <span className="unit-number">Unit {payment.unit?.unit_number}</span>
+                      <strong>{payment.property_name || 'Unknown Property'}</strong>
+                      <span className="unit-number">Unit {payment.unit_number}</span>
                     </div>
                   </td>
                   <td>
                     <div className="tenant-info">
-                      <span className="tenant-name">{payment.tenant?.name || 'Unknown'}</span>
-                      <small>{payment.tenant?.phone}</small>
+                      <span className="tenant-name">{payment.tenant_name}</span>
+                      <small>{payment.tenant_phone}</small>
                     </div>
                   </td>
-                  <td>{formatDate(payment.due_date)}</td>
-                  <td className="amount">{formatCurrency(payment.amount_due)}</td>
+                  <td>{formatDate(payment.payment_date)}</td>
+                  <td className="amount">{formatCurrency(payment.amount)}</td>
                   <td>{getStatusBadge(payment.status)}</td>
                   <td>
-                    {payment.proof_url ? (
-                      <a href={payment.proof_url} target="_blank" rel="noopener" className="btn-proof">
+                    {payment.receipt_url ? (
+                      <a href={payment.receipt_url} target="_blank" rel="noopener" className="btn-proof">
                         <Eye size={16} /> View
                       </a>
                     ) : (
-                      <span className="no-proof">No proof</span>
+                      <span className="no-proof">No receipt</span>
                     )}
                   </td>
                   <td>
@@ -400,8 +414,8 @@ const RentTracking = () => {
                         </button>
                       </div>
                     )}
-                    {payment.status === 'paid' && (
-                      <span className="action-pending">Awaiting confirmation</span>
+                    {payment.status === 'confirmed' && (
+                      <span className="action-pending">Confirmed</span>
                     )}
                   </td>
                 </tr>

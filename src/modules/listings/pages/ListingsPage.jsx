@@ -10,6 +10,7 @@ import VerifiedBadge, { InlineVerifiedBadge } from '../../../shared/components/V
 import ListingDetails from '../components/ListingDetails';
 import FilterBar from '../components/FilterBar';
 import ListingCard from '../components/ListingCard';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { locationService } from '../../../shared/services/locationService';
 import { 
   Search, Filter, Bell, Shield, UserCheck, Building, Home, 
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 import './ListingsPage.css';
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 20;
 const BOOST_RATIO = 0.8;
 
 const ListingsPage = () => {
@@ -228,6 +229,7 @@ const ListingsPage = () => {
         let posterName = 'Anonymous';
         let posterAvatar = null;
         let userVerified = false;
+    
 
         if (listing.estate_firm_id && estateFirmMap[listing.estate_firm_id]) {
           const firm = estateFirmMap[listing.estate_firm_id];
@@ -248,6 +250,13 @@ const ListingsPage = () => {
           posterAvatar = tenant.avatar_url;
           userVerified = tenant.kyc_status === 'approved';
         }
+
+        
+if (!posterRole) {
+  posterRole = listing.poster_role;
+  posterName = listing.poster_name || 'Anonymous';
+  // If the listing has a userVerified field (e.g., from profiles), use it, but we don't have that here.
+}
 
         return {
           ...listing,
@@ -489,36 +498,13 @@ const ListingsPage = () => {
 
   // Loading skeleton
   if (isLoading) {
-    return (
-      <div className="listings-page">
-        <Header />
-        <main className="listings-main">
-          <div className="page-header">
-            <div className="header-inner">
-              <div className="header-content">
-                <h1>Available Properties</h1>
-                <p>Browse homes posted by outgoing tenants and landlords</p>
-              </div>
-            </div>
-          </div>
-          <div className="listings-content">
-            <div className="skeleton-grid">
-              {[...Array(ITEMS_PER_PAGE)].map((_, i) => (
-                <div key={i} className="skeleton-card">
-                  <div className="skeleton-image" />
-                  <div className="skeleton-content">
-                    <div className="skeleton-line" />
-                    <div className="skeleton-line short" />
-                    <div className="skeleton-line" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  return (
+    <div className="listings-page">
+      <Header />
+      <RentEasyLoader message="Finding properties for you..." />
+    </div>
+  );
+}
 
   return (
     <div className="listings-page">

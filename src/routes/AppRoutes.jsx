@@ -135,7 +135,12 @@ const EstateAddExternalProperty = lazy(() => import('../modules/estate-firm/page
 const PropertyDetail = lazy(() => import('../modules/estate-firm/pages/PropertyDetail'));
 const PaymentsList = lazy(() => import('../modules/estate-firm/pages/PaymentsList'));
 const RentTracking = lazy(() => import('../modules/estate-firm/pages/RentTracking'));
+const PortfolioManager = lazy(() => import('../modules/estate-firm/components/PortfolioManager'));
+const EstateLandlords = lazy(() => import('../modules/estate-firm/pages/EstateLandlords'));
+const EstateMyListings = lazy(() => import('../modules/estate-firm/pages/EstateMyListings'));
 const EstateEditProperty = lazy(() => import('../modules/estate-firm/pages/EstateEditProperty'));
+const EstateSubscription = lazy(() => import('../modules/estate-firm/pages/EstateSubscription'));
+const EstateLandlordDetail = lazy(() => import('../modules/estate-firm/pages/EstateLandlordDetail'));
 
 
 // === SUPER ADMIN IMPORTS ===
@@ -464,6 +469,12 @@ const AppRoutes = () => {
         <Route path="rent-tracking" element={<RentTracking />} />
         <Route path="add-external-property" element={<EstateAddExternalProperty />} />
         <Route path="properties/:id/edit" element={<EstateEditProperty />} />
+        <Route path="portfolio" element={<PortfolioManager />} />
+        <Route path="landlords" element={<EstateLandlords />} />
+        <Route path="my-listings" element={<EstateMyListings />} />
+        <Route path="reports" element={<EstateReports />} /> 
+        <Route path="landlords/:landlordId" element={<EstateLandlordDetail />} />
+        <Route path="subscription" element={<EstateSubscription />} />
       </Route>
 
       {/* =================== STANDALONE POST PROPERTY =================== */}

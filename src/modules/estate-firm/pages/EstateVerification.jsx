@@ -6,6 +6,7 @@ import {
   CheckCircle, XCircle, Camera, Download,
   ArrowRight, AlertCircle, HelpCircle
 } from 'lucide-react';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import './EstateVerification.css';
 
@@ -13,6 +14,7 @@ const EstateVerification = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     businessName: '',
     businessType: 'estate-firm',
@@ -496,6 +498,11 @@ const EstateVerification = () => {
       setIsSubmitting(false);
     }
   };
+
+  
+   if (loading) {
+  return <RentEasyLoader message="Loading your clients..." fullScreen />;
+}
 
   const renderStep = () => {
     switch(currentStep) {

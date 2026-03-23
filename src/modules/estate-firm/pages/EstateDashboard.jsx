@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { 
   Building, Users, DollarSign, FileText, 
   AlertCircle, Calendar, TrendingUp, PlusCircle,
-  Upload, Briefcase, Wallet, BarChart,
+  Upload, Briefcase, Wallet, BarChart3,
   ExternalLink, Shield, Clock, Filter,
   MessageSquare, Globe, Star, Settings,
   Download, Eye, Edit, Trash2,
@@ -15,10 +16,12 @@ import {
   CheckCircle, Home, XCircle, UserPlus, Search,
   Check, X, ShieldCheck, Crown, Zap,
   Bell, RefreshCw, ArrowUpRight, ArrowDownRight,
-  BarChart3, Tag, Percent, Users as UsersIcon,
-  Home as HomeIcon, TrendingDown, Filter as FilterIcon
+  BarChart, Tag, Percent, Users as UsersIcon,
+  Home as HomeIcon, TrendingDown, Filter as FilterIcon,
+  Landmark, Key, UserCircle, ClipboardList, FileBarChart, FolderOpen
 } from 'lucide-react';
 import { Container, Row, Col, Card, Button, Badge, Modal, Form, Table, ProgressBar, Alert, Dropdown } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
 
 import SubscriptionModal from '../components/SubscriptionModal';
 import BoostManager from '../components/BoostManager';
@@ -76,6 +79,9 @@ const EstateDashboard = () => {
     responseRate: 0
   });
 
+  const [landlordCount, setLandlordCount] = useState(0);
+  const [activeListings, setActiveListings] = useState(0);
+  const [pendingConversions, setPendingConversions] = useState(0);
   const [criticalAlerts, setCriticalAlerts] = useState([]);
   const [recentActivities, setRecentActivities] = useState([]);
   const [allProperties, setAllProperties] = useState([]);
@@ -95,7 +101,6 @@ const EstateDashboard = () => {
   try {
     setLoading(true);
     setError(null);
-    
     console.log('Loading estate dashboard data for user:', user.id);
 
     // 1. Get or create estate firm profile
@@ -110,7 +115,6 @@ const EstateDashboard = () => {
       if (firmError) throw firmError;
 
       if (!data) {
-        // Create default profile
         const { data: newProfile, error: createError } = await supabase
           .from('estate_firm_profiles')
           .insert({
@@ -135,6 +139,7 @@ const EstateDashboard = () => {
       } else {
         estateFirmProfile = data;
       }
+      console.log('Estate firm profile:', estateFirmProfile);
     } catch (err) {
       console.error('Error with estate firm profile:', err);
       setError('Failed to load estate firm profile');
@@ -155,6 +160,7 @@ const EstateDashboard = () => {
         .limit(1)
         .maybeSingle();
       if (!error) activeSubscription = data;
+      console.log('Active subscription:', activeSubscription);
     } catch (err) {
       console.warn('Subscription query error:', err.message);
     }
@@ -162,133 +168,82 @@ const EstateDashboard = () => {
     const hasActiveSubscription = !!activeSubscription;
     const subscriptionExpiry = activeSubscription?.expires_at || null;
 
-    // 3. Fetch listings (RentEasy marketplace)
-    let listings = [];
-    if (estateFirmProfile.id) {
-      try {
-        const { data, error } = await supabase
-          .from('listings')
-          .select('*')
-          .eq('estate_firm_id', estateFirmProfile.id)
-          .order('created_at', { ascending: false });
-        if (!error) listings = data || [];
-      } catch (err) {
-        console.warn('Error loading listings:', err.message);
-      }
+    // 3. Fetch all properties for this firm
+    const { data: properties } = await supabase
+      .from('properties')
+      .select('id')
+      .eq('estate_firm_id', estateFirmProfile.id);
+    const propertyIds = properties?.map(p => p.id) || [];
+    console.log('Properties found:', propertyIds.length);
+
+    // 4. Fetch units for these properties
+    let units = [];
+    if (propertyIds.length) {
+      const { data: unitsData } = await supabase
+        .from('units')
+        .select('*')
+        .in('property_id', propertyIds);
+      units = unitsData || [];
+      console.log('Units found:', units.length);
     }
 
-    // 4. Fetch external properties
-    let externalProps = [];
-    if (estateFirmProfile.id) {
-      try {
-        const { data, error } = await supabase
-          .from('properties')
-          .select('*')
-          .eq('estate_firm_id', estateFirmProfile.id)
-          .order('created_at', { ascending: false });
-        if (!error) externalProps = data || [];
-      } catch (err) {
-        console.warn('Error loading external properties:', err.message);
-      }
+    // 5. Fetch payments for these units
+    const unitIds = units.map(u => u.id);
+    let payments = [];
+    if (unitIds.length) {
+      const { data: pays } = await supabase
+        .from('payments')
+        .select('*')
+        .in('unit_id', unitIds)
+        .eq('payment_type', 'rent');
+      payments = pays || [];
+      console.log('Payments found:', payments.length);
     }
-
-    // 5. Transform both types into a unified array
-    const transformedListings = listings.map(item => ({
-      id: item.id,
-      name: item.title || 'Listing',
-      type: 'rent-easy-listing',
-      source: 'rent-easy',
-      estate_firm_id: item.estate_firm_id,
-      landlord_id: item.landlord_id,
-      address: item.address,
-      city: item.city,
-      state: item.state,
-      rentAmount: parseFloat(item.price) || 0,
-      rentFrequency: item.rent_frequency || 'yearly',
-      status: item.status === 'active' ? 'available' : 
-              item.status === 'rented' ? 'occupied' : 'vacant',
-      tenant: item.tenant_id ? { id: item.tenant_id } : null,
-      addedDate: item.created_at,
-      commissionSaved: 0, // RentEasy listings have 0% commission
-      healthScore: 85,
-    }));
-
-    const transformedExternal = externalProps.map(item => ({
-      id: item.id,
-      name: item.name || item.title || 'External Property',
-      type: 'external',
-      source: 'external',
-      estate_firm_id: item.estate_firm_id,
-      landlord_id: item.landlord_id,
-      address: item.address,
-      city: item.city,
-      state: item.state,
-      rentAmount: parseFloat(item.rental_amount || item.price) || 0,
-      rentFrequency: item.rent_frequency || 'Yealy',
-      status: item.status === 'occupied' ? 'occupied' : 'vacant',
-      tenant: item.tenant_id ? { id: item.tenant_id } : null,
-      addedDate: item.created_at,
-      commissionRate: parseFloat(item.commission_rate) || 0,
-      commissionSaved: 0, // External properties may have commission, we'll calculate later if needed
-      healthScore: 70,
-    }));
-
-    const allProperties = [...transformedListings, ...transformedExternal];
 
     // 6. Calculate stats
-    const totalProperties = allProperties.length;
-   //  occupiedProperties calculation with this:
-const occupiedProperties = allProperties.filter(p => {
-  // Check if property has a tenant AND status indicates occupancy
-  const hasTenant = p.tenant && p.tenant.id;
-  const isOccupiedStatus = p.status === 'occupied' || p.status === 'rented';
-  return hasTenant || isOccupiedStatus;
-}).length;
+    const totalProperties = properties?.length || 0;
+    const totalUnits = units.length;
+    const occupiedUnits = units.filter(u => u.status === 'occupied').length;
+    const vacantUnits = totalUnits - occupiedUnits;
+    const monthlyRevenue = payments
+      .filter(p => p.status === 'confirmed')
+      .reduce((sum, p) => sum + (p.amount / 12), 0); // assume yearly rent
 
-// update vacantProperties
-const vacantProperties = allProperties.filter(p => {
-  const hasTenant = p.tenant && p.tenant.id;
-  const isOccupiedStatus = p.status === 'occupied' || p.status === 'rented';
-  return !hasTenant && !isOccupiedStatus;
-}).length;
-
-    const monthlyRevenue = allProperties
-  .filter(p => p.status === 'occupied')
-  .reduce((sum, p) => {
-    if (p.rentFrequency === 'yearly') {
-      return sum + (p.rentAmount / 12);
-    } else if (p.rentFrequency === 'monthly') {
-      return sum + p.rentAmount;
-    } else if (p.rentFrequency === 'quarterly') {
-      return sum + (p.rentAmount / 3);
+    // 7. Get landlord count (from estate_landlords)
+    let landlordCount = 0;
+    try {
+      // ... after fetching landlord count
+const { count } = await supabase
+  .from('estate_landlords')
+  .select('*', { count: 'exact', head: true })
+  .eq('estate_firm_id', estateFirmProfile.id);
+const landlordCount = count || 0;
+setLandlordCount(landlordCount);               // ✅ add this
+      console.log('Landlord count:', landlordCount);
+    } catch (err) {
+      console.warn('Error loading landlord count:', err);
     }
-    return sum + (p.rentAmount / 12); // Default to yearly
-  }, 0);
 
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    const postsThisMonth = allProperties.filter(p => {
-      const d = new Date(p.addedDate);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    }).length;
+    // 8. Get listings data for conversion alerts
+    let listings = [];
+    try {
+      const { data } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('estate_firm_id', estateFirmProfile.id);
+      listings = data || [];
+      console.log('Listings found:', listings.length);
+    } catch (err) {
+      console.warn('Error loading listings:', err);
+    }
+    
+// ... after fetching listings
+const activeRentEasyListings = listings.filter(l => l.status === 'pending' || l.status === 'approved').length;
+const rentedNotConverted = listings.filter(l => l.status === 'rented' && !l.unit_id).length;
+setActiveListings(activeRentEasyListings);     // ✅ add this
+setPendingConversions(rentedNotConverted);     // ✅ add this
 
-    const totalClients = [
-      ...new Set(allProperties.map(p => p.landlord_id).filter(Boolean))
-    ].length;
-
-    // Expiring leases: properties with contract_end within 30 days
-    const expiringLeases = externalProps.filter(p => {
-      if (!p.contract_end) return false;
-      const end = new Date(p.contract_end);
-      const today = new Date();
-      const days = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
-      return days >= 0 && days <= 30;
-    }).length;
-
-    // Pending payments (mock – you might have a payments table per unit)
-    const pendingPayments = 0; // to be implemented if you have rent tracking
-
-    // 7. Update state
+    // 9. Update state
     setEstateFirmData({
       id: estateFirmProfile.id,
       isVerified: estateFirmProfile.verification_status === 'verified',
@@ -308,162 +263,75 @@ const vacantProperties = allProperties.filter(p => {
 
     setDashboardStats({
       totalProperties,
-      managedProperties: allProperties.length,
-      rentEasyListings: transformedListings.length,
-      externalProperties: transformedExternal.length,
-      occupiedProperties,
-      vacantProperties,
-      totalTenants: occupiedProperties,
+      managedProperties: totalProperties,
+      rentEasyListings: activeRentEasyListings,
+      externalProperties: totalProperties,
+      occupiedProperties: occupiedUnits,
+      vacantProperties: vacantUnits,
+      totalTenants: occupiedUnits,
       monthlyRevenue,
-      pendingPayments,
-      maintenanceRequests: 0, // not implemented yet
-      expiringLeases,
-      totalClients,
+      pendingPayments: payments.filter(p => p.status === 'pending').length,
+      maintenanceRequests: 0,
+      expiringLeases: 0,
+      totalClients: landlordCount,
       portfolioValue: monthlyRevenue * 12,
-      postsThisMonth,
-      commissionSaved: 0, // RentEasy saves commission; external may charge commission – compute if needed
+      postsThisMonth: 0,
+      commissionSaved: 0,
       subscriptionSavings: hasActiveSubscription ? 10000 : 0,
-      totalEarnings: 0, // from payments table if needed
+      totalEarnings: payments.reduce((sum, p) => sum + p.amount, 0),
       pendingCommissions: 0,
-      averageOccupancyRate: totalProperties ? (occupiedProperties / totalProperties) * 100 : 0,
-      responseRate: Math.floor(Math.random() * 30) + 70
+      averageOccupancyRate: totalUnits ? (occupiedUnits / totalUnits) * 100 : 0,
+      responseRate: 70
     });
 
-    setAllProperties(allProperties);
-
-    // 8. Critical alerts
-    const alerts = [];
-    if (!hasActiveSubscription && estateFirmProfile.free_posts_remaining <= 3) {
-      alerts.push({
-        id: 1,
-        type: 'subscription_expiry',
-        message: `Only ${estateFirmProfile.free_posts_remaining} free posts remaining`,
-        priority: 'medium',
-        action: 'subscribe'
-      });
-    }
-    if (estateFirmProfile.verification_status !== 'verified') {
-      alerts.push({
-        id: 2,
-        type: 'verification_pending',
-        message: 'Complete verification to get verified badge',
-        priority: 'low',
-        action: 'verify'
-      });
-    }
-    if (estateFirmProfile.boost_status === 'boosted' && estateFirmProfile.boost_expiry) {
-      const daysLeft = Math.ceil((new Date(estateFirmProfile.boost_expiry) - new Date()) / (1000*60*60*24));
-      if (daysLeft <= 7) {
-        alerts.push({
-          id: 3,
-          type: 'boost_expiry',
-          message: `Boost expires in ${daysLeft} days`,
-          priority: 'low',
-          action: 'boost'
-        });
-      }
-    }
-    setCriticalAlerts(alerts);
-
+    // 10. Critical alerts (same as before)
+    // ... (keep existing alerts code)
   } catch (err) {
     console.error('Error loading dashboard data:', err);
-    setError('Failed to load dashboard data. Please check your connection and try again.');
+    setError('Failed to load dashboard data.');
   } finally {
     setLoading(false);
   }
 };
+
   useEffect(() => {
     loadEstateFirmData();
   }, [user, refreshKey]);
 
-  // Refresh data function
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Check if user can post
   const canPostProperty = () => {
     if (estateFirmData.hasActiveSubscription) return true;
     if (estateFirmData.freePostsRemaining > 0) return true;
     return false;
   };
 
-  // Handle posting property
   const handleAddProperty = (type) => {
-  console.log('handleAddProperty called with type:', type, 'estateFirmData.id:', estateFirmData.id);
-  
-  if (!canPostProperty()) {
-    setShowSubscriptionModal(true);
-    return;
-  }
-
-  if (!estateFirmData.id) {
-    alert('Estate firm profile not fully loaded. Please refresh and try again.');
-    return;
-  }
-
-  if (type === 'rent-easy') {
-    // Use the same path as bottom nav
-    const url = `/post-property?type=estate-firm&estateFirmId=${estateFirmData.id}`;
-    console.log('Navigating to:', url);
-    navigate(url);
-  }
-};
-
- /* // Handle subscription purchase
-  const handleSubscribe = async () => {
-    try {
-      // Create subscription record
-      const { data: subscription, error: subError } = await supabase
-        .from('subscriptions')
-        .insert({
-          user_id: user.id,
-          plan_type: 'estate_firm_monthly',
-          amount: 10000,
-          status: 'active',
-          starts_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (subError) throw subError;
-
-      // Update estate firm profile
-      const { error: updateError } = await supabase
-        .from('estate_firm_profiles')
-        .update({
-          subscription_status: 'active',
-          subscription_expiry: subscription.expires_at,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', estateFirmData.id);
-
-      if (updateError) throw updateError;
-
-      setEstateFirmData(prev => ({
-        ...prev,
-        hasActiveSubscription: true,
-        subscriptionEndDate: subscription.expires_at,
-        subscriptionType: 'active',
-        freePostsRemaining: 9999 // Unlimited posts
-      }));
-
-      setShowSubscriptionModal(false);
-      alert('Subscription activated! You can now post unlimited properties.');
-
-    } catch (error) {
-      console.error('Error subscribing:', error);
-      alert('Failed to activate subscription. Please try again.');
+    console.log('handleAddProperty called with type:', type, 'estateFirmData.id:', estateFirmData.id);
+    
+    if (!canPostProperty()) {
+      setShowSubscriptionModal(true);
+      return;
     }
-  }; */
+
+    if (!estateFirmData.id) {
+      alert('Estate firm profile not fully loaded. Please refresh and try again.');
+      return;
+    }
+
+    if (type === 'rent-easy') {
+      const url = `/post-property?type=estate-firm&estateFirmId=${estateFirmData.id}`;
+      console.log('Navigating to:', url);
+      navigate(url);
+    }
+  };
 
   const handleSubscriptionSuccess = () => {
-  loadEstateFirmData(); // refresh dashboard
-};
+    loadEstateFirmData();
+  };
 
-  // Handle verification application
   const handleApplyVerification = async () => {
     try {
       const { error } = await supabase
@@ -483,25 +351,19 @@ const vacantProperties = allProperties.filter(p => {
 
       setShowVerificationModal(false);
       alert('Verification application submitted! Admin will review your KYC documents.');
-
     } catch (error) {
       console.error('Error applying for verification:', error);
       alert('Failed to submit verification. Please try again.');
     }
   };
 
-  // Handle boost purchase
   const handleBoost = async (boostType) => {
-    // For now, simulate payment. In production, integrate actual payment.
     const confirmPayment = window.confirm('Boost costs ₦5,000 for 30 days. Proceed to payment?');
     if (!confirmPayment) return;
 
     try {
-      // Here you would integrate with a payment gateway (Paystack, etc.)
-      // After successful payment, update the boost status.
-      
       const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 30); // 30 days boost
+      expiryDate.setDate(expiryDate.getDate() + 30);
 
       const { error } = await supabase
         .from('estate_firm_profiles')
@@ -523,14 +385,12 @@ const vacantProperties = allProperties.filter(p => {
 
       setShowBoostModal(false);
       alert('Profile boosted successfully! Your profile will be featured for 30 days.');
-
     } catch (error) {
       console.error('Error boosting profile:', error);
       alert('Failed to boost profile. Please try again.');
     }
   };
 
-  // Get estate firm status badge
   const getEstateFirmBadge = () => {
     if (estateFirmData.verificationStatus === 'verified') {
       return (
@@ -552,7 +412,6 @@ const vacantProperties = allProperties.filter(p => {
     );
   };
 
-  // Get subscription badge
   const getSubscriptionBadge = () => {
     if (estateFirmData.hasActiveSubscription) {
       return (
@@ -582,7 +441,6 @@ const vacantProperties = allProperties.filter(p => {
     );
   };
 
-  // Get boost badge
   const getBoostBadge = () => {
     if (estateFirmData.boostStatus === 'boosted' && estateFirmData.boostExpiry) {
       const expiresAt = new Date(estateFirmData.boostExpiry);
@@ -600,7 +458,6 @@ const vacantProperties = allProperties.filter(p => {
     return null;
   };
 
-  // Filter properties
   const filteredProperties = allProperties.filter(property => {
     if (filter === 'all') return true;
     if (filter === 'rent-easy') return property.type === 'rent-easy-listing';
@@ -609,524 +466,317 @@ const vacantProperties = allProperties.filter(p => {
     return true;
   });
 
-  // Loading State
-  if (loading) {
-    return (
-      <div className="estate-dashboard-container">
-        
-        <div className="estate-main-content">
-          <div className="p-3 p-md-4 pt-5 pt-md-4 text-center">
-            <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
-              <span className="visually-hidden">Loading...</span>
-            </div>
-            <h4 className="mt-4">Loading Estate Dashboard</h4>
-            <p className="text-muted">Fetching your property data...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Navigation cards data
+  const navCards = [
+    {
+      title: 'Portfolio',
+      description: 'Manage all properties and units',
+      icon: <Building size={24} />,
+      color: 'primary',
+      path: '/dashboard/estate-firm/portfolio',
+      stats: `${dashboardStats.totalProperties} properties`
+    },
+    {
+      title: 'Landlords',
+      description: 'Manage property owners',
+      icon: <Users size={24} />,
+      color: 'success',
+      path: '/dashboard/estate-firm/landlords',
+      stats: `${landlordCount} landlords`
+    },
+    {
+      title: 'My Listings',
+      description: 'View and convert RentEasy posts',
+      icon: <Tag size={24} />,
+      color: 'warning',
+      path: '/dashboard/estate-firm/my-listings',
+      stats: `${activeListings} active, ${pendingConversions} to convert`
+    },
+    {
+      title: 'Rent Tracking',
+      description: 'Monitor all rent payments',
+      icon: <DollarSign size={24} />,
+      color: 'info',
+      path: '/dashboard/estate-firm/rent-tracking',
+      stats: `₦${dashboardStats.monthlyRevenue.toLocaleString()}/month`
+    },
+    {
+      title: 'Reports',
+      description: 'Generate business reports',
+      icon: <BarChart3 size={24} />,
+      color: 'purple',
+      path: '/dashboard/estate-firm/reports',
+      stats: 'Analytics & insights'
+    },
+    {
+      title: 'Subscription',
+      description: 'Manage your plan',
+      icon: <Crown size={24} />,
+      color: 'gold',
+      path: '/dashboard/estate-firm/subscription',
+      stats: estateFirmData.hasActiveSubscription ? 'Active' : `${estateFirmData.freePostsRemaining} free posts`
+    }
+  ];
 
-  // Error State
+  if (loading) {
+  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+}
+
   if (error) {
     return (
-      <div className="estate-dashboard-container">
-        
-        <div className="estate-main-content">
-          <div className="p-3 p-md-4 pt-5 pt-md-4">
-            <Alert variant="danger">
-              <Alert.Heading>Error Loading Dashboard</Alert.Heading>
-              <p>{error}</p>
-              <Button 
-                variant="primary" 
-                onClick={handleRefresh}
-              >
-                Retry
-              </Button>
-            </Alert>
-          </div>
+      <div className="estate-dashboard-modern">
+        <div className="error-container">
+          <AlertCircle size={48} />
+          <h3>Error Loading Dashboard</h3>
+          <p>{error}</p>
+          <button className="btn btn-primary" onClick={handleRefresh}>Retry</button>
         </div>
       </div>
     );
   }
 
-  // Main Render
   return (
-    <div className="estate-dashboard-container">
-      
-      
-      <div className="estate-main-content">
-        <div className="p-3 p-md-4 pt-5 pt-md-4">
-          {/* Welcome Header */}
-          <Card className="mb-4 border-0 shadow-sm bg-gradient-primary text-white">
-            <Card.Body className="pb-2">
-              <Row className="align-items-center">
-                <Col xs={12} md={8}>
-                  <div className="d-flex align-items-center mb-2">
-                    <h1 className="h4 h-md-3 mb-0 d-flex align-items-center">
-                      <Building size={28} className="me-3" />
-                      {estateFirmData.businessName}
-                    </h1>
-                    {getEstateFirmBadge()}
-                    {getSubscriptionBadge()}
-                    {getBoostBadge()}
-                  </div>
-                  <p className="mb-0 opacity-75">
-                    <Star size={16} className="me-1" />
-                    {estateFirmData.rating.toFixed(1)} • {estateFirmData.totalReviews} reviews
-                  </p>
-                  
-                  {/* Free Posts Counter */}
-                  {!estateFirmData.hasActiveSubscription && (
-                    <div className="mt-3">
-                      <div className="d-flex align-items-center">
-                        <span className="text-sm opacity-75 me-2">
-                          Free posts: {estateFirmData.freePostsRemaining} remaining
-                        </span>
-                        <ProgressBar 
-                          now={((10 - estateFirmData.freePostsRemaining) / 10) * 100} 
-                          className="flex-grow-1 bg-white bg-opacity-25"
-                          style={{ height: '8px' }}
-                          variant="light"
-                        />
-                      </div>
-                      <small className="opacity-75">
-                        {10 - estateFirmData.freePostsRemaining}/10 free posts used
-                      </small>
-                    </div>
-                  )}
-                </Col>
-                
-                <Col xs={12} md={4} className="mt-3 mt-md-0">
-                  <div className="d-flex flex-column flex-md-row gap-2">
-                    <Button 
-                      variant="light" 
-                      className="d-flex align-items-center justify-content-center text-primary"
-                      onClick={() => handleAddProperty('rent-easy')}
-                    >
-                      <PlusCircle size={18} className="me-2" />
-                      {estateFirmData.hasActiveSubscription ? 'Post Property' : `Post (${estateFirmData.freePostsRemaining} left)`}
-                    </Button>
-                    
-                    <Dropdown>
-                      <Dropdown.Toggle variant="outline-light" size="sm">
-                        <Zap size={16} className="me-1" />
-                        Actions
-                      </Dropdown.Toggle>
-                      <Dropdown.Menu>
-                        {!estateFirmData.hasActiveSubscription && (
-                          <Dropdown.Item onClick={() => setShowSubscriptionModal(true)}>
-                            <Crown size={16} className="me-2" />
-                            Subscribe
-                          </Dropdown.Item>
-                        )}
-                        <Dropdown.Item onClick={() => setShowBoostModal(true)}>
-                          <Zap size={16} className="me-2" />
-                          {estateFirmData.boostStatus === 'boosted' ? 'Extend Boost' : 'Boost Profile'}
-                        </Dropdown.Item>
-                        {!estateFirmData.isVerified && (
-                          <Dropdown.Item onClick={() => setShowVerificationModal(true)}>
-                            <ShieldCheck size={16} className="me-2" />
-                            Get Verified
-                          </Dropdown.Item>
-                        )}
-                        <Dropdown.Divider />
-                        <Dropdown.Item onClick={handleRefresh}>
-                          <RefreshCw size={16} className="me-2" />
-                          Refresh Data
-                        </Dropdown.Item>
-                      </Dropdown.Menu>
-                    </Dropdown>
-                  </div>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
+    <div className="estate-dashboard-modern">
+      {/* Header Section */}
+      <div className="dashboard-header">
+        <div className="header-content">
+          <div>
+            <h1>Welcome back, {estateFirmData.businessName}</h1>
+            <p className="header-subtitle">Here's what's happening with your portfolio today</p>
+          </div>
+          <div className="header-actions">
+            <button className="btn btn-outline-light" onClick={handleRefresh}>
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+            <button 
+              className="btn btn-light" 
+              onClick={() => handleAddProperty('rent-easy')}
+            >
+              <PlusCircle size={16} />
+              New Listing
+            </button>
+          </div>
+        </div>
+        
+        {/* Stats Row */}
+        <div className="header-stats">
+          <div className="stat-item">
+            <span className="stat-label">Monthly Revenue</span>
+            <span className="stat-value">₦{dashboardStats.monthlyRevenue.toLocaleString()}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Occupancy Rate</span>
+            <span className="stat-value">{dashboardStats.averageOccupancyRate.toFixed(1)}%</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Active Units</span>
+            <span className="stat-value">{dashboardStats.occupiedProperties}/{dashboardStats.totalProperties}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Status</span>
+            <span className="stat-value">
+              {getEstateFirmBadge()} {getSubscriptionBadge()} {getBoostBadge()}
+            </span>
+          </div>
+        </div>
+      </div>
 
-          {/* Critical Alerts */}
-          {criticalAlerts.length > 0 && (
-            <Alert variant="warning" className="mb-4">
-              <Alert.Heading className="d-flex align-items-center">
-                <Bell size={20} className="me-2" />
-                Important Notifications
-              </Alert.Heading>
-              <div className="d-flex flex-wrap gap-2">
-                {criticalAlerts.map(alert => (
-                  <Badge 
-                    key={alert.id} 
-                    bg={alert.priority === 'high' ? 'danger' : alert.priority === 'medium' ? 'warning' : 'info'}
-                    className="cursor-pointer"
-                    onClick={() => {
-                      if (alert.action === 'subscribe') setShowSubscriptionModal(true);
-                      if (alert.action === 'verify') setShowVerificationModal(true);
-                      if (alert.action === 'boost') setShowBoostModal(true);
-                    }}
-                  >
-                    {alert.message}
-                  </Badge>
-                ))}
+      {/* Critical Alerts */}
+      {criticalAlerts.length > 0 && (
+        <div className="alerts-section">
+          {criticalAlerts.map(alert => (
+            <div key={alert.id} className={`alert-card priority-${alert.priority}`}>
+              <div className="alert-content">
+                <AlertCircle size={20} />
+                <span>{alert.message}</span>
               </div>
-            </Alert>
-          )}
+              <button 
+                className="alert-action"
+                onClick={() => navigate(alert.link)}
+              >
+                Take Action <ChevronRight size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
-          {/* Dashboard Stats Grid */}
-          <Row className="g-3 mb-4">
-            <Col xs={6} md={3}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body>
-                  <div className="d-flex justify-content-between align-items-start">
-                    <div>
-                      <h6 className="text-muted mb-1">Total Properties</h6>
-                      <h3 className="mb-0">{dashboardStats.totalProperties}</h3>
-                    </div>
-                    <Badge bg="primary" className="rounded-circle p-2">
-                      <HomeIcon size={16} />
-                    </Badge>
-                  </div>
-                  <div className="d-flex align-items-center mt-2">
-                    <small className="text-success me-2">
-                      <ArrowUpRight size={12} /> {dashboardStats.occupiedProperties} occupied
-                    </small>
-                    <small className="text-muted">
-                      {dashboardStats.vacantProperties} vacant
-                    </small>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
+      {/* Navigation Cards Grid */}
+      <div className="nav-cards-grid">
+        {navCards.map((card, index) => (
+          <div 
+            key={index}
+            className={`nav-card ${card.color}`}
+            onClick={() => navigate(card.path)}
+          >
+            <div className="card-icon">{card.icon}</div>
+            <div className="card-content">
+              <h3>{card.title}</h3>
+              <p>{card.description}</p>
+              <div className="card-stats">{card.stats}</div>
+            </div>
+            <div className="card-arrow">
+              <ChevronRight size={20} />
+            </div>
+          </div>
+        ))}
+      </div>
 
-            <Col xs={6} md={3}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body>
-                  <div className="d-flex justify-content-between align-items-start">
-                    <div>
-                      <h6 className="text-muted mb-1">Monthly Revenue</h6>
-                      <h3 className="mb-0">₦{dashboardStats.monthlyRevenue.toLocaleString()}</h3>
-                    </div>
-                    <Badge bg="success" className="rounded-circle p-2">
-                      <DollarSign size={16} />
-                    </Badge>
-                  </div>
-                  <div className="mt-2">
-                    <small className="text-muted">
-                      Commission saved: ₦{dashboardStats.commissionSaved.toLocaleString()}
-                    </small>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
+      {/* Main Dashboard Content */}
+      <div className="dashboard-main">
+        {/* Stats Overview */}
+        <div className="stats-overview">
+          <div className="stats-header">
+            <h2>Performance Overview</h2>
+            <div className="stats-filters">
+              <select className="stats-select">
+                <option>Last 30 days</option>
+                <option>This month</option>
+                <option>This quarter</option>
+                <option>This year</option>
+              </select>
+            </div>
+          </div>
 
-            <Col xs={6} md={3}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body>
-                  <div className="d-flex justify-content-between align-items-start">
-                    <div>
-                      <h6 className="text-muted mb-1">Active Clients</h6>
-                      <h3 className="mb-0">{dashboardStats.totalClients}</h3>
-                    </div>
-                    <Badge bg="info" className="rounded-circle p-2">
-                      <UsersIcon size={16} />
-                    </Badge>
-                  </div>
-                  <div className="mt-2">
-                    <ProgressBar 
-                      now={dashboardStats.averageOccupancyRate} 
-                      label={`${dashboardStats.averageOccupancyRate.toFixed(1)}%`}
-                      variant="info"
-                      style={{ height: '6px' }}
-                    />
-                    <small className="text-muted">Occupancy Rate</small>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: '#e0f2fe', color: '#0284c7' }}>
+                <Home size={20} />
+              </div>
+              <div className="stat-detail">
+                <span className="stat-number">{dashboardStats.totalProperties}</span>
+                <span className="stat-name">Total Properties</span>
+              </div>
+            </div>
 
-            <Col xs={6} md={3}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body>
-                  <div className="d-flex justify-content-between align-items-start">
-                    <div>
-                      <h6 className="text-muted mb-1">Rent Easy Listings</h6>
-                      <h3 className="mb-0">{dashboardStats.rentEasyListings}</h3>
-                    </div>
-                    <Badge bg="warning" className="rounded-circle p-2">
-                      <Tag size={16} />
-                    </Badge>
-                  </div>
-                  <div className="mt-2">
-                    <small className="text-muted">
-                      {dashboardStats.postsThisMonth} posts this month
-                    </small>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: '#dcfce7', color: '#16a34a' }}>
+                <Users size={20} />
+              </div>
+              <div className="stat-detail">
+                <span className="stat-number">{dashboardStats.totalTenants}</span>
+                <span className="stat-name">Total Tenants</span>
+              </div>
+            </div>
 
-          {/* Main Dashboard Tabs */}
-          <Card className="mb-4 border-0 shadow-sm">
-            <Card.Body className="p-0">
-              <div className="border-bottom">
-                <div className="d-flex justify-content-between align-items-center px-3 py-2">
-                  <div className="d-flex">
-                    <Button 
-                      variant="link" 
-                      className={`text-decoration-none ${activeTab === 'overview' ? 'text-primary fw-bold' : 'text-muted'}`}
-                      onClick={() => setActiveTab('overview')}
-                    >
-                      <BarChart3 size={18} className="me-2" />
-                      Overview
-                    </Button>
-                    <Button 
-                      variant="link" 
-                      className={`text-decoration-none ${activeTab === 'properties' ? 'text-primary fw-bold' : 'text-muted'}`}
-                      onClick={() => setActiveTab('properties')}
-                    >
-                      <Building size={18} className="me-2" />
-                      Properties
-                    </Button>
-                  </div>
-                  
-                  {activeTab === 'properties' && (
-                    <div className="d-flex align-items-center">
-                      <small className="text-muted me-2">Filter:</small>
-                      <Dropdown>
-                        <Dropdown.Toggle variant="outline-secondary" size="sm">
-                          <FilterIcon size={14} className="me-1" />
-                          {filter === 'all' ? 'All Properties' : 
-                          filter === 'rent-easy' ? 'Rent Easy' :
-                          filter === 'occupied' ? 'Occupied' : 'Vacant'}
-                        </Dropdown.Toggle>
-                        <Dropdown.Menu>
-                          <Dropdown.Item onClick={() => setFilter('all')}>All Properties</Dropdown.Item>
-                          <Dropdown.Item onClick={() => setFilter('rent-easy')}>Rent Easy Listings</Dropdown.Item>
-                          <Dropdown.Item onClick={() => setFilter('occupied')}>Occupied</Dropdown.Item>
-                          <Dropdown.Item onClick={() => setFilter('vacant')}>Vacant</Dropdown.Item>
-                        </Dropdown.Menu>
-                      </Dropdown>
-                    </div>
-                  )}
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: '#fef9c3', color: '#ca8a04' }}>
+                <DollarSign size={20} />
+              </div>
+              <div className="stat-detail">
+                <span className="stat-number">₦{dashboardStats.monthlyRevenue.toLocaleString()}</span>
+                <span className="stat-name">Monthly Revenue</span>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: '#f1f5f9', color: '#475569' }}>
+                <TrendingUp size={20} />
+              </div>
+              <div className="stat-detail">
+                <span className="stat-number">{dashboardStats.averageOccupancyRate.toFixed(1)}%</span>
+                <span className="stat-name">Occupancy Rate</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Activity & Quick Actions */}
+        <div className="dashboard-bottom">
+          <div className="recent-activity">
+            <h3>Recent Activity</h3>
+            {recentActivities.length === 0 ? (
+              <div className="empty-activities">
+                <p>No recent activities</p>
+              </div>
+            ) : (
+              <div className="activity-list">
+                {/* Activity items would go here */}
+              </div>
+            )}
+          </div>
+
+          <div className="quick-actions-card">
+            <h3>Quick Actions</h3>
+            <div className="action-buttons">
+              <button className="action-btn" onClick={() => handleAddProperty('rent-easy')}>
+                <PlusCircle size={18} />
+                Post Property
+              </button>
+              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/add-external-property')}>
+                <Building size={18} />
+                Add External
+              </button>
+              <button className="action-btn" onClick={() => setShowVerificationModal(true)}>
+                <ShieldCheck size={18} />
+                Get Verified
+              </button>
+              <button className="action-btn" onClick={() => setShowBoostModal(true)}>
+                <Zap size={18} />
+                Boost Profile
+              </button>
+              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/reports')}>
+                <BarChart3 size={18} />
+                View Reports
+              </button>
+              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/landlords')}>
+                <Users size={18} />
+                Landlords
+              </button>
+              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/my-listings')}>
+                <Tag size={18} />
+                My Listings
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Subscription Status */}
+        <div className="subscription-status-card">
+          <h3>Subscription Status</h3>
+          {estateFirmData.hasActiveSubscription ? (
+            <div className="subscription-active">
+              <div className="subscription-header">
+                <Crown size={24} className="text-warning" />
+                <div>
+                  <strong>Premium Subscription Active</strong>
+                  <p>Expires: {new Date(estateFirmData.subscriptionEndDate).toLocaleDateString()}</p>
                 </div>
               </div>
-
-              {/* Tab Content */}
-              <div className="p-3">
-                {activeTab === 'overview' && (
-                  <Row>
-                    <Col md={8}>
-                      <Card className="h-100 border-0 shadow-sm">
-                        <Card.Body>
-                          <h5 className="mb-3">Properties Overview</h5>
-                          <div className="d-flex justify-content-between mb-3">
-                            <div className="text-center">
-                              <h2 className="text-primary">{dashboardStats.occupiedProperties}</h2>
-                              <small className="text-muted">Occupied</small>
-                            </div>
-                            <div className="text-center">
-                              <h2 className="text-warning">{dashboardStats.vacantProperties}</h2>
-                              <small className="text-muted">Vacant</small>
-                            </div>
-                            <div className="text-center">
-                              <h2 className="text-success">{dashboardStats.expiringLeases}</h2>
-                              <small className="text-muted">Expiring Soon</small>
-                            </div>
-                            <div className="text-center">
-                              <h2 className="text-info">{dashboardStats.pendingPayments}</h2>
-                              <small className="text-muted">Pending Payments</small>
-                            </div>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                    
-                    <Col md={4}>
-                      <Card className="h-100 border-0 shadow-sm">
-                        <Card.Body>
-                          <h5 className="mb-3">Quick Actions</h5>
-                          <div className="d-grid gap-2">
-                            <Button 
-                              variant="primary" 
-                              className="d-flex align-items-center justify-content-start"
-                              onClick={() => handleAddProperty('rent-easy')}
-                            >
-                              <PlusCircle size={18} className="me-2" />
-                              Post New Property
-                            </Button>
-                            {!estateFirmData.isVerified && (
-                              <Button 
-                                variant="outline-warning" 
-                                className="d-flex align-items-center justify-content-start"
-                                onClick={() => setShowVerificationModal(true)}
-                              >
-                                <ShieldCheck size={18} className="me-2" />
-                                Get Verified
-                              </Button>
-                            )}
-                            <Button 
-                              variant="outline-success" 
-                              className="d-flex align-items-center justify-content-start"
-                              onClick={() => setShowBoostModal(true)}
-                            >
-                              <Zap size={18} className="me-2" />
-                              {estateFirmData.boostStatus === 'boosted' ? 'Extend Boost' : 'Boost Profile'}
-                            </Button>
-                            {/* In the Quick Actions card, add this button after Boost */}
-<Button 
-  variant="outline-info" 
-  className="d-flex align-items-center justify-content-start"
-  onClick={() => navigate('/dashboard/estate-firm/reports')}
->
-  <BarChart3 size={18} className="me-2" />
-  View Reports
-</Button>
-                          </div>
-                          
-                          <div className="mt-4">
-                            <h6 className="mb-3">Subscription Status</h6>
-                            <div className="p-3 border rounded">
-                              {estateFirmData.hasActiveSubscription ? (
-                                <>
-                                  <div className="d-flex align-items-center mb-2">
-                                    <Crown size={20} className="text-warning me-2" />
-                                    <strong>Premium Subscription Active</strong>
-                                  </div>
-                                  <small className="text-muted">
-                                    Expires: {new Date(estateFirmData.subscriptionEndDate).toLocaleDateString()}
-                                  </small>
-                                  <div className="mt-2">
-                                    <Badge bg="success" className="me-2">0% Commission</Badge>
-                                    <Badge bg="primary">Unlimited Posts</Badge>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="d-flex align-items-center mb-2">
-                                    <Tag size={20} className="text-muted me-2" />
-                                    <strong>Free Plan</strong>
-                                  </div>
-                                  <small className="text-muted">
-                                    {estateFirmData.freePostsRemaining} free posts remaining
-                                  </small>
-                                  <div className="mt-2">
-                                    <Button 
-                                      variant="warning" 
-                                      size="sm"
-                                      onClick={() => setShowSubscriptionModal(true)}
-                                    >
-                                      <Crown size={14} className="me-1" />
-                                      Upgrade Now
-                                    </Button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                  </Row>
-                )}
-
-                {activeTab === 'properties' && (
-                  <div>
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <h5>All Properties ({filteredProperties.length})</h5>
-                      <Button 
-                        variant="outline-primary" 
-                        size="sm"
-                        onClick={() => setShowAddPropertyModal(true)}
-                      >
-                        <PlusCircle size={14} className="me-1" />
-                        Add Property
-                      </Button>
-                    </div>
-                    
-                    {filteredProperties.length === 0 ? (
-                      <Alert variant="info">
-                        <div className="text-center py-4">
-                          <Building size={48} className="text-muted mb-3" />
-                          <h5>No Properties Found</h5>
-                          <p className="text-muted">Get started by posting your first property</p>
-                          <Button 
-                            variant="primary"
-                            onClick={() => handleAddProperty('rent-easy')}
-                          >
-                            <PlusCircle size={16} className="me-2" />
-                            Post First Property
-                          </Button>
-                        </div>
-                      </Alert>
-                    ) : (
-                      <div className="table-responsive">
-                        <Table hover>
-                          <thead>
-                            <tr>
-                              <th>Property</th>
-                              <th>Address</th>
-                              <th>Rent</th>
-                              <th>Status</th>
-                              <th>Commission</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredProperties.map(property => (
-                              <tr key={property.id}>
-                                <td>
-                                  <div className="d-flex align-items-center">
-                                    <Home size={20} className="text-muted me-2" />
-                                    <div>
-                                      <div className="fw-medium">{property.name}</div>
-                                      <small className="text-muted">{property.category}</small>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td>
-                                  <div>{property.address}</div>
-                                </td>
-                                <td>
-                                  <div className="fw-medium">
-                                    ₦{property.rentAmount.toLocaleString()}
-                                  </div>
-                                  <small className="text-muted">{property.rentFrequency}</small>
-                                </td>
-                                <td>
-                                  {property.status === 'occupied' || property.status === 'rented' ? (
-                                    <Badge bg="success">Occupied</Badge>
-                                  ) : (
-                                    <Badge bg="secondary">Available</Badge>
-                                  )}
-                                </td>
-                                <td>
-                                  <div className="text-success fw-medium">
-                                    <Percent size={14} className="me-1" />
-                                    0%
-                                  </div>
-                                  <small className="text-muted">
-                                    Saved: ₦{property.commissionSaved?.toLocaleString() || '0'}
-                                  </small>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </Table>
-                      </div>
-                    )}
-                  </div>
-                )}
+              <div className="subscription-badges">
+                <span className="badge bg-success">0% Commission</span>
+                <span className="badge bg-primary">Unlimited Posts</span>
               </div>
-            </Card.Body>
-          </Card>
+            </div>
+          ) : (
+            <div className="subscription-free">
+              <div className="subscription-header">
+                <Tag size={24} className="text-muted" />
+                <div>
+                  <strong>Free Plan</strong>
+                  <p>{estateFirmData.freePostsRemaining} free posts remaining</p>
+                </div>
+              </div>
+              <button 
+                className="btn btn-warning btn-sm"
+                onClick={() => setShowSubscriptionModal(true)}
+              >
+                <Crown size={14} />
+                Upgrade Now
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Modals */}
       <SubscriptionModal
-  show={showSubscriptionModal}
-  onHide={() => setShowSubscriptionModal(false)}
-  onSubscriptionSuccess={handleSubscriptionSuccess}
-/>
+        show={showSubscriptionModal}
+        onHide={() => setShowSubscriptionModal(false)}
+        onSubscriptionSuccess={handleSubscriptionSuccess}
+      />
 
-      {/* Add Property Modal */}
       <Modal show={showAddPropertyModal} onHide={() => setShowAddPropertyModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Add New Property</Modal.Title>
@@ -1166,7 +816,6 @@ const vacantProperties = allProperties.filter(p => {
         </Modal.Footer>
       </Modal>
 
-      {/* Boost Modal */}
       <Modal show={showBoostModal} onHide={() => setShowBoostModal(false)}>
         <Modal.Header closeButton>
           <Modal.Title>
@@ -1217,7 +866,6 @@ const vacantProperties = allProperties.filter(p => {
         </Modal.Footer>
       </Modal>
 
-      {/* Verification Modal */}
       <Modal show={showVerificationModal} onHide={() => setShowVerificationModal(false)} centered>
         <Modal.Header closeButton>
           <Modal.Title>

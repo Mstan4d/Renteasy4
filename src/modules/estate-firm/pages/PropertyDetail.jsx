@@ -5,6 +5,7 @@ import { supabase } from '../../../shared/lib/supabaseClient';
 import { documentGenerator } from '../../../shared/lib/documentGenerator';
 import UnitModal from '../components/UnitModal';
 import PropertyRentSummary from '../components/PropertyRentSummary';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import {
   Building, ArrowLeft, Home, Users, DollarSign, Calendar,
   Plus, Edit, Trash2, Eye, Download, Send, Clock,
@@ -23,9 +24,11 @@ const PropertyDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showUnitModal, setShowUnitModal] = useState(false);
+  const [showTenantModal, setShowTenantModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [editingUnit, setEditingUnit] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState(null);
+  const [selectedUnitForTenant, setSelectedUnitForTenant] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     paymentDate: new Date().toISOString().split('T')[0],
@@ -39,53 +42,66 @@ const PropertyDetail = () => {
   }, [id, user]);
 
   const loadProperty = async () => {
-    setLoading(true);
-    try {
-      // Fetch property with landlord info
-      const { data: prop, error: propError } = await supabase
-        .from('properties')
-        .select(`
-          *,
-          landlord:landlord_id (id, name, email, phone, address)
-        `)
-        .eq('id', id)
+  setLoading(true);
+  try {
+    // 1. Fetch property
+    const { data: prop, error: propError } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (propError) throw propError;
+    if (!prop) throw new Error('Property not found');
+
+    // 2. Fetch landlord if landlord_id exists
+    let landlord = null;
+    if (prop.landlord_id) {
+      const { data: landlordData, error: landlordError } = await supabase
+        .from('estate_landlords')
+        .select('*')
+        .eq('id', prop.landlord_id)
         .single();
-      if (propError) throw propError;
-      setProperty(prop);
-
-      // Fetch units with tenant info
-      const { data: unitsData, error: unitsError } = await supabase
-        .from('units')
-        .select(`
-          *,
-          tenant:tenant_id (id, name, email, phone)
-        `)
-        .eq('property_id', id)
-        .order('unit_number', { ascending: true });
-      if (unitsError) throw unitsError;
-      setUnits(unitsData || []);
-
-      // Fetch recent activities
-      const { data: activitiesData, error: actError } = await supabase
-        .from('property_activities')
-        .select(`
-          *,
-          unit:unit_id (unit_number),
-          client:client_id (name)
-        `)
-        .eq('property_id', id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (actError) throw actError;
-      setActivities(activitiesData || []);
-
-    } catch (err) {
-      console.error('Error loading property:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      if (!landlordError) landlord = landlordData;
     }
-  };
+
+    // Attach landlord to property object
+    const propertyWithLandlord = { ...prop, landlord };
+
+    // 3. Fetch units with tenant info (if any)
+    const { data: unitsData, error: unitsError } = await supabase
+      .from('units')
+      .select(`
+        *,
+        tenant:tenant_id (id, name, email, phone)
+      `)
+      .eq('property_id', id)
+      .order('unit_number', { ascending: true });
+    if (unitsError) throw unitsError;
+
+    setProperty(propertyWithLandlord);
+    setUnits(unitsData || []);
+
+    // 4. Fetch recent activities
+    const { data: activitiesData, error: actError } = await supabase
+      .from('property_activities')
+      .select(`
+        *,
+        unit:unit_id (unit_number),
+        client:client_id (name)
+      `)
+      .eq('property_id', id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (actError) throw actError;
+    setActivities(activitiesData || []);
+
+  } catch (err) {
+    console.error('Error loading property:', err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleAddUnit = () => {
     setEditingUnit(null);
@@ -97,8 +113,17 @@ const PropertyDetail = () => {
     setShowUnitModal(true);
   };
 
+  const handleAddTenant = (unit) => {
+    setSelectedUnitForTenant(unit);
+    setShowTenantModal(true);
+  };
+
   const handleUnitSaved = () => {
     loadProperty(); // refresh after unit added/updated
+  };
+
+  const handleTenantSaved = () => {
+    loadProperty(); // refresh after tenant added/removed
   };
 
   const handleDeleteUnit = async (unitId) => {
@@ -116,16 +141,66 @@ const PropertyDetail = () => {
     }
   };
 
+  const handleRemoveTenant = async (unit) => {
+    if (!window.confirm(`Remove tenant from ${unit.unit_number}? The unit will become vacant.`)) return;
+
+    try {
+      // Build history entry
+      const historyEntry = {
+        tenant_name: unit.tenant?.name || unit.tenant_name,
+        tenant_phone: unit.tenant?.phone || unit.tenant_phone,
+        tenant_email: unit.tenant?.email || unit.tenant_email,
+        tenant_id: unit.tenant_id,
+        move_out: new Date().toISOString(),
+        rent_amount: unit.rent_amount,
+        rent_frequency: unit.rent_frequency
+      };
+      const currentHistory = unit.tenant_history || [];
+      const updatedHistory = [...currentHistory, historyEntry];
+
+      // Update unit
+      const { error } = await supabase
+        .from('units')
+        .update({
+          tenant_id: null,
+          tenant_name: null,
+          tenant_phone: null,
+          tenant_email: null,
+          status: 'vacant',
+          lease_end_date: new Date().toISOString().split('T')[0],
+          tenant_history: updatedHistory
+        })
+        .eq('id', unit.id);
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from('property_activities').insert({
+        property_id: id,
+        unit_id: unit.id,
+        activity_type: 'tenant_removed',
+        description: `Tenant removed from ${unit.unit_number}`,
+        created_at: new Date().toISOString()
+      });
+
+      alert('Tenant removed successfully');
+      loadProperty(); // refresh
+    } catch (err) {
+      console.error(err);
+      alert('Failed to remove tenant');
+    }
+  };
+
   const handleDeleteProperty = async () => {
-  if (!window.confirm('Delete this property and all its units? This action cannot be undone.')) return;
-  try {
-    await supabase.from('units').delete().eq('property_id', id);
-    await supabase.from('properties').delete().eq('id', id);
-    navigate('/dashboard/estate-firm/properties');
-  } catch (err) {
-    alert('Delete failed');
-  }
-};
+    if (!window.confirm('Delete this property and all its units? This action cannot be undone.')) return;
+    try {
+      await supabase.from('units').delete().eq('property_id', id);
+      await supabase.from('properties').delete().eq('id', id);
+      navigate('/dashboard/estate-firm/properties');
+    } catch (err) {
+      alert('Delete failed');
+    }
+  };
 
   const handleRecordPayment = (unit) => {
     setSelectedUnit(unit);
@@ -139,30 +214,28 @@ const PropertyDetail = () => {
   };
 
   const submitPayment = async () => {
-  if (!selectedUnit) return;
-  try {
-    // Generate a unique reference
-    const paymentReference = `PMT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    if (!selectedUnit) return;
+    try {
+      const paymentReference = `PMT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
-    // 1. Insert payment record with reference
-    const { data: payment, error: payError } = await supabase
-      .from('payments')
-      .insert([{
-        unit_id: selectedUnit.id,
-        user_id: selectedUnit.tenant?.id,
-        amount: parseFloat(paymentForm.amount),
-        payment_date: paymentForm.paymentDate,
-        due_date: paymentForm.dueDate || null,
-        description: paymentForm.description,
-        payment_type: 'rent',
-        reference: paymentReference,  // <-- add this line
-      }])
-      .select()
-      .single();
-    if (payError) throw payError;
+      // Insert payment record
+      const { data: payment, error: payError } = await supabase
+        .from('payments')
+        .insert([{
+          unit_id: selectedUnit.id,
+          user_id: selectedUnit.tenant?.id,
+          amount: parseFloat(paymentForm.amount),
+          payment_date: paymentForm.paymentDate,
+          due_date: paymentForm.dueDate || null,
+          description: paymentForm.description,
+          payment_type: 'rent',
+          reference: paymentReference,
+        }])
+        .select()
+        .single();
+      if (payError) throw payError;
 
-
-      // 2. Fetch full payment with relations for receipt generation
+      // Fetch full payment with relations for receipt generation
       const { data: fullPayment, error: fetchError } = await supabase
         .from('payments')
         .select(`
@@ -178,10 +251,10 @@ const PropertyDetail = () => {
         .single();
       if (fetchError) throw fetchError;
 
-      // 3. Generate receipt document
+      // Generate receipt document
       const receiptDoc = await documentGenerator.generateReceipt(fullPayment);
 
-      // 4. Update payment with receipt URL and document ID
+      // Update payment with receipt URL and document ID
       await supabase
         .from('payments')
         .update({ 
@@ -190,7 +263,7 @@ const PropertyDetail = () => {
         })
         .eq('id', payment.id);
 
-      // 5. Send in-app notification to tenant if they are a RentEasy user
+      // Send in-app notification to tenant if they are a RentEasy user
       if (selectedUnit.tenant?.id) {
         await supabase.from('notifications').insert({
           user_id: selectedUnit.tenant.id,
@@ -202,7 +275,7 @@ const PropertyDetail = () => {
         });
       }
 
-      // 6. If unit was vacant, mark as occupied
+      // If unit was vacant, mark as occupied
       if (selectedUnit.status !== 'occupied') {
         await supabase
           .from('units')
@@ -210,7 +283,7 @@ const PropertyDetail = () => {
           .eq('id', selectedUnit.id);
       }
 
-      // 7. Add activity
+      // Add activity
       await supabase
         .from('property_activities')
         .insert([{
@@ -298,9 +371,10 @@ const PropertyDetail = () => {
     }
   };
 
-  if (loading) {
-    return <div className="loading">Loading property details...</div>;
-  }
+
+if (loading) {
+  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+}
 
   if (error) {
     return (
@@ -324,7 +398,7 @@ const PropertyDetail = () => {
           <ArrowLeft size={20} /> Back to Portfolio
         </button>
         <div className="property-title">
-          <h1>{property.name}</h1>
+          <h1>{property.title}</h1>
           <span className="property-address"><MapPin size={16} /> {property.address}</span>
         </div>
         <div className="property-actions">
@@ -381,15 +455,18 @@ const PropertyDetail = () => {
                       <span className="label">Rent:</span>
                       <span className="value highlight">{formatCurrency(unit.rent_amount)}/{unit.rent_frequency}</span>
                     </div>
-                    {unit.tenant ? (
+                    {unit.tenant_id || unit.tenant_name ? (
                       <>
                         <div className="detail-row">
                           <span className="label">Tenant:</span>
-                          <span className="value">{unit.tenant.name}</span>
+                          <span className="value">
+                            {unit.tenant_name || unit.tenant?.name}
+                            {unit.tenant_id && <span className="renteasy-badge"> (RentEasy User)</span>}
+                          </span>
                         </div>
                         <div className="detail-row">
                           <span className="label">Phone:</span>
-                          <span className="value">{unit.tenant.phone || '—'}</span>
+                          <span className="value">{unit.tenant_phone || unit.tenant?.phone || '—'}</span>
                         </div>
                       </>
                     ) : (
@@ -409,12 +486,17 @@ const PropertyDetail = () => {
                   </div>
 
                   <div className="unit-actions">
-                    {unit.tenant ? (
-                      <button className="action-btn" onClick={() => handleRecordPayment(unit)}>
-                        <DollarSign size={14} /> Record Payment
-                      </button>
+                    {unit.tenant_id || unit.tenant_name ? (
+                      <>
+                        <button className="action-btn" onClick={() => handleRecordPayment(unit)}>
+                          <DollarSign size={14} /> Record Payment
+                        </button>
+                        <button className="action-btn danger" onClick={() => handleRemoveTenant(unit)}>
+                          <XCircle size={14} /> Remove Tenant
+                        </button>
+                      </>
                     ) : (
-                      <button className="action-btn" onClick={() => handleEditUnit(unit)}>
+                      <button className="action-btn" onClick={() => handleAddTenant(unit)}>
                         <Users size={14} /> Add Tenant
                       </button>
                     )}
@@ -436,7 +518,6 @@ const PropertyDetail = () => {
 
         {/* Right sidebar: Landlord info & Activity */}
         <div className="sidebar">
-          {/* Landlord info */}
           {property.landlord && (
             <div className="landlord-card">
               <h3>Landlord</h3>
@@ -449,7 +530,6 @@ const PropertyDetail = () => {
             </div>
           )}
 
-          {/* Activity timeline */}
           <div className="activity-card">
             <h3>Recent Activity</h3>
             {activities.length === 0 ? (
@@ -473,7 +553,6 @@ const PropertyDetail = () => {
             )}
           </div>
 
-          {/* Quick stats */}
           <div className="stats-card">
             <h3>Quick Stats</h3>
             <div className="stat-row">
@@ -494,13 +573,28 @@ const PropertyDetail = () => {
         </div>
       </div>
 
-      {/* Unit Modal */}
+      {/* Unit Modal (full mode) */}
       {showUnitModal && (
         <UnitModal
           propertyId={id}
           unit={editingUnit}
           onClose={() => setShowUnitModal(false)}
           onSaved={handleUnitSaved}
+          mode="full"
+        />
+      )}
+
+      {/* Tenant Modal (tenant-only mode) */}
+      {showTenantModal && selectedUnitForTenant && (
+        <UnitModal
+          propertyId={id}
+          unit={selectedUnitForTenant}
+          onClose={() => {
+            setShowTenantModal(false);
+            setSelectedUnitForTenant(null);
+          }}
+          onSaved={handleTenantSaved}
+          mode="tenant-only"
         />
       )}
 
