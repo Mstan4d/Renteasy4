@@ -1,8 +1,7 @@
-// src/shared/components/Header.jsx - SIMPLIFIED
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import logo from '../../assets/renteasy.jpeg';
+import { supabase } from '../lib/supabaseClient'; // adjust import path as needed
 import { 
   Menu, X, User, Bell, MessageSquare, PlusCircle, 
   ChevronDown, Search, Shield, Home, Building
@@ -17,72 +16,108 @@ const Header = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
 
+  // Fetch unread count and subscribe to new notifications
+  useEffect(() => {
+    if (!user) return;
+
+    let notificationUserId = null;
+    let fetchUserId = async () => {
+      // Determine the user_id used in notifications table
+      if (user.role === 'estate-firm') {
+        const { data: profile } = await supabase
+          .from('estate_firm_profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+        if (profile) notificationUserId = profile.id;
+      } else {
+        notificationUserId = user.id;
+      }
+
+      if (notificationUserId) {
+        // Fetch initial unread count
+        const { count } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', notificationUserId)
+          .eq('read', false);
+        setUnreadCount(count || 0);
+
+        // Subscribe to new notifications
+        const subscription = supabase
+          .channel('notifications')
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${notificationUserId}`
+          }, () => {
+            setUnreadCount(prev => prev + 1);
+          })
+          .subscribe();
+
+        return () => supabase.removeChannel(subscription);
+      }
+    };
+
+    fetchUserId();
+  }, [user]);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
     setIsUserDropdownOpen(false);
   };
 
-  // Get user's display name
   const getUserDisplayName = () => {
     if (!user) return 'User';
     return user.name || user.fullName || user.email?.split('@')[0] || 'User';
   };
 
-  // Function to get dashboard route based on user role
   const getDashboardRoute = () => {
-    if (!user) return '/dashboard';
-    
+  if (!user) return '/dashboard';
+  switch(user.role) {
+    case 'tenant': return '/dashboard/tenant';
+    case 'landlord': return '/dashboard/landlord';
+    case 'admin': return '/admin';
+    case 'estate-firm': return '/dashboard/estate-firm';
+    default: return '/dashboard';
+  }
+};
+
+const getProfileRoute = () => {
+  if (!user) return '/login';
+  switch(user.role) {
+    case 'tenant': return '/dashboard/tenant/profile';
+    case 'landlord': return '/dashboard/landlord/profile';
+    case 'admin': return '/admin/profile';
+    case 'estate-firm': return '/dashboard/estate-firm/profile';
+    default: return '/dashboard/profile';
+  }
+};
+  const getNotificationsRoute = () => {
+    if (!user) return '/notifications';
     switch(user.role) {
-      case 'tenant':
-        return '/dashboard/tenant';
-      case 'landlord':
-        return '/dashboard/landlord';
-      case 'admin':
-        return '/admin';
-      case 'estate-firm':
-        return '/dashboard/estate';
-      default:
-        return '/dashboard';
+      case 'estate-firm': return '/dashboard/estate-firm/notifications';
+      default: return '/dashboard/notifications';
     }
   };
 
-  // Function to get profile route based on user role
-  const getProfileRoute = () => {
-    if (!user) return '/login';
-    
-    switch(user.role) {
-      case 'tenant':
-        return '/dashboard/tenant/profile';
-      case 'landlord':
-        return '/dashboard/landlord/profile';
-      case 'admin':
-        return '/admin/profile';
-      case 'estate-firm':
-        return '/dashboard/estate/profile';
-      default:
-        return '/dashboard/profile';
-    }
-  };
-
-  // ========== NAVIGATION LINKS ==========
+  // Navigation links
   const navLinks = [
     { path: '/', label: 'Home', icon: Home },
     { path: '/services', label: 'Services', icon: Building },
     { path: '/listings', label: 'Search', icon: Search },
   ];
-
-  // Show messages only if logged in
   if (user) {
     navLinks.push({ 
       path: '/dashboard/messages', 
       label: 'Messages', 
       icon: MessageSquare, 
-      badge: unreadCount 
+      badge: 0 // we might track unread messages later
     });
   }
 
-  // ========== POST OPTIONS ==========
   const postOptions = [
     {
       path: '/dashboard/post-property',
@@ -92,7 +127,6 @@ const Header = () => {
     }
   ];
 
-  // ========== USER MENU ITEMS ==========
   const getUserMenuItems = () => {
     const items = [
       { path: getProfileRoute(), label: 'Profile', icon: <User size={16} /> },
@@ -102,11 +136,9 @@ const Header = () => {
         path: '/dashboard/messages', 
         label: 'Messages', 
         icon: <MessageSquare size={16} />,
-        badge: unreadCount > 0 ? `(${unreadCount})` : null
+        badge: null
       }
     ];
-
-    // Add admin items if user is admin
     if (user?.role === 'admin') {
       items.push({ 
         path: '/admin', 
@@ -115,11 +147,10 @@ const Header = () => {
         className: 'admin-menu-item'
       });
     }
-
     return items;
   };
 
-  // Close dropdowns when clicking outside
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (isUserDropdownOpen && !event.target.closest('.user-dropdown-container')) {
@@ -129,7 +160,6 @@ const Header = () => {
         setIsPostDropdownOpen(false);
       }
     };
-
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, [isUserDropdownOpen, isPostDropdownOpen]);
@@ -137,13 +167,10 @@ const Header = () => {
   return (
     <header className="header">
       <div className="header-container">
-        {/* Logo */}
+        {/* Logo – custom "R" design */}
         <div className="logo">
           <Link to="/" className="logo-link">
-            <img 
-               src={logo} alt="RentEasy Logo" 
-              className="logo-image"
-            />
+            <div className="custom-logo">R</div>
           </Link>
         </div>
 
@@ -159,14 +186,13 @@ const Header = () => {
                 >
                   {link.icon && <link.icon size={18} className="nav-icon" />}
                   <span className="nav-label">{link.label}</span>
-                  {link.badge !== undefined && link.badge > 0 && (
+                  {link.badge > 0 && (
                     <span className="nav-badge">{link.badge}</span>
                   )}
                 </Link>
               </li>
             ))}
             
-            {/* Post Dropdown (only if logged in) */}
             {user && (
               <li className="post-dropdown-container">
                 <button 
@@ -216,7 +242,6 @@ const Header = () => {
         <div className="user-actions">
           {user ? (
             <>
-              {/* Admin Badge (if admin) */}
               {user.role === 'admin' && (
                 <div className="admin-badge-header">
                   <Shield size={18} />
@@ -224,19 +249,18 @@ const Header = () => {
                 </div>
               )}
 
-              {/* Messages Icon */}
               <Link to="/dashboard/messages" className="messages-link">
                 <MessageSquare size={20} />
-                {unreadCount > 0 && (
-                  <span className="messages-badge">{unreadCount}</span>
-                )}
+                {/* message unread count can be added later */}
               </Link>
               
-              {/* Notifications */}
-              <div className="notification-badge">
+              {/* Notifications Bell */}
+              <Link to={getNotificationsRoute()} className="notification-bell">
                 <Bell size={20} />
-                <span className="badge">3</span>
-              </div>
+                {unreadCount > 0 && (
+                  <span className="badge">{unreadCount}</span>
+                )}
+              </Link>
               
               {/* User Dropdown */}
               <div className="user-dropdown-container">
@@ -259,7 +283,6 @@ const Header = () => {
                 
                 {isUserDropdownOpen && (
                   <div className="user-dropdown">
-                    {/* User Info */}
                     <div className="user-dropdown-info">
                       <div className="user-dropdown-avatar">
                         {user.role === 'admin' ? '👑' : '👤'}
@@ -269,10 +292,7 @@ const Header = () => {
                         <span className="user-role-badge">{user.role}</span>
                       </div>
                     </div>
-                    
                     <div className="dropdown-divider"></div>
-                    
-                    {/* Menu Items */}
                     {getUserMenuItems().map((item) => (
                       <Link
                         key={item.path}
@@ -285,10 +305,7 @@ const Header = () => {
                         {item.badge && <span className="dropdown-badge">{item.badge}</span>}
                       </Link>
                     ))}
-                    
                     <div className="dropdown-divider"></div>
-                    
-                    {/* Logout */}
                     <button 
                       onClick={handleLogout}
                       className="dropdown-item logout-button"
@@ -311,120 +328,105 @@ const Header = () => {
             </div>
           )}
         </div>
-
-        {/* Mobile Menu Button 
-        <button 
-          className="mobile-menu-button"
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>*/}
       </div>
 
-      {/* Mobile Navigation */}
-{isMobileMenuOpen && (
-  <div className="mobile-nav">
-    <ul className="mobile-nav-list">
-      {/* Main Navigation Links */}
-      {navLinks.map((link) => (
-        <li key={link.path}>
-          <Link
-            to={link.path}
-            className="mobile-nav-link"
-            onClick={() => setIsMobileMenuOpen(false)}
-          >
-            {link.icon && <link.icon size={18} className="mobile-nav-icon" />}
-            <span className="mobile-nav-label">{link.label}</span>
-            {link.badge !== undefined && link.badge > 0 && (
-              <span className="mobile-nav-badge">{link.badge}</span>
+      {/* Mobile Navigation (unchanged) */}
+      {isMobileMenuOpen && (
+        <div className="mobile-nav">
+          <ul className="mobile-nav-list">
+            {navLinks.map((link) => (
+              <li key={link.path}>
+                <Link
+                  to={link.path}
+                  className="mobile-nav-link"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  {link.icon && <link.icon size={18} className="mobile-nav-icon" />}
+                  <span className="mobile-nav-label">{link.label}</span>
+                  {link.badge > 0 && (
+                    <span className="mobile-nav-badge">{link.badge}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+            {user ? (
+              <>
+                <li className="mobile-user-section">
+                  <div className="mobile-user-info">
+                    <div className="mobile-user-avatar">
+                      {user.role === 'admin' ? '👑' : '👤'}
+                    </div>
+                    <div className="mobile-user-details">
+                      <strong>{getUserDisplayName()}</strong>
+                      <span className="mobile-user-role">{user.role}</span>
+                    </div>
+                  </div>
+                </li>
+                <li>
+                  <Link
+                    to={getProfileRoute()}
+                    className="mobile-nav-link"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <User size={18} />
+                    Profile
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to={getDashboardRoute()}
+                    className="mobile-nav-link"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <Home size={18} />
+                    Dashboard
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/dashboard/messages"
+                    className="mobile-nav-link"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <MessageSquare size={18} />
+                    Messages
+                  </Link>
+                </li>
+                <li>
+                  <button
+                    onClick={handleLogout}
+                    className="mobile-logout-button"
+                  >
+                    <span>🚪</span>
+                    Logout
+                  </button>
+                </li>
+              </>
+            ) : (
+              <>
+                <li>
+                  <Link
+                    to="/login"
+                    className="mobile-login-button"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Login
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/signup"
+                    className="mobile-signup-button"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Sign Up
+                  </Link>
+                </li>
+              </>
             )}
-          </Link>
-        </li>
-      ))}
-
-      {/* Logged-in User Section */}
-      {user ? (
-        <>
-          <li className="mobile-user-section">
-            <div className="mobile-user-info">
-              <div className="mobile-user-avatar">
-                {user.role === 'admin' ? '👑' : '👤'}
-              </div>
-              <div className="mobile-user-details">
-                <strong>{getUserDisplayName()}</strong>
-                <span className="mobile-user-role">{user.role}</span>
-              </div>
-            </div>
-          </li>
-
-          <li>
-            <Link
-              to={getProfileRoute()}
-              className="mobile-nav-link"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <User size={18} />
-              Profile
-            </Link>
-          </li>
-
-          <li>
-            <Link
-              to={getDashboardRoute()}
-              className="mobile-nav-link"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <Home size={18} />
-              Dashboard
-            </Link>
-          </li>
-
-          <li>
-            <Link
-              to="/dashboard/messages"
-              className="mobile-nav-link"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <MessageSquare size={18} />
-              Messages {unreadCount > 0 && `(${unreadCount})`}
-            </Link>
-          </li>
-
-          <li>
-            <button
-              onClick={handleLogout}
-              className="mobile-logout-button"
-            >
-              <span>🚪</span>
-              Logout
-            </button>
-          </li>
-        </>
-      ) : (
-        <>
-          <li>
-            <Link
-              to="/login"
-              className="mobile-login-button"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Login
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/signup"
-              className="mobile-signup-button"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Sign Up
-            </Link>
-          </li>
-        </>
+          </ul>
+        </div>
       )}
-    </ul>
-  </div>
-)}
     </header>
   );
 };

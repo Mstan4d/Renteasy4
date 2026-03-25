@@ -1,22 +1,31 @@
-// src/modules/dashboard/pages/tenant/TenantReferrals.jsx - UPDATED FOR DUAL SYSTEM
+// src/modules/dashboard/pages/tenant/TenantReferrals.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../shared/context/AuthContext';
+import { supabase } from '../../../../shared/lib/supabaseClient';
 import './TenantReferrals.css';
 
 const TenantReferrals = () => {
   const { user } = useAuth();
-  const [commissionEarnings, setCommissionEarnings] = useState([]); // 1.5% commissions
-  const [referralRewards, setReferralRewards] = useState([]); // #5000 rewards
+  const [commissionEarnings, setCommissionEarnings] = useState([]);
+  const [referralRewards, setReferralRewards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState({ type: '', show: false });
-  const [activeTab, setActiveTab] = useState('commissions'); // 'commissions' or 'referrals'
+  const [activeTab, setActiveTab] = useState('commissions');
+  const [profileData, setProfileData] = useState({
+    referral_code: '',
+    total_commission_earned: 0,
+    total_referral_earned: 0,
+    total_referrals: 0
+  });
 
   useEffect(() => {
-    loadEarningsData();
-  }, []);
+    if (user) {
+      loadProfileData();
+      loadEarningsData();
+    }
+  }, [user]);
 
-  // Show copy feedback temporarily
   useEffect(() => {
     if (copied.show) {
       const timer = setTimeout(() => setCopied({ type: '', show: false }), 2000);
@@ -24,52 +33,74 @@ const TenantReferrals = () => {
     }
   }, [copied.show]);
 
- // Replace the loadEarningsData function inside TenantReferrals.jsx
-// Replace your existing loadEarningsData with this
-const loadEarningsData = async () => {
-  try {
-    setLoading(true);
-    
-    // Fetch Commissions (The 1.5% system)
-    const { data: commissions, error: commError } = await supabase
-      .from('tenant_commissions')
-      .select(`
-        id, 
-        property_title, 
-        rental_value, 
-        commission_amount, 
-        status, 
-        created_at, 
-        rented_at
-      `)
-      .eq('tenant_id', user.id) // Ensure they only see THEIR earnings
-      .order('created_at', { ascending: false });
+  const loadProfileData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('referral_code, total_commission_earned, total_referral_earned, total_referrals')
+        .eq('id', user.id)
+        .single();
 
-    if (commError) throw commError;
+      if (error) throw error;
 
-    // Fetch Referrals (The #5000 system)
-    const { data: referrals, error: refError } = await supabase
-      .from('tenant_referrals')
-      .select('*')
-      .eq('referrer_id', user.id)
-      .order('created_at', { ascending: false });
+      if (data) {
+        setProfileData({
+          referral_code: data.referral_code || generateReferralCode(),
+          total_commission_earned: data.total_commission_earned || 0,
+          total_referral_earned: data.total_referral_earned || 0,
+          total_referrals: data.total_referrals || 0
+        });
+      } else {
+        // Generate referral code if not exists
+        const referralCode = generateReferralCode();
+        await supabase
+          .from('profiles')
+          .update({ referral_code: referralCode })
+          .eq('id', user.id);
+        setProfileData(prev => ({ ...prev, referral_code: referralCode }));
+      }
+    } catch (error) {
+      console.error('Error loading profile data:', error);
+    }
+  };
 
-    if (refError) throw refError;
+  const generateReferralCode = () => {
+    return `RENTEASY-${user.id.slice(0, 8).toUpperCase()}`;
+  };
 
-    setCommissionEarnings(commissions || []);
-    setReferralRewards(referrals || []);
+  const loadEarningsData = async () => {
+    try {
+      setLoading(true);
 
-  } catch (error) {
-    console.error('Backend Sync Error:', error.message);
-  } finally {
-    setLoading(false);
-  }
-};
-  // Generate unique referral code
-  const referralCode = user?.id 
-    ? `RENTEASY-${user.id.slice(0, 8).toUpperCase()}`
-    : 'RENTEASY-GUEST';
+      // Fetch Commissions (1.5% system)
+      const { data: commissions, error: commError } = await supabase
+        .from('tenant_commissions')
+        .select('*')
+        .eq('tenant_id', user.id)
+        .order('created_at', { ascending: false });
 
+      if (commError) throw commError;
+
+      // Fetch Referrals (#5000 system)
+      const { data: referrals, error: refError } = await supabase
+        .from('tenant_referrals')
+        .select('*')
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (refError) throw refError;
+
+      setCommissionEarnings(commissions || []);
+      setReferralRewards(referrals || []);
+
+    } catch (error) {
+      console.error('Error loading earnings:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const referralCode = profileData.referral_code || generateReferralCode();
   const referralLink = `${window.location.origin}/signup?ref=${referralCode}`;
 
   const copyToClipboard = (text, type) => {
@@ -81,10 +112,11 @@ const loadEarningsData = async () => {
     let shareUrl = '';
     const message = `Join RentEasy - Nigeria's premium rental platform! Refer friends and earn: 
     
-1️⃣ #5000 when they sign up AND rent a property
-2️⃣ #5000 when they sign up AND post a property that gets rented
+1️⃣ 1.5% Commission when you post properties that get rented
+2️⃣ #5000 when your referrals sign up AND rent or post a rented property
     
-Use my referral code: ${referralCode} - ${referralLink}`;
+Use my referral code: ${referralCode}
+Sign up: ${referralLink}`;
     
     switch(platform) {
       case 'whatsapp':
@@ -106,42 +138,32 @@ Use my referral code: ${referralCode} - ${referralLink}`;
     window.open(shareUrl, '_blank');
   };
 
-  // Calculate totals for BOTH systems
   const totalCommissionEarned = commissionEarnings
     .filter(c => c.status === 'paid')
-    .reduce((sum, c) => sum + (c.commissionAmount || 0), 0);
+    .reduce((sum, c) => sum + (c.commission_amount || 0), 0);
 
   const totalReferralRewardsEarned = referralRewards
     .filter(r => r.status === 'paid')
-    .reduce((sum, r) => sum + (r.rewardAmount || 0), 0);
+    .reduce((sum, r) => sum + (r.reward_amount || 0), 0);
 
   const totalEarned = totalCommissionEarned + totalReferralRewardsEarned;
 
-  // Count pending amounts
   const pendingCommissions = commissionEarnings
     .filter(c => c.status === 'calculated')
-    .reduce((sum, c) => sum + (c.commissionAmount || 0), 0);
+    .reduce((sum, c) => sum + (c.commission_amount || 0), 0);
 
   const pendingReferrals = referralRewards
-    .filter(r => r.status === 'verified' || r.status === 'pending')
-    .reduce((sum, r) => sum + (r.rewardAmount || 0), 0);
+    .filter(r => r.status === 'verified')
+    .reduce((sum, r) => sum + (r.reward_amount || 0), 0);
 
-  // Copy Feedback Component
-  const CopyFeedback = () => (
-    <div className="copy-feedback">
-      {copied.type === 'code' ? '✓ Referral code copied!' : '✓ Referral link copied!'}
-    </div>
-  );
-
-  // Status helper functions
   const getCommissionStatusLabel = (status) => {
-  const labels = {
-    pending: '⏳ House Listed',
-    calculated: '💰 1.5% Earned (Processing)',
-    paid: '✅ Paid to Wallet'
+    const labels = {
+      pending: '⏳ House Listed',
+      calculated: '💰 1.5% Earned (Processing)',
+      paid: '✅ Paid to Wallet'
+    };
+    return labels[status] || status;
   };
-  return labels[status] || status;
-};
 
   const getReferralStatusLabel = (status) => {
     const labels = {
@@ -160,6 +182,16 @@ Use my referral code: ${referralCode} - ${referralLink}`;
     return labels[type] || type;
   };
 
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const formatCurrency = (amount) => {
+    if (!amount) return '₦0';
+    return `₦${amount.toLocaleString()}`;
+  };
+
   if (loading) {
     return (
       <div className="referrals-loading">
@@ -171,9 +203,13 @@ Use my referral code: ${referralCode} - ${referralLink}`;
 
   return (
     <div className="tenant-referrals">
-      {copied.show && <CopyFeedback />}
+      {copied.show && (
+        <div className="copy-feedback">
+          {copied.type === 'code' ? '✓ Referral code copied!' : '✓ Referral link copied!'}
+        </div>
+      )}
       
-      {/* Header with Two Earnings Types */}
+      {/* Header */}
       <div className="referrals-header">
         <div className="header-content">
           <h1>Earn with RentEasy</h1>
@@ -186,6 +222,16 @@ Use my referral code: ${referralCode} - ${referralLink}`;
           <span className="btn-icon">📤</span>
           <span className="btn-text">Invite & Earn</span>
         </button>
+      </div>
+
+      {/* Total Earnings Card */}
+      <div className="total-earnings-card">
+        <div className="total-earnings-icon">💰</div>
+        <div className="total-earnings-info">
+          <span className="total-earnings-label">Total Earnings</span>
+          <span className="total-earnings-value">{formatCurrency(totalEarned)}</span>
+          <span className="total-earnings-sub">From both commission and referral systems</span>
+        </div>
       </div>
 
       {/* Dual System Stats */}
@@ -210,7 +256,7 @@ Use my referral code: ${referralCode} - ${referralLink}`;
             <div className="stat-card">
               <div className="stat-icon">💰</div>
               <div className="stat-info">
-                <span className="stat-value">₦{totalCommissionEarned.toLocaleString()}</span>
+                <span className="stat-value">{formatCurrency(totalCommissionEarned)}</span>
                 <span className="stat-label">Commission Earned</span>
                 <span className="stat-sub">1.5% of rentals from your posts</span>
               </div>
@@ -220,13 +266,13 @@ Use my referral code: ${referralCode} - ${referralLink}`;
               <div className="stat-info">
                 <span className="stat-value">{commissionEarnings.length}</span>
                 <span className="stat-label">Properties Posted</span>
-                <span className="stat-sub">{commissionEarnings.filter(c => c.rentedDate).length} rented</span>
+                <span className="stat-sub">{commissionEarnings.filter(c => c.rented_at).length} rented</span>
               </div>
             </div>
             <div className="stat-card">
               <div className="stat-icon">⏳</div>
               <div className="stat-info">
-                <span className="stat-value">₦{pendingCommissions.toLocaleString()}</span>
+                <span className="stat-value">{formatCurrency(pendingCommissions)}</span>
                 <span className="stat-label">Pending Payout</span>
                 <span className="stat-sub">Awaiting payment processing</span>
               </div>
@@ -245,7 +291,7 @@ Use my referral code: ${referralCode} - ${referralLink}`;
             <div className="stat-card">
               <div className="stat-icon">🎯</div>
               <div className="stat-info">
-                <span className="stat-value">₦{totalReferralRewardsEarned.toLocaleString()}</span>
+                <span className="stat-value">{formatCurrency(totalReferralRewardsEarned)}</span>
                 <span className="stat-label">Referral Rewards</span>
                 <span className="stat-sub">#5000 per successful referral</span>
               </div>
@@ -261,7 +307,7 @@ Use my referral code: ${referralCode} - ${referralLink}`;
             <div className="stat-card">
               <div className="stat-icon">⏳</div>
               <div className="stat-info">
-                <span className="stat-value">₦{pendingReferrals.toLocaleString()}</span>
+                <span className="stat-value">{formatCurrency(pendingReferrals)}</span>
                 <span className="stat-label">Pending Rewards</span>
                 <span className="stat-sub">Awaiting verification/payment</span>
               </div>
@@ -285,15 +331,15 @@ Use my referral code: ${referralCode} - ${referralLink}`;
           <div className="system-card commission-system">
             <div className="system-icon">💰</div>
             <h4>1.5% Commission System</h4>
-            <p className="system-subtitle">Earn 1% when houses you post get rented</p>
+            <p className="system-subtitle">Earn 1.5% when houses you post get rented</p>
             <ul className="system-steps">
               <li>📝 <strong>Step 1:</strong> Post a vacating property (as outgoing tenant)</li>
               <li>🔍 <strong>Step 2:</strong> Property gets listed on RentEasy</li>
               <li>🤝 <strong>Step 3:</strong> Someone rents the property</li>
-              <li>💳 <strong>Step 4:</strong> Get 1% of rental value as commission</li>
+              <li>💳 <strong>Step 4:</strong> Get 1.5% of rental value as commission</li>
             </ul>
             <div className="system-example">
-              <p><strong>Example:</strong> Rent = ₦2,000,000 → You earn <strong>₦20,000</strong></p>
+              <p><strong>Example:</strong> Rent = ₦2,000,000 → You earn <strong>₦30,000</strong></p>
             </div>
           </div>
           
@@ -358,187 +404,200 @@ Use my referral code: ${referralCode} - ${referralLink}`;
         </div>
       </div>
 
-{/* Earnings History with Tabs */}
-<div className="earnings-history">
-  <div className="history-header">
-    <div className="history-tabs">
-      <button 
-        className={`history-tab ${activeTab === 'commissions' ? 'active' : ''}`}
-        onClick={() => setActiveTab('commissions')}
-      >
-        💰 Commission History
-      </button>
-      <button 
-        className={`history-tab ${activeTab === 'referrals' ? 'active' : ''}`}
-        onClick={() => setActiveTab('referrals')}
-      >
-        🎯 Referral Rewards
-      </button>
-    </div>
-    <div className="history-stats">
-      <span className="total-earned">
-        Total Earned: <strong>₦{totalEarned.toLocaleString()}</strong>
-      </span>
-    </div>
-  </div>
-  
-  {/* Commission History Table */}
-  {activeTab === 'commissions' && (
-    <div className="earnings-table-container">
-      {/* Add mobile view here */}
-      <div className="mobile-earnings-cards">
-        {commissionEarnings.map(commission => (
-          <div key={commission.id} className="mobile-history-card">
-            <div className="card-row">
-              <strong>{commission.propertyTitle}</strong>
-              <span className={`status-badge status-${commission.status}`}>
-                {getCommissionStatusLabel(commission.status)}
-              </span>
-            </div>
-            <div className="card-row">
-              <span>Rent: ₦{commission.rentalValue?.toLocaleString()}</span>
-              <span className="reward-amount">Earned: ₦{commission.commissionAmount?.toLocaleString()}</span>
-            </div>
-            <div className="card-row footer">
-              <small>Posted: {new Date(commission.created_at).toLocaleDateString()}</small>
-              <span className="rate-badge">1.5% Fee</span>
-            </div>
+      {/* Earnings History */}
+      <div className="earnings-history">
+        <div className="history-header">
+          <div className="history-tabs">
+            <button 
+              className={`history-tab ${activeTab === 'commissions' ? 'active' : ''}`}
+              onClick={() => setActiveTab('commissions')}
+            >
+              💰 Commission History
+            </button>
+            <button 
+              className={`history-tab ${activeTab === 'referrals' ? 'active' : ''}`}
+              onClick={() => setActiveTab('referrals')}
+            >
+              🎯 Referral Rewards
+            </button>
           </div>
-        ))}
+          <div className="history-stats">
+            <span className="total-earned">
+              Total Earned: <strong>{formatCurrency(totalEarned)}</strong>
+            </span>
+          </div>
+        </div>
+        
+        {/* Commission History */}
+        {activeTab === 'commissions' && (
+          <div className="earnings-table-container">
+            {commissionEarnings.length > 0 ? (
+              <>
+                {/* Mobile View */}
+                <div className="mobile-earnings-cards">
+                  {commissionEarnings.map(commission => (
+                    <div key={commission.id} className="mobile-history-card">
+                      <div className="card-row">
+                        <strong>{commission.property_title}</strong>
+                        <span className={`status-badge status-${commission.status}`}>
+                          {getCommissionStatusLabel(commission.status)}
+                        </span>
+                      </div>
+                      <div className="card-row">
+                        <span>Rent: {formatCurrency(commission.rental_value)}</span>
+                        <span className="reward-amount">Earned: {formatCurrency(commission.commission_amount)}</span>
+                      </div>
+                      <div className="card-row footer">
+                        <small>Posted: {formatDate(commission.created_at)}</small>
+                        <span className="rate-badge">1.5% Fee</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Desktop Table View */}
+                <div className="earnings-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Rental Value</th>
+                        <th>Commission</th>
+                        <th>Status</th>
+                        <th>Date Posted</th>
+                        <th>Date Rented</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {commissionEarnings.map(commission => (
+                        <tr key={commission.id}>
+                          <td>
+                            <div className="property-info">
+                              <strong>{commission.property_title}</strong>
+                            </div>
+                          </td>
+                          <td>{formatCurrency(commission.rental_value)}</td>
+                          <td>
+                            <div className="commission-info">
+                              <span className="commission-amount">
+                                {formatCurrency(commission.commission_amount)}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`status-badge status-${commission.status}`}>
+                              {getCommissionStatusLabel(commission.status)}
+                            </span>
+                          </td>
+                          <td>{formatDate(commission.created_at)}</td>
+                          <td>{commission.rented_at ? formatDate(commission.rented_at) : 'Not yet'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="empty-earnings">
+                <div className="empty-icon">📝</div>
+                <h4>No Commission History Yet</h4>
+                <p>Start posting properties to earn 1.5% commissions!</p>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => window.location.href = '/post-property'}
+                >
+                  Post Your First Property
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Referral Rewards History */}
+        {activeTab === 'referrals' && (
+          <div className="earnings-table-container">
+            {referralRewards.length > 0 ? (
+              <>
+                {/* Mobile View */}
+                <div className="mobile-earnings-cards">
+                  {referralRewards.map(reward => (
+                    <div key={reward.id} className="mobile-history-card">
+                      <div className="card-row">
+                        <strong>{reward.referred_user_name || 'User'}</strong>
+                        <span className={`status-badge status-${reward.status}`}>
+                          {getReferralStatusLabel(reward.status)}
+                        </span>
+                      </div>
+                      <div className="card-row">
+                        <span>{getRewardTypeLabel(reward.reward_type)}</span>
+                        <span className="reward-amount">{formatCurrency(reward.reward_amount)}</span>
+                      </div>
+                      <div className="card-row footer">
+                        <small>Signed up: {formatDate(reward.signup_date)}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Desktop Table View */}
+                <div className="earnings-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Referred Friend</th>
+                        <th>Signup Date</th>
+                        <th>Reward Type</th>
+                        <th>Reward Amount</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {referralRewards.map(reward => (
+                        <tr key={reward.id}>
+                          <td>
+                            <div className="friend-info">
+                              <strong>{reward.referred_user_name || 'Anonymous'}</strong>
+                              <small>{reward.referred_user_email}</small>
+                            </div>
+                          </td>
+                          <td>{formatDate(reward.signup_date)}</td>
+                          <td>
+                            <span className="reward-type">
+                              {getRewardTypeLabel(reward.reward_type)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="reward-amount">
+                              {formatCurrency(reward.reward_amount)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`status-badge status-${reward.status}`}>
+                              {getReferralStatusLabel(reward.status)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="empty-earnings">
+                <div className="empty-icon">👥</div>
+                <h4>No Referral Rewards Yet</h4>
+                <p>Start referring friends to earn #5000 per qualifying referral!</p>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => setShowShareModal(true)}
+                >
+                  Invite Your First Friend
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      
-      {/* Desktop table view */}
-      {commissionEarnings.length > 0 ? (
-        <div className="earnings-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Property</th>
-                <th>Rental Value</th>
-                <th>Commission</th>
-                <th>Status</th>
-                <th>Date Posted</th>
-                <th>Date Rented</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {commissionEarnings.map(commission => (
-                <tr key={commission.id}>
-                  <td>
-                    <div className="property-info">
-                      <strong>{commission.propertyTitle}</strong>
-                      <small>ID: {commission.propertyId}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="rental-value">
-                      ₦{commission.rentalValue?.toLocaleString() || '0'}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="commission-info">
-                      <span className="commission-rate">{commission.commissionRate}</span>
-                      <span className="commission-amount">
-                        ₦{commission.commissionAmount?.toLocaleString()}
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`status-badge status-${commission.status}`}>
-                      {getCommissionStatusLabel(commission.status)}
-                    </span>
-                  </td>
-                  <td>{commission.postedDate}</td>
-                  <td>{commission.rentedDate || 'Not yet'}</td>
-                  <td className="notes">{commission.notes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-earnings">
-          <div className="empty-icon">📝</div>
-          <h4>No Commission History Yet</h4>
-          <p>Start posting properties to earn 1% commissions!</p>
-          <button 
-            className="btn btn-primary"
-            onClick={() => window.location.href = '/dashboard/post-property'}
-          >
-            Post Your First Property
-          </button>
-        </div>
-      )}
-    </div>
-  )}
-  
-  {/* Referral Rewards Table */}
-  {activeTab === 'referrals' && (
-    <div className="earnings-table-container">
-      {/* Add mobile view for referrals here if needed */}
-      {referralRewards.length > 0 ? (
-        <div className="earnings-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Referred Friend</th>
-                <th>Signup Date</th>
-                <th>Reward Type</th>
-                <th>Reward Amount</th>
-                <th>Status</th>
-                <th>Trigger Event</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {referralRewards.map(reward => (
-                <tr key={reward.id}>
-                  <td>
-                    <div className="friend-info">
-                      <strong>{reward.referredUserName}</strong>
-                      <small>{reward.referredUserEmail}</small>
-                    </div>
-                  </td>
-                  <td>{reward.signupDate}</td>
-                  <td>
-                    <span className="reward-type">
-                      {getRewardTypeLabel(reward.rewardType)}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="reward-amount">
-                      #{(reward.rewardAmount || 0).toLocaleString()}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge status-${reward.status}`}>
-                      {getReferralStatusLabel(reward.status)}
-                    </span>
-                  </td>
-                  <td className="trigger-event">{reward.triggerEvent}</td>
-                  <td className="notes">{reward.notes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-earnings">
-          <div className="empty-icon">👥</div>
-          <h4>No Referral Rewards Yet</h4>
-          <p>Start referring friends to earn #5000 per qualifying referral!</p>
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowShareModal(true)}
-          >
-            Invite Your First Friend
-          </button>
-        </div>
-      )}
-    </div>
-  )}
-</div>
 
       {/* Terms and Conditions */}
       <div className="terms-section">
@@ -620,7 +679,7 @@ Use my referral code: ${referralCode} - ${referralLink}`;
                 <div className="preview-content">
                   <p>Hey! Join RentEasy - Nigeria's premium rental platform!</p>
                   <p><strong>Earn with me:</strong></p>
-                  <p>💰 <strong>1% Commission:</strong> When you post properties that get rented</p>
+                  <p>💰 <strong>1.5% Commission:</strong> When you post properties that get rented</p>
                   <p>🎯 <strong>#5000 Reward:</strong> I get #5000 when you sign up AND rent or post a rented property</p>
                   <div className="preview-code">
                     Use my code: <strong>{referralCode}</strong>

@@ -2,17 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import VerifiedBadge from '../../../../shared/components/VerifiedBadge';
+import RentEasyLoader from '../../../../shared/components/RentEasyLoader';
 import './TenantProfile.css';
 
 const TenantProfile = () => {
   const { user, updateUser } = useAuth();
   const [profile, setProfile] = useState({
-    name: '',
+    full_name: '',
     email: '',
-    phone: '',
+    phone_number: '',
     bio: '',
     occupation: '',
-    dateOfBirth: '',
+    date_of_birth: '',
     gender: '',
     address: '',
     emergency_contact: {
@@ -22,21 +23,28 @@ const TenantProfile = () => {
     },
     preferences: {
       notification: true,
-      emailUpdates: true,
-      smsAlerts: false,
+      email_updates: true,
+      sms_alerts: false,
       newsletter: true
     }
   });
   
   const [profilePic, setProfilePic] = useState(null);
   const [coverPhoto, setCoverPhoto] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
+  const [stats, setStats] = useState({
+    active_listings: 0,
+    applications: 0,
+    trust_score: 0,
+    member_since: ''
+  });
 
   useEffect(() => {
     if (user?.id) {
       fetchProfile();
+      fetchStats();
     }
   }, [user]);
 
@@ -53,16 +61,16 @@ const TenantProfile = () => {
 
       if (data) {
         setProfile({
-          name: data.full_name || '',
-          email: data.email || '',
-          phone: data.phone_number || '',
+          full_name: data.full_name || '',
+          email: data.email || user.email || '',
+          phone_number: data.phone_number || '',
           bio: data.bio || '',
           occupation: data.occupation || '',
-          dateOfBirth: data.date_of_birth || '',
+          date_of_birth: data.date_of_birth || '',
           gender: data.gender || '',
           address: data.address || '',
           emergency_contact: data.emergency_contact || { name: '', phone: '', relationship: '' },
-          preferences: data.preferences || { notification: true, emailUpdates: true, smsAlerts: false, newsletter: true }
+          preferences: data.preferences || { notification: true, email_updates: true, sms_alerts: false, newsletter: true }
         });
         setProfilePic(data.avatar_url);
         setCoverPhoto(data.cover_url);
@@ -74,9 +82,45 @@ const TenantProfile = () => {
     }
   };
 
+  const fetchStats = async () => {
+    try {
+      // Fetch user's listings count
+      const { count: listingsCount } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      // Fetch applications count (from saved properties or applications table)
+      const { count: savedCount } = await supabase
+        .from('saved_properties')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      // Get member since date
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('created_at')
+        .eq('id', user.id)
+        .single();
+
+      const memberDate = profileData?.created_at 
+        ? new Date(profileData.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+        : 'N/A';
+
+      setStats({
+        active_listings: listingsCount || 0,
+        applications: savedCount || 0,
+        trust_score: user?.is_verified ? 95 : 65,
+        member_since: memberDate
+      });
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
   const uploadImage = async (file, path) => {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}-${path}.${fileExt}`;
+    const fileName = `${user.id}-${path}-${Date.now()}.${fileExt}`;
     const filePath = `${fileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -94,27 +138,27 @@ const TenantProfile = () => {
     try {
       const updates = {
         id: user.id,
-        full_name: profile.name,
-        phone_number: profile.phone,
+        full_name: profile.full_name,
+        phone_number: profile.phone_number,
         bio: profile.bio,
         occupation: profile.occupation,
-        date_of_birth: profile.dateOfBirth,
+        date_of_birth: profile.date_of_birth,
         gender: profile.gender,
         address: profile.address,
         emergency_contact: profile.emergency_contact,
         preferences: profile.preferences,
         avatar_url: profilePic,
         cover_url: coverPhoto,
-        updated_at: new Date(),
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = await supabase.from('profiles').upsert(updates);
 
       if (error) throw error;
 
-      updateUser({ ...user, ...profile, profilePic, coverPhoto });
+      updateUser({ ...user, ...profile });
       setEditMode(false);
-      alert('Profile updated in Supabase successfully!');
+      alert('Profile updated successfully!');
     } catch (error) {
       alert(error.message);
     } finally {
@@ -170,12 +214,16 @@ const TenantProfile = () => {
     { id: 'security', label: 'Security', icon: '🔒' },
   ];
 
-  const stats = [
-    { label: 'Active Listings', value: '3', icon: '🏠' },
-    { label: 'Applications', value: '5', icon: '📋' },
-    { label: 'Trust Score', value: '85/100', icon: '⭐' },
-    { label: 'Member Since', value: 'Dec 2024', icon: '📅' },
+  const statsData = [
+    { label: 'Active Listings', value: stats.active_listings.toString(), icon: '🏠' },
+    { label: 'Saved Properties', value: stats.applications.toString(), icon: '⭐' },
+    { label: 'Trust Score', value: `${stats.trust_score}/100`, icon: '⭐' },
+    { label: 'Member Since', value: stats.member_since, icon: '📅' },
   ];
+
+   if (loading) {
+  return <RentEasyLoader message="Loading your Profile..." fullScreen />;
+}
 
   return (
     <div className="tenant-profile-modern">
@@ -213,7 +261,7 @@ const TenantProfile = () => {
               <img src={profilePic} alt="Profile" className="profile-pic" />
             ) : (
               <div className="profile-pic-placeholder">
-                {profile.name ? profile.name.charAt(0).toUpperCase() : 'T'}
+                {profile.full_name ? profile.full_name.charAt(0).toUpperCase() : 'T'}
               </div>
             )}
             
@@ -239,8 +287,8 @@ const TenantProfile = () => {
           
           <div className="profile-basic-info">
             <div className="profile-name-container">
-              <h1>{profile.name || 'Tenant'}</h1>
-              {user?.isVerified && <VerifiedBadge type="tenant" size="large" />}
+              <h1>{profile.full_name || 'Tenant'}</h1>
+              {user?.is_verified && <VerifiedBadge type="tenant" size="large" />}
             </div>
             <p className="profile-occupation">
               <span className="occupation-icon">💼</span>
@@ -248,15 +296,15 @@ const TenantProfile = () => {
             </p>
             <div className="profile-meta">
               <span className="meta-item">📧 {profile.email}</span>
-              <span className="meta-item">📱 {profile.phone}</span>
-              <span className="meta-item">📍 {profile.address}</span>
+              {profile.phone_number && <span className="meta-item">📱 {profile.phone_number}</span>}
+              {profile.address && <span className="meta-item">📍 {profile.address}</span>}
             </div>
           </div>
         </div>
       </div>
 
       <div className="profile-stats">
-        {stats.map((stat, index) => (
+        {statsData.map((stat, index) => (
           <div key={index} className="stat-card-modern">
             <div className="stat-icon">{stat.icon}</div>
             <div className="stat-content">
@@ -276,7 +324,7 @@ const TenantProfile = () => {
               onClick={() => editMode ? handleSave() : setEditMode(true)}
               disabled={loading}
             >
-              {loading ? 'Processing...' : editMode ? 'Save to Database' : 'Edit Profile'}
+              {loading ? 'Processing...' : editMode ? 'Save Changes' : 'Edit Profile'}
             </button>
           </div>
           
@@ -314,15 +362,16 @@ const TenantProfile = () => {
             <div className="tab-content">
               <div className="tab-header">
                 <h3>Personal Information</h3>
+                <p>Update your personal details</p>
               </div>
               <div className="form-grid-modern">
                 <div className="form-group-modern">
                   <label>Full Name</label>
-                  <input type="text" name="name" value={profile.name} onChange={handleInputChange} disabled={!editMode} className="form-input" />
+                  <input type="text" name="full_name" value={profile.full_name} onChange={handleInputChange} disabled={!editMode} className="form-input" />
                 </div>
                 <div className="form-group-modern">
                   <label>Date of Birth</label>
-                  <input type="date" name="dateOfBirth" value={profile.dateOfBirth} onChange={handleInputChange} disabled={!editMode} className="form-input" />
+                  <input type="date" name="date_of_birth" value={profile.date_of_birth} onChange={handleInputChange} disabled={!editMode} className="form-input" />
                 </div>
                 <div className="form-group-modern">
                   <label>Gender</label>
@@ -330,11 +379,16 @@ const TenantProfile = () => {
                     <option value="">Select gender</option>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div className="form-group-modern">
                   <label>Occupation</label>
                   <input type="text" name="occupation" value={profile.occupation} onChange={handleInputChange} disabled={!editMode} className="form-input" />
+                </div>
+                <div className="form-group-modern full-width">
+                  <label>Bio</label>
+                  <textarea name="bio" value={profile.bio} onChange={handleInputChange} disabled={!editMode} className="form-input" rows="3" />
                 </div>
               </div>
             </div>
@@ -342,28 +396,49 @@ const TenantProfile = () => {
 
           {activeTab === 'contact' && (
             <div className="tab-content">
-              <div className="tab-header"><h3>Contact Information</h3></div>
+              <div className="tab-header">
+                <h3>Contact Information</h3>
+                <p>How to reach you</p>
+              </div>
               <div className="section-card">
                 <h4>Primary Contact</h4>
                 <div className="form-grid-modern">
-                  <div className="form-group-modern"><label>Email</label><input type="email" name="email" value={profile.email} disabled className="form-input" /></div>
-                  <div className="form-group-modern"><label>Phone</label><input type="tel" name="phone" value={profile.phone} onChange={handleInputChange} disabled={!editMode} className="form-input" /></div>
-                  <div className="form-group-modern full-width"><label>Address</label><textarea name="address" value={profile.address} onChange={handleInputChange} disabled={!editMode} className="form-input" /></div>
+                  <div className="form-group-modern full-width">
+                    <label>Email</label>
+                    <input type="email" name="email" value={profile.email} disabled className="form-input" />
+                    <small className="field-hint">Email cannot be changed</small>
+                  </div>
+                  <div className="form-group-modern">
+                    <label>Phone Number</label>
+                    <input type="tel" name="phone_number" value={profile.phone_number} onChange={handleInputChange} disabled={!editMode} className="form-input" />
+                  </div>
+                  <div className="form-group-modern full-width">
+                    <label>Address</label>
+                    <textarea name="address" value={profile.address} onChange={handleInputChange} disabled={!editMode} className="form-input" rows="2" />
+                  </div>
                 </div>
               </div>
               
               <div className="section-card">
                 <h4>Emergency Contact</h4>
                 <div className="form-grid-modern">
-                  <div className="form-group-modern"><label>Name</label><input type="text" name="emergency_contact.name" value={profile.emergency_contact.name} onChange={handleInputChange} disabled={!editMode} className="form-input" /></div>
-                  <div className="form-group-modern"><label>Phone</label><input type="tel" name="emergency_contact.phone" value={profile.emergency_contact.phone} onChange={handleInputChange} disabled={!editMode} className="form-input" /></div>
+                  <div className="form-group-modern">
+                    <label>Name</label>
+                    <input type="text" name="emergency_contact.name" value={profile.emergency_contact.name} onChange={handleInputChange} disabled={!editMode} className="form-input" />
+                  </div>
+                  <div className="form-group-modern">
+                    <label>Phone</label>
+                    <input type="tel" name="emergency_contact.phone" value={profile.emergency_contact.phone} onChange={handleInputChange} disabled={!editMode} className="form-input" />
+                  </div>
                   <div className="form-group-modern">
                     <label>Relationship</label>
                     <select name="emergency_contact.relationship" value={profile.emergency_contact.relationship} onChange={handleInputChange} disabled={!editMode} className="form-input">
                       <option value="">Select...</option>
                       <option value="spouse">Spouse</option>
                       <option value="parent">Parent</option>
+                      <option value="sibling">Sibling</option>
                       <option value="friend">Friend</option>
+                      <option value="other">Other</option>
                     </select>
                   </div>
                 </div>
@@ -373,42 +448,117 @@ const TenantProfile = () => {
 
           {activeTab === 'preferences' && (
             <div className="tab-content">
-              <div className="tab-header"><h3>Notification Preferences</h3></div>
+              <div className="tab-header">
+                <h3>Notification Preferences</h3>
+                <p>Manage how you receive updates</p>
+              </div>
               <div className="preferences-grid">
-                {['notification', 'emailUpdates', 'smsAlerts', 'newsletter'].map(pref => (
-                  <div className="preference-card" key={pref}>
-                    <div className="preference-header">
-                      <h4>{pref.replace(/([A-Z])/g, ' $1')}</h4>
-                      <label className="toggle-switch">
-                        <input type="checkbox" name={`preferences.${pref}`} checked={profile.preferences[pref]} onChange={handleInputChange} disabled={!editMode} />
-                        <span className="toggle-slider"></span>
-                      </label>
+                <div className="preference-card">
+                  <div className="preference-header">
+                    <div className="preference-info">
+                      <h4>Push Notifications</h4>
+                      <p>Receive in-app notifications</p>
                     </div>
+                    <label className="toggle-switch">
+                      <input type="checkbox" name="preferences.notification" checked={profile.preferences.notification} onChange={handleInputChange} disabled={!editMode} />
+                      <span className="toggle-slider"></span>
+                    </label>
                   </div>
-                ))}
+                </div>
+                
+                <div className="preference-card">
+                  <div className="preference-header">
+                    <div className="preference-info">
+                      <h4>Email Updates</h4>
+                      <p>Property alerts and updates</p>
+                    </div>
+                    <label className="toggle-switch">
+                      <input type="checkbox" name="preferences.email_updates" checked={profile.preferences.email_updates} onChange={handleInputChange} disabled={!editMode} />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                
+                <div className="preference-card">
+                  <div className="preference-header">
+                    <div className="preference-info">
+                      <h4>SMS Alerts</h4>
+                      <p>Text message notifications</p>
+                    </div>
+                    <label className="toggle-switch">
+                      <input type="checkbox" name="preferences.sms_alerts" checked={profile.preferences.sms_alerts} onChange={handleInputChange} disabled={!editMode} />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                
+                <div className="preference-card">
+                  <div className="preference-header">
+                    <div className="preference-info">
+                      <h4>Newsletter</h4>
+                      <p>Weekly property digest</p>
+                    </div>
+                    <label className="toggle-switch">
+                      <input type="checkbox" name="preferences.newsletter" checked={profile.preferences.newsletter} onChange={handleInputChange} disabled={!editMode} />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === 'security' && (
-             <div className="tab-content">
-                <div className="tab-header"><h3>Security</h3></div>
-                <div className="security-card">
-                   <div className="security-content">
-                      <h4>Account Status</h4>
-                      <p>{user?.isVerified ? 'Verified' : 'Unverified'}</p>
-                   </div>
-                   {!user?.isVerified && <button className="btn btn-primary btn-sm">Verify Now</button>}
+            <div className="tab-content">
+              <div className="tab-header">
+                <h3>Security Settings</h3>
+                <p>Manage your account security</p>
+              </div>
+              <div className="security-card">
+                <div className="security-content">
+                  <h4>Account Status</h4>
+                  <p>{user?.is_verified ? '✅ Verified Account' : '⏳ Unverified Account'}</p>
+                  <small>{user?.is_verified ? 'Your identity has been verified' : 'Complete KYC to get verified badge'}</small>
                 </div>
-             </div>
+                {!user?.is_verified && (
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate('/verify')}>
+                    Verify Now
+                  </button>
+                )}
+              </div>
+              
+              <div className="security-card">
+                <div className="security-content">
+                  <h4>Change Password</h4>
+                  <p>Update your login credentials</p>
+                </div>
+                <button className="btn btn-outline btn-sm">
+                  Change Password
+                </button>
+              </div>
+              
+              <div className="danger-zone">
+                <h4>⚠️ Danger Zone</h4>
+                <div className="danger-actions">
+                  <button className="btn btn-danger btn-sm">
+                    Deactivate Account
+                  </button>
+                  <button className="btn btn-danger-outline btn-sm">
+                    Delete Account
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
           
           {editMode && (
             <div className="save-actions">
               <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={loading}>
-                {loading ? 'Saving to Database...' : 'Confirm Changes'}
+                {loading ? 'Saving...' : 'Save Changes'}
               </button>
-              <button className="btn btn-outline btn-lg" onClick={() => setEditMode(false)}>Cancel</button>
+              <button className="btn btn-outline btn-lg" onClick={() => setEditMode(false)}>
+                Cancel
+              </button>
             </div>
           )}
         </div>

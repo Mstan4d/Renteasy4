@@ -54,7 +54,7 @@ const TenantSidebarLayout = lazy(() => import('../modules/dashboard/components/t
 const ManagerLayout = lazy(() => import('../modules/manager/components/ManagerLayout'));
 const ProviderLayout = lazy(() => import('../modules/providers/components/ProviderLayout'));
 const EstateFirmLayout = lazy(() => import('../modules/estate-firm/components/EstateFirmLayout'));
-const NewTenantKycForm = lazy(() => import('../modules/dashboard/pages/tenant/NewTenantKycForm'));
+
 
 // Lazy load components
 const AdminDashboard = lazy(() => import('../modules/admin/pages/AdminDashboard'));
@@ -106,6 +106,10 @@ const TenantDocuments = lazy(() => import('../modules/dashboard/pages/tenant/Ten
 const TenantReferrals = lazy(() => import('../modules/dashboard/pages/tenant/TenantReferrals'));
 const TenantSettings = lazy(() => import('../modules/dashboard/pages/tenant/TenantSettings'));
 const TenantLeases = lazy(() => import('../modules/dashboard/pages/tenant/TenantLeases'));
+const TenantNotifications = lazy(() => import('../modules/dashboard/pages/tenant/TenantNotifications'));
+const TenantRentManagement = lazy(() => import('../modules/dashboard/pages/tenant/TenantRentManagement'));
+const NewTenantKycForm = lazy(() => import('../modules/dashboard/pages/tenant/NewTenantKycForm'));
+
 
 // Landlord Components
 const LandlordDashboard = lazy(() => import('../modules/dashboard/pages/landlord/LandlordDashboard'));
@@ -141,6 +145,7 @@ const EstateMyListings = lazy(() => import('../modules/estate-firm/pages/EstateM
 const EstateEditProperty = lazy(() => import('../modules/estate-firm/pages/EstateEditProperty'));
 const EstateSubscription = lazy(() => import('../modules/estate-firm/pages/EstateSubscription'));
 const EstateLandlordDetail = lazy(() => import('../modules/estate-firm/pages/EstateLandlordDetail'));
+const EstateNotifications = lazy(() => import('../modules/estate-firm/pages/EstateNotifications'));
 
 
 // === SUPER ADMIN IMPORTS ===
@@ -318,7 +323,9 @@ const AppRoutes = () => {
         <Route path="referrals" element={<TenantReferrals />} />
         <Route path="settings" element={<TenantSettings />} />
         <Route path="leases" element={<TenantLeases />} />
-        <Route path="verify" element={<NewTenantKycForm />} />
+        <Route path="kyc" element={<NewTenantKycForm />} />
+        <Route path="notifications" element={<TenantNotifications />} />
+        <Route path="rent-management" element={<TenantRentManagement />} />
       </Route>
 
       {/* ========== LANDLORD ROUTES ========== */}
@@ -345,7 +352,7 @@ const AppRoutes = () => {
         <Route path="rent-tracking" element={<LandlordRentTracking />} />
       
       </Route>
-      // In your AppRoutes.jsx, temporarily add this debug route
+     
 <Route 
   path="/debug-layouts" 
   element={
@@ -474,6 +481,7 @@ const AppRoutes = () => {
         <Route path="my-listings" element={<EstateMyListings />} />
         <Route path="reports" element={<EstateReports />} /> 
         <Route path="landlords/:landlordId" element={<EstateLandlordDetail />} />
+        <Route path="notifications" element={<EstateNotifications />} />
         <Route path="subscription" element={<EstateSubscription />} />
       </Route>
 

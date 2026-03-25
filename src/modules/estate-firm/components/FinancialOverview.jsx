@@ -168,7 +168,7 @@ const FinancialOverview = ({ estateFirmData, dashboardStats }) => {
 
   
  if (loading) {
-  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+  return <RentEasyLoader message="Loading your Finances..." fullScreen />;
 }
 
   return (

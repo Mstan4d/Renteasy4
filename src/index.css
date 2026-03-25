@@ -110,3 +110,53 @@ body {
 .btn-primary:hover {
   background-color: var(--primary-600);
 }
+
+/* ===== OVERRIDE BOOTSTRAP SIDEBAR COLORS - FORCE DARK TEXT ===== */
+.manager-sidebar,
+.manager-sidebar *,
+.manager-sidebar a,
+.manager-sidebar .nav-link,
+.manager-sidebar .nav-item a,
+.manager-sidebar .nav-link span,
+.manager-sidebar .nav-label,
+.manager-sidebar .nav-icon {
+  color: #1f2937 !important;
+}
+
+.manager-sidebar .nav-link.active,
+.manager-sidebar .nav-link.active *,
+.manager-sidebar .active .nav-label,
+.manager-sidebar .active .nav-icon {
+  color: #4f46e5 !important;
+}
+
+.manager-sidebar .nav-link:hover,
+.manager-sidebar .nav-link:hover *,
+.manager-sidebar a:hover,
+.manager-sidebar a:hover span {
+  color: #2563eb !important;
+}
+
+/* KYC badge */
+.manager-sidebar .kyc-badge,
+.manager-sidebar .kyc-badge * {
+  color: #334155 !important;
+}
+
+/* Logout button */
+.manager-sidebar .logout-btn,
+.manager-sidebar .logout-btn * {
+  color: #dc2626 !important;
+}
+
+/* Badge (notification count) */
+.manager-sidebar .nav-badge,
+.manager-sidebar .nav-badge * {
+  color: white !important;
+}
+
+/* Role badge and commission rate */
+.manager-sidebar .role-badge,
+.manager-sidebar .commission-rate {
+  color: inherit !important;
+}

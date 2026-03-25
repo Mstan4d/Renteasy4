@@ -501,7 +501,7 @@ const EstateVerification = () => {
 
   
    if (loading) {
-  return <RentEasyLoader message="Loading your clients..." fullScreen />;
+  return <RentEasyLoader message="Loading verifications..." fullScreen />;
 }
 
   const renderStep = () => {

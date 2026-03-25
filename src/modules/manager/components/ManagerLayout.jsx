@@ -1,25 +1,25 @@
-// src/modules/manager/components/ManagerLayout.jsx
 import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
-import ManagerSidebar from './ManagerSidebar';
+import ManagerSidebar from './ManagerSidebarNew';
 import { Bell, User, Menu, X } from 'lucide-react';
 import './ManagerLayout.css';
 
 const ManagerLayout = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    // On desktop, sidebar should be open by default
-    const handleResize = () => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
       if (window.innerWidth >= 1024) {
         setSidebarOpen(true);
       } else {
         setSidebarOpen(false);
       }
     };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   const toggleSidebar = () => {
@@ -28,13 +28,12 @@ const ManagerLayout = () => {
 
   return (
     <div className="manager-layout">
-      {/* Fixed Header */}
       <header className="manager-header">
         <div className="header-left">
           <button 
             className="header-menu-toggle"
             onClick={toggleSidebar}
-            aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+            aria-label="Toggle sidebar"
           >
             {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -52,22 +51,20 @@ const ManagerLayout = () => {
         </div>
       </header>
 
-      {/* Sidebar – placed below header */}
       <ManagerSidebar 
         isOpen={sidebarOpen}
+        isMobile={isMobile}
         onClose={() => setSidebarOpen(false)}
       />
 
-      {/* Overlay for mobile */}
-      {sidebarOpen && window.innerWidth < 1024 && (
+      {sidebarOpen && isMobile && (
         <div 
           className="sidebar-overlay"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Main Content Area */}
-      <main className={`manager-main ${sidebarOpen ? 'sidebar-visible' : ''}`}>
+      <main className={`manager-main ${!sidebarOpen ? 'sidebar-collapsed' : ''}`}>
         <div className="manager-content">
           <Outlet />
         </div>

@@ -328,20 +328,57 @@ const EstateReports = () => {
     return { gte: start.toISOString() };
   };
 
-  const loadSavedReports = async () => {
+  // Fix the loadSavedReports function - the columns need to match your actual table
+const loadSavedReports = async () => {
   try {
+    // First, check if the table exists by trying to select
     const { data, error } = await supabase
       .from('estate_reports')
-      .select('id, user_id, title, report_type, period, file_url, file_size, status, downloads, generated_at, created_at')
+      .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(20);
 
-    if (!error && data) {
+    if (error) {
+      console.error('Error loading reports (table may not exist):', error);
+      // If table doesn't exist, create it
+      await createReportsTable();
+      setReports([]);
+      return;
+    }
+    
+    if (data) {
       setReports(data);
     }
   } catch (error) {
     console.error('Error loading saved reports:', error);
+    setReports([]);
+  }
+};
+
+// Add this function to create the table if it doesn't exist
+const createReportsTable = async () => {
+  try {
+    const { error } = await supabase
+      .from('estate_reports')
+      .insert({
+        user_id: user.id,
+        title: 'Test Report',
+        report_type: 'test',
+        period: 'test',
+        status: 'ready',
+        file_url: '',
+        file_size: 0,
+        downloads: 0,
+        created_at: new Date().toISOString()
+      });
+    
+    if (error && error.code === '42P01') {
+      // Table doesn't exist - need to create it manually in Supabase
+      console.warn('estate_reports table does not exist. Please create it in Supabase.');
+    }
+  } catch (error) {
+    console.error('Error checking table:', error);
   }
 };
 

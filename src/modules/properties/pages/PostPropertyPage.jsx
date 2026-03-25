@@ -158,7 +158,8 @@ useEffect(() => {
     
     // Images
     images: [],
-    
+    videos: [],
+
     // User info
     user_id: user?.id,
     user_role: profile?.role,
@@ -330,6 +331,8 @@ const uploadImages = async (listingId) => {
           console.error('Upload error:', uploadError);
           continue;
         }
+
+
         
         // Get public URL (CORRECT WAY)
         const { data: urlData } = supabase.storage
@@ -348,6 +351,8 @@ const uploadImages = async (listingId) => {
   
   return uploadedUrls;
 };
+
+
 // Add this debug function to PostPropertyPage.jsx
 const debugFormData = () => {
   console.log('=== FORM DATA DEBUG ===');
@@ -503,6 +508,56 @@ if (currentProfile.role === 'estate-firm') {
       }
     }
 
+// Upload videos
+let videoUrls = [];
+if (formData.videos?.length > 0) {
+  console.log('🎬 Uploading videos...');
+  for (const video of formData.videos) {
+    try {
+      if (video.file) {
+        const fileExt = video.file.name.split('.').pop();
+        const fileName = `video_${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `listings/${listing.id}/${fileName}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('property-images')
+          .upload(filePath, video.file);
+        
+        if (uploadError) {
+          console.error('Video upload error:', uploadError);
+          continue;
+        }
+        
+        const { data: urlData } = supabase.storage
+          .from('property-images')
+          .getPublicUrl(filePath);
+        
+        if (urlData.publicUrl) {
+          videoUrls.push(urlData.publicUrl);
+          console.log('✅ Video uploaded:', urlData.publicUrl);
+        }
+      } else if (video.url) {
+        videoUrls.push(video.url);
+      }
+    } catch (error) {
+      console.error('❌ Error uploading video:', error);
+    }
+  }
+}
+
+// Update listing with video URLs
+if (videoUrls.length > 0) {
+  const { error: videoError } = await supabase
+    .from('listings')
+    .update({ 
+      video_urls: videoUrls,
+      video_url: videoUrls[0] // first video as primary
+    })
+    .eq('id', listing.id);
+  if (videoError) console.error('⚠️ Could not save video URLs:', videoError);
+  else console.log(`✅ ${videoUrls.length} videos uploaded`);
+}
+
     // Decrement free posts for estate firms (if applicable) – atomic operation
 if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentFreePosts > 0) {
   // Use RPC for atomic decrement (must be created in Supabase first)
@@ -526,6 +581,18 @@ if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentF
       : `✅ Property Listed Successfully!\n\n📝 ${formData.title}\n📍 ${formData.address}, ${formData.city}\n💰 ₦${commission.annualRent.toLocaleString()}/year (₦${commission.monthlyEquivalent.toLocaleString()}/month)\n\n💰 You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n✅ Your listing is NOW LIVE with "Pending" status`;
 
     alert(successMessage);
+
+    
+  if (currentProfile.role === 'estate-firm' && finalEstateFirmId) {
+  await supabase.from('notifications').insert({
+    user_id: finalEstateFirmId,
+    type: 'property_listed',
+    title: 'Property Listed',
+    message: `Your listing "${formData.title}" has been posted to RentEasy.`,
+    link: '/dashboard/estate-firm/my-listings',
+    created_at: new Date().toISOString()
+  });
+}
 
     // Navigate to dashboard
     setTimeout(() => {
@@ -597,9 +664,10 @@ if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentF
     }
   };
 
+
   if (!user) return <div>Please log in to Post a Property</div>;
 if (loadingProfile || (!profile && !localProfile)) {
-  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+  return <RentEasyLoader message="Loading Post Page..." fullScreen />;
 }
 const effectiveProfile = profile || localProfile;
 console.log('Profile data:', effectiveProfile);

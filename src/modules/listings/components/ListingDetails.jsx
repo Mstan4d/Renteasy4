@@ -1,10 +1,12 @@
 // src/modules/listings/components/ListingDetails.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropertyImage from '../../../shared/components/PropertyImage';
 import { 
   ArrowLeft, MapPin, CheckCircle, Clock, User, Phone, Mail, 
   Home, DollarSign, Shield, Star, Image as ImageIcon, Building, Receipt
 } from 'lucide-react';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import { useAuth } from '../../../shared/context/AuthContext';
 import './ListingDetails.css';
 
 const ListingDetails = ({ 
@@ -22,8 +24,76 @@ const ListingDetails = ({
   canManagerVerify,
   canManagerAccept
 }) => {
+  const { user } = useAuth();
   const [newReview, setNewReview] = useState('');
   const [reviews, setReviews] = useState(listing.reviews || []);
+  const [isSaved, setIsSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Check if listing is already saved when component loads
+  useEffect(() => {
+    if (user && listing?.id) {
+      checkIfSaved();
+    }
+  }, [user, listing?.id]);
+
+  const checkIfSaved = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('saved_properties')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('listing_id', listing.id)
+        .maybeSingle();
+
+      if (!error && data) {
+        setIsSaved(true);
+      }
+    } catch (error) {
+      console.error('Error checking saved status:', error);
+    }
+  };
+
+  const handleSaveToFavorites = async () => {
+    if (!user) {
+      alert('Please log in to save properties');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (isSaved) {
+        // Remove from saved
+        const { error } = await supabase
+          .from('saved_properties')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('listing_id', listing.id);
+
+        if (error) throw error;
+        setIsSaved(false);
+        alert('Removed from saved properties');
+      } else {
+        // Add to saved
+        const { error } = await supabase
+          .from('saved_properties')
+          .insert({
+            user_id: user.id,
+            listing_id: listing.id,
+            created_at: new Date().toISOString()
+          });
+
+        if (error) throw error;
+        setIsSaved(true);
+        alert('Added to saved properties!');
+      }
+    } catch (error) {
+      console.error('Error saving property:', error);
+      alert('Failed to save property. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const getSafeImageUrl = (url) => {
     if (!url) {
@@ -432,16 +502,13 @@ const ListingDetails = ({
           <button className="btn btn-outline map-btn" onClick={openInGoogleMaps}>
             📍 View on Map
           </button>
-          <button className="btn btn-success" onClick={() => {
-            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-            if (!favorites.includes(listing.id)) {
-              favorites.push(listing.id);
-              localStorage.setItem('favorites', JSON.stringify(favorites));
-              alert('Added to favorites!');
-            }
-          }}>
+          <button 
+            className={`btn ${isSaved ? 'btn-success' : 'btn-outline'}`}
+            onClick={handleSaveToFavorites}
+            disabled={saving}
+          >
             <Star size={16} />
-            Save to Favorites
+            {saving ? 'Saving...' : (isSaved ? 'Saved' : 'Save to Favorites')}
           </button>
         </div>
       </div>

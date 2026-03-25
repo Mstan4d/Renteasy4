@@ -168,6 +168,15 @@ const ConvertListingModal = ({ listing, estateFirmId, onClose, onSuccess }) => {
         created_at: new Date().toISOString()
       });
 
+      await supabase.from('notifications').insert({
+  user_id: estateFirmId,
+  type: 'listing_rented',
+  title: 'Listing Rented',
+  message: `Your listing "${listing.title}" has been rented and converted to a unit.`,
+  link: `/dashboard/estate-firm/properties/${newPropertyId}`,
+  created_at: new Date().toISOString()
+});
+
       onSuccess(unit);
       onClose();
     } catch (err) {

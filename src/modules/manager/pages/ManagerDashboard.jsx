@@ -8,6 +8,7 @@ import ManagerNotificationsPanel from '../components/ManagerNotificationsPanel';
 import ManagerQuickActions from '../components/ManagerQuickActions';
 import ManagerCommissionSummary from '../components/ManagerCommissionSummary';
 import ProximityAlert from '../components/ProximityAlert';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './ManagerDashboard.css';
 
 const ManagerDashboard = () => {
@@ -361,10 +362,9 @@ const ManagerDashboard = () => {
     }
   };
 
-  // ---------- UI rendering (same as before, but with pendingVerifications added) ----------
-  if (loading) {
-    return <div className="manager-loading">Loading dashboard...</div>;
-  }
+   if (loading) {
+  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+}
 
   return (
   <div className="manager-dashboard">

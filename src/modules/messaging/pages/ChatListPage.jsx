@@ -3,14 +3,16 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import './Messages.css';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import './ChatListPage.css';
 
 const ChatListPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [listingsCache, setListingsCache] = useState({}); // cache listing titles
+  const [listingsCache, setListingsCache] = useState({});
+  const [userProfiles, setUserProfiles] = useState({});
 
   useEffect(() => {
     if (!user) {
@@ -24,46 +26,66 @@ const ChatListPage = () => {
     try {
       setLoading(true);
 
-      // Fetch chats where user is a participant
-      // We'll use the participants JSONB column to check
+      // Fetch chats where user is participant1, participant2, or monitoring_manager
       const { data: chatsData, error } = await supabase
         .from('chats')
         .select('*')
+        .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id}`)
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
 
-      // Filter client-side: only chats where user is in participants.all_participants
-      // Alternatively, you can use a Postgres function, but this is simpler for now.
-      const userChats = chatsData.filter(chat => {
-        const participants = chat.participants || {};
-        const allParticipants = participants.all_participants || [];
-        return allParticipants.includes(user.id);
-      });
+      if (!chatsData || chatsData.length === 0) {
+        setChats([]);
+        setLoading(false);
+        return;
+      }
 
       // Get unique listing IDs
-      const listingIds = [...new Set(userChats.map(c => c.listing_id))];
+      const listingIds = [...new Set(chatsData.map(c => c.listing_id).filter(Boolean))];
 
       // Fetch all relevant listings
       if (listingIds.length > 0) {
         const { data: listingsData, error: listingsError } = await supabase
           .from('listings')
-          .select('id, title')
+          .select('id, title, images, poster_role')
           .in('id', listingIds);
 
-        if (listingsError) throw listingsError;
+        if (!listingsError && listingsData) {
+          const cache = {};
+          listingsData.forEach(l => { cache[l.id] = l; });
+          setListingsCache(cache);
+        }
+      }
 
-        const cache = {};
-        listingsData.forEach(l => { cache[l.id] = l.title; });
-        setListingsCache(cache);
+      // Get all participant IDs
+      const participantIds = new Set();
+      chatsData.forEach(chat => {
+        if (chat.participant1_id) participantIds.add(chat.participant1_id);
+        if (chat.participant2_id) participantIds.add(chat.participant2_id);
+        if (chat.monitoring_manager_id) participantIds.add(chat.monitoring_manager_id);
+      });
+
+      // Fetch participant profiles
+      if (participantIds.size > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, avatar_url')
+          .in('id', Array.from(participantIds));
+
+        if (!profilesError && profiles) {
+          const profileMap = {};
+          profiles.forEach(p => { profileMap[p.id] = p; });
+          setUserProfiles(profileMap);
+        }
       }
 
       // For each chat, fetch the last message
       const chatsWithLastMsg = await Promise.all(
-        userChats.map(async (chat) => {
+        chatsData.map(async (chat) => {
           const { data: lastMsg } = await supabase
             .from('messages')
-            .select('content, created_at, is_system')
+            .select('content, created_at, is_system, sender_id')
             .eq('chat_id', chat.id)
             .order('created_at', { ascending: false })
             .limit(1)
@@ -85,14 +107,38 @@ const ChatListPage = () => {
   };
 
   const getChatTitle = (chat) => {
-    return listingsCache[chat.listing_id] || 'Unknown Listing';
+    return listingsCache[chat.listing_id]?.title || 'Unknown Listing';
   };
 
-  const getLastMessageText = (chat) => {
-    if (!chat.lastMessage) return 'No messages yet';
-    if (chat.lastMessage.is_system) return 'System message';
-    return chat.lastMessage.content;
+  const getOtherParticipantName = (chat) => {
+    // Determine who the other participant is (not the current user)
+    if (chat.participant1_id === user.id) {
+      const other = userProfiles[chat.participant2_id];
+      return other?.full_name || 'User';
+    }
+    if (chat.participant2_id === user.id) {
+      const other = userProfiles[chat.participant1_id];
+      return other?.full_name || 'User';
+    }
+    return 'System';
   };
+
+ const getChatPreview = (chat) => {
+  if (!chat.lastMessage) return 'No messages yet';
+  const isOwn = chat.lastMessage.sender_id === user.id;
+  const content = chat.lastMessage.is_system ? 'System message' : chat.lastMessage.content;
+  
+  // For system messages, customize the preview
+  if (chat.lastMessage.is_system && content.includes('You\'ve contacted')) {
+    if (chat.participant2_id === user.id) {
+      return 'A tenant has contacted you';
+    }
+    return content;
+  }
+  
+  const sender = isOwn ? 'You: ' : `${getOtherParticipantName(chat)}: `;
+  return `${sender}${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
+};
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -112,16 +158,18 @@ const ChatListPage = () => {
     }
   };
 
-  const getChatParticipantInfo = (chat) => {
-    const participants = chat.participants || {};
-    if (participants.landlord) return { role: 'Landlord', icon: '🏠' };
-    if (participants.estateFirm) return { role: 'Estate Firm', icon: '🏢' };
-    if (participants.manager) return { role: 'Manager', icon: '👨‍💼' };
-    if (participants.tenant && participants.incomingTenant) return { role: 'Tenant Chat', icon: '👤' };
-    return { role: 'Chat', icon: '💬' };
+  const getChatRoleIcon = (chat) => {
+    const listing = listingsCache[chat.listing_id];
+    if (listing?.poster_role === 'estate-firm') return '🏢';
+    if (listing?.poster_role === 'landlord') return '🏠';
+    if (listing?.poster_role === 'tenant') return '👤';
+    if (chat.monitoring_manager_id === user.id) return '👨‍💼';
+    return '💬';
   };
 
-  if (loading) return <div className="messages-loading">Loading chats...</div>;
+ if (loading) {
+  return <RentEasyLoader message="Loading Messages..." fullScreen />;
+}
 
   return (
     <div className="chat-list-page">
@@ -140,15 +188,16 @@ const ChatListPage = () => {
           <div className="empty-chats">
             <div className="empty-icon">💬</div>
             <h3>No conversations yet</h3>
-            <p>Start a conversation by contacting a listing or replying to a message</p>
+            <p>Start a conversation by contacting a listing</p>
             <button onClick={() => navigate('/listings')} className="btn primary">
               Browse Listings to Start Chat
             </button>
           </div>
         ) : (
           chats.map(chat => {
-            const participantInfo = getChatParticipantInfo(chat);
             const lastMsgTime = chat.lastMessage?.created_at ? formatDate(chat.lastMessage.created_at) : '';
+            const listing = listingsCache[chat.listing_id];
+            
             return (
               <div 
                 key={chat.id} 
@@ -156,20 +205,20 @@ const ChatListPage = () => {
                 onClick={() => navigate(`/dashboard/messages/chat/${chat.id}`)}
               >
                 <div className="chat-item-header">
-                  <div className="chat-icon">{participantInfo.icon}</div>
+                  <div className="chat-icon">{getChatRoleIcon(chat)}</div>
                   <div className="chat-info">
                     <h4>{getChatTitle(chat)}</h4>
-                    <p className="chat-preview">{getLastMessageText(chat)}</p>
+                    <p className="chat-preview">{getChatPreview(chat)}</p>
                   </div>
                   <span className="chat-time">{lastMsgTime}</span>
                 </div>
                 <div className="chat-meta">
                   <span className={`status-badge status-${chat.state}`}>
-                    {chat.state?.replace('_', ' ') || 'unknown'}
+                    {chat.state?.replace('_', ' ') || 'active'}
                   </span>
-                  <small>{participantInfo.role}</small>
-                  {chat.estate_firm_listing && <small>🏢 No Commission</small>}
-                  {chat.commission_applied && <small>💰 7.5% Commission</small>}
+                  <span className="chat-with">With: {getOtherParticipantName(chat)}</span>
+                  {chat.estate_firm_listing && <span className="tag-estate">🏢 No Commission</span>}
+                  {chat.commission_applied && !chat.estate_firm_listing && <span className="tag-commission">💰 7.5% Commission</span>}
                 </div>
               </div>
             );

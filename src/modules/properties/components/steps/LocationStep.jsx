@@ -8,25 +8,29 @@ const LocationStep = ({ formData, updateFormData }) => {
   const [locationCaptured, setLocationCaptured] = useState(!!formData.coordinates?.lat);
   const [states, setStates] = useState([]);
   const [lgas, setLgas] = useState([]);
-  const [loadingStates, setLoadingStates] = useState(true);
-  const [loadingLgas, setLoadingLgas] = useState(false);
+  const [selectedState, setSelectedState] = useState(formData.state || '');
+  const [autoDetected, setAutoDetected] = useState(false);
 
-  // Fetch active states on mount
+  // Fetch states from Supabase on mount
   useEffect(() => {
     fetchStates();
+  }, []);
+
+  // Auto-detect location when component mounts
+  useEffect(() => {
+    if (!locationCaptured && !autoDetected) {
+      autoDetectLocation();
+    }
   }, []);
 
   // Fetch LGAs when selected state changes
   useEffect(() => {
     if (formData.state) {
       fetchLgas(formData.state);
-    } else {
-      setLgas([]);
     }
   }, [formData.state]);
 
   const fetchStates = async () => {
-    setLoadingStates(true);
     try {
       const { data, error } = await supabase
         .from('states')
@@ -37,19 +41,18 @@ const LocationStep = ({ formData, updateFormData }) => {
       setStates(data || []);
     } catch (error) {
       console.error('Error fetching states:', error);
-      // Fallback to static list
+      // Fallback static data if Supabase fails
       setStates([
         { id: 1, name: 'Lagos' },
         { id: 2, name: 'Abuja' },
-        // ... add other states
+        { id: 3, name: 'Rivers' },
+        { id: 4, name: 'Oyo' },
+        { id: 5, name: 'Kano' }
       ]);
-    } finally {
-      setLoadingStates(false);
     }
   };
 
   const fetchLgas = async (stateName) => {
-    setLoadingLgas(true);
     try {
       // First get state id from the name
       const { data: stateData, error: stateError } = await supabase
@@ -58,10 +61,7 @@ const LocationStep = ({ formData, updateFormData }) => {
         .eq('name', stateName)
         .single();
       if (stateError) throw stateError;
-      if (!stateData) {
-        setLgas([]);
-        return;
-      }
+      if (!stateData) return;
 
       const { data, error } = await supabase
         .from('lgas')
@@ -73,18 +73,44 @@ const LocationStep = ({ formData, updateFormData }) => {
       setLgas(data || []);
     } catch (error) {
       console.error('Error fetching LGAs:', error);
-      // Fallback to static mapping
-      const localLgas = {
+      // Fallback static data
+      const fallbackLgas = {
         'Lagos': ['Ikeja', 'Agege', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere'],
         'Abuja': ['Abuja Municipal', 'Bwari', 'Gwagwalada', 'Kuje', 'Kwali', 'Abaji']
       };
-      setLgas(localLgas[stateName]?.map(name => ({ name })) || []);
-    } finally {
-      setLoadingLgas(false);
+      setLgas(fallbackLgas[stateName]?.map(name => ({ name })) || []);
     }
   };
 
-  // Simplified geolocation (like ManagerRadius)
+  // Auto-detect location on page load
+  const autoDetectLocation = () => {
+    if (!navigator.geolocation) {
+      console.warn('Geolocation not supported');
+      return;
+    }
+
+    setIsGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        updateFormData({
+          coordinates: { lat: latitude, lng: longitude }
+        });
+        setIsGeolocating(false);
+        setLocationCaptured(true);
+        setAutoDetected(true);
+        console.log('📍 Location auto-detected:', latitude, longitude);
+      },
+      (error) => {
+        setIsGeolocating(false);
+        console.warn('Auto-location failed:', error.message);
+        // Don't show alert on auto-detect failure - just log it
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  // Manual location detection (button click)
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser. Please enter the address manually.');
@@ -100,6 +126,7 @@ const LocationStep = ({ formData, updateFormData }) => {
         });
         setIsGeolocating(false);
         setLocationCaptured(true);
+        setAutoDetected(true);
         alert('📍 Location detected successfully!');
       },
       (error) => {
@@ -125,8 +152,9 @@ const LocationStep = ({ formData, updateFormData }) => {
   };
 
   const handleStateChange = (e) => {
-    const selectedState = e.target.value;
-    updateFormData({ state: selectedState, lga: '' });
+    const newState = e.target.value;
+    setSelectedState(newState);
+    updateFormData({ state: newState, lga: '' });
   };
 
   return (
@@ -147,7 +175,9 @@ const LocationStep = ({ formData, updateFormData }) => {
             <p>
               {locationCaptured 
                 ? "Manager will be notified of this exact spot." 
-                : "Required for 2.5% commission eligibility."}
+                : isGeolocating 
+                  ? "Detecting your location..." 
+                  : "Required for 2.5% commission eligibility."}
             </p>
           </div>
         </div>
@@ -197,12 +227,11 @@ const LocationStep = ({ formData, updateFormData }) => {
             id="state"
             value={formData.state || ''}
             onChange={handleStateChange}
-            disabled={loadingStates}
             required
           >
             <option value="">Select State</option>
-            {states.map(s => (
-              <option key={s.id} value={s.name}>{s.name}</option>
+            {states.map(state => (
+              <option key={state.id} value={state.name}>{state.name}</option>
             ))}
           </select>
         </div>
@@ -213,11 +242,11 @@ const LocationStep = ({ formData, updateFormData }) => {
             id="lga"
             value={formData.lga || ''}
             onChange={(e) => updateFormData({ lga: e.target.value })}
-            disabled={!formData.state || loadingLgas}
+            disabled={!formData.state}
             required
           >
             <option value="">
-              {loadingLgas ? 'Loading LGAs...' : 'Select LGA'}
+              {!formData.state ? 'Select state first' : 'Select LGA'}
             </option>
             {lgas.map(lga => (
               <option key={lga.name} value={lga.name}>{lga.name}</option>
@@ -249,7 +278,7 @@ const LocationStep = ({ formData, updateFormData }) => {
         </div>
       </div>
 
-      {!locationCaptured && (
+      {!locationCaptured && !isGeolocating && (
         <div className="alert-banner">
           <AlertCircle size={18} />
           <span>

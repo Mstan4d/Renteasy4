@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { MapPin, Clock, User, Building, Home, Play, Shield } from 'lucide-react';
+import { MapPin, Clock, User, Building, Home, Play, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import VerifiedBadge from '../../../shared/components/VerifiedBadge';
 import './ListingCard.css';
 
@@ -10,46 +10,60 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState(0);
   const [touchEndX, setTouchEndX] = useState(0);
+  const [lightboxTouchStart, setLightboxTouchStart] = useState(0);
+  const [lightboxTouchEnd, setLightboxTouchEnd] = useState(0);
 
   const cardRef = useRef(null);
+  const videoRef = useRef(null);
 
   const fallbackImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&h=400&fit=crop';
-  const images = listing.images?.length 
-    ? listing.images 
-    : [listing.image_urls?.[0] || fallbackImage];
+  
+  // Combine images and videos into a single media array
+  const mediaItems = [];
+  
+  // Add images
+  if (listing.images?.length) {
+    listing.images.forEach(img => {
+      mediaItems.push({ type: 'image', url: img });
+    });
+  }
+  
+  // Add videos (single video URL)
+  if (listing.video_url) {
+    mediaItems.push({ type: 'video', url: listing.video_url });
+  }
+  
+  // Add multiple video URLs
+  if (listing.video_urls?.length) {
+    listing.video_urls.forEach(video => {
+      mediaItems.push({ type: 'video', url: video });
+    });
+  }
+  
+  // If no media, use fallback
+  if (mediaItems.length === 0) {
+    mediaItems.push({ type: 'image', url: fallbackImage });
+  }
 
-  const isVideo = (url) => /\.(mp4|mov|webm|ogg)$/i.test(url);
+  const isVideo = (item) => item.type === 'video';
 
-  const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
-  const isEstateFirm = listing.posterRole === 'estate-firm' || listing.commission_rate === 0;
-  const commission = isEstateFirm ? 0 : basePrice * 0.075;
-  const extraFees = listing.extra_fees || [];
-  const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
-  const totalPrice = basePrice + commission + totalExtraFees;
-
-  const commissionBreakdown = isEstateFirm ? null : {
-    rentEasy: commission * (3.5 / 7.5),
-    manager: commission * (2.5 / 7.5),
-    referral: commission * (1.5 / 7.5),
+  const nextMedia = (e) => {
+    e.stopPropagation();
+    setCurrentImageIndex((prev) => (prev + 1) % mediaItems.length);
   };
 
-  const nextImage = (e) => {
+  const prevMedia = (e) => {
     e.stopPropagation();
-    setCurrentImageIndex((prev) => (prev + 1) % images.length);
-  };
-
-  const prevImage = (e) => {
-    e.stopPropagation();
-    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+    setCurrentImageIndex((prev) => (prev - 1 + mediaItems.length) % mediaItems.length);
   };
 
   const handleTouchStart = (e) => setTouchStartX(e.touches[0].clientX);
   const handleTouchMove = (e) => setTouchEndX(e.touches[0].clientX);
   const handleTouchEnd = () => {
     if (touchStartX - touchEndX > 50) {
-      nextImage({ stopPropagation: () => {} });
+      nextMedia({ stopPropagation: () => {} });
     } else if (touchEndX - touchStartX > 50) {
-      prevImage({ stopPropagation: () => {} });
+      prevMedia({ stopPropagation: () => {} });
     }
   };
 
@@ -59,20 +73,23 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     setLightboxOpen(true);
   };
 
-  const closeLightbox = () => setLightboxOpen(false);
+  const closeLightbox = () => {
+    setLightboxOpen(false);
+    // Pause video if playing
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  };
 
   const nextLightboxImage = (e) => {
     e.stopPropagation();
-    setLightboxIndex((prev) => (prev + 1) % images.length);
+    setLightboxIndex((prev) => (prev + 1) % mediaItems.length);
   };
 
   const prevLightboxImage = (e) => {
     e.stopPropagation();
-    setLightboxIndex((prev) => (prev - 1 + images.length) % images.length);
+    setLightboxIndex((prev) => (prev - 1 + mediaItems.length) % mediaItems.length);
   };
-
-  const [lightboxTouchStart, setLightboxTouchStart] = useState(0);
-  const [lightboxTouchEnd, setLightboxTouchEnd] = useState(0);
 
   const handleLightboxTouchStart = (e) => setLightboxTouchStart(e.touches[0].clientX);
   const handleLightboxTouchMove = (e) => setLightboxTouchEnd(e.touches[0].clientX);
@@ -91,7 +108,8 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
                          target.closest('.btn') ||
                          target.closest('.listing-image') ||
                          target.closest('.play-overlay') ||
-                         target.closest('.verified-badge');
+                         target.closest('.verified-badge') ||
+                         target.closest('video');
     if (!isInteractive) {
       setShowExtraDetails(!showExtraDetails);
     }
@@ -128,6 +146,21 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
     return 'user';
   };
 
+  const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
+  const isEstateFirm = listing.posterRole === 'estate-firm' || listing.commission_rate === 0;
+  const commission = isEstateFirm ? 0 : basePrice * 0.075;
+  const extraFees = listing.extra_fees || [];
+  const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+  const totalPrice = basePrice + commission + totalExtraFees;
+
+  const commissionBreakdown = isEstateFirm ? null : {
+    rentEasy: commission * (3.5 / 7.5),
+    manager: commission * (2.5 / 7.5),
+    referral: commission * (1.5 / 7.5),
+  };
+
+  const currentMedia = mediaItems[currentImageIndex];
+
   return (
     <>
       <div 
@@ -135,19 +168,21 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
         ref={cardRef}
         onClick={handleCardClick}
       >
-        {/* Image Carousel */}
+        {/* Media Carousel */}
         <div 
           className="listing-image-container"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {isVideo(images[currentImageIndex]) ? (
+          {isVideo(currentMedia) ? (
             <div className="video-thumbnail" onClick={(e) => openLightbox(currentImageIndex, e)}>
-              <img 
-                src={images[currentImageIndex]} 
-                alt={listing.title}
-                className="listing-image"
+              <video 
+                src={currentMedia.url}
+                className="listing-video"
+                poster={listing.images?.[0] || fallbackImage}
+                muted
+                preload="metadata"
               />
               <div className="play-overlay">
                 <Play size={32} />
@@ -155,7 +190,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             </div>
           ) : (
             <img 
-              src={images[currentImageIndex]} 
+              src={currentMedia.url} 
               alt={listing.title}
               onClick={(e) => openLightbox(currentImageIndex, e)}
               className="listing-image"
@@ -184,12 +219,12 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             )}
           </div>
           
-          {images.length > 1 && (
+          {mediaItems.length > 1 && (
             <>
-              <button className="carousel-btn prev" onClick={prevImage}>‹</button>
-              <button className="carousel-btn next" onClick={nextImage}>›</button>
+              <button className="carousel-btn prev" onClick={prevMedia}>‹</button>
+              <button className="carousel-btn next" onClick={nextMedia}>›</button>
               <div className="carousel-dots">
-                {images.map((_, idx) => (
+                {mediaItems.map((_, idx) => (
                   <span
                     key={idx}
                     className={`dot ${idx === currentImageIndex ? 'active' : ''}`}
@@ -201,7 +236,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
           )}
         </div>
 
-        {/* Content */}
+        {/* Content - unchanged from your original */}
         <div className="listing-content">
           <h3 className="listing-title">{listing.title}</h3>
           
@@ -313,21 +348,27 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
           >
             <button className="lightbox-close" onClick={closeLightbox}>×</button>
             
-            {isVideo(images[lightboxIndex]) ? (
-              <video controls autoPlay className="lightbox-video">
-                <source src={images[lightboxIndex]} />
+            {isVideo(mediaItems[lightboxIndex]) ? (
+              <video 
+                ref={videoRef}
+                controls 
+                autoPlay 
+                className="lightbox-video"
+                style={{ maxWidth: '100%', maxHeight: '100%' }}
+              >
+                <source src={mediaItems[lightboxIndex].url} />
                 Your browser does not support the video tag.
               </video>
             ) : (
-              <img src={images[lightboxIndex]} alt={listing.title} className="lightbox-image" />
+              <img src={mediaItems[lightboxIndex].url} alt={listing.title} className="lightbox-image" />
             )}
             
-            {images.length > 1 && (
+            {mediaItems.length > 1 && (
               <>
                 <button className="lightbox-prev" onClick={prevLightboxImage}>‹</button>
                 <button className="lightbox-next" onClick={nextLightboxImage}>›</button>
                 <div className="lightbox-dots">
-                  {images.map((_, idx) => (
+                  {mediaItems.map((_, idx) => (
                     <span
                       key={idx}
                       className={`dot ${idx === lightboxIndex ? 'active' : ''}`}

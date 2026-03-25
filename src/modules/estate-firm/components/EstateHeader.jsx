@@ -17,18 +17,31 @@ const EstateHeader = () => {
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   
   const userMenuRef = useRef(null);
-  const notifRef = useRef(null);
 
-  // Fetch notifications on mount and subscribe to new ones
+  // Fetch initial unread count and subscribe to new notifications
   useEffect(() => {
     if (!user) return;
-    fetchNotifications();
     
+    const fetchUnreadCount = async () => {
+      const { data: profile } = await supabase
+        .from('estate_firm_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+      if (profile) {
+        const { count } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', profile.id)
+          .eq('read', false);
+        setUnreadCount(count || 0);
+      }
+    };
+    fetchUnreadCount();
+
     // Subscribe to new notifications
     const subscription = supabase
       .channel('notifications')
@@ -38,7 +51,6 @@ const EstateHeader = () => {
         table: 'notifications',
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
-        setNotifications(prev => [payload.new, ...prev]);
         setUnreadCount(prev => prev + 1);
       })
       .subscribe();
@@ -48,56 +60,11 @@ const EstateHeader = () => {
     };
   }, [user]);
 
-  const fetchNotifications = async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (error) {
-      console.error('Error fetching notifications:', error);
-      return;
-    }
-    setNotifications(data || []);
-    setUnreadCount(data.filter(n => !n.read).length);
-  };
-
-  const markAsRead = async (id) => {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', id);
-    if (!error) {
-      setNotifications(prev =>
-        prev.map(n => (n.id === id ? { ...n, read: true } : n))
-      );
-      setUnreadCount(prev => prev - 1);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
-    if (unreadIds.length === 0) return;
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
-      .in('id', unreadIds);
-    if (!error) {
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
-    }
-  };
-
-  // Close dropdowns when clicking outside
+  // Close user menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
         setUserMenuOpen(false);
-      }
-      if (notifRef.current && !notifRef.current.contains(e.target)) {
-        setNotificationsOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -126,7 +93,7 @@ const EstateHeader = () => {
 
   const navItems = [
     { path: '/dashboard/estate-firm', icon: Home, label: 'Overview' },
-     { path: '/dashboard/estate-firm/profile', icon: UserCircle, label: 'Profile' },
+    { path: '/dashboard/estate-firm/profile', icon: UserCircle, label: 'Profile' },
     { path: '/dashboard/estate-firm/properties', icon: Building, label: 'Portfolio' },
     { path: '/dashboard/estate-firm/services', icon: Briefcase, label: 'Services' },
     { path: '/dashboard/estate-firm/clients', icon: Users, label: 'Clients' },
@@ -150,7 +117,6 @@ const EstateHeader = () => {
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
           <Link to="/dashboard/estate-firm" className="logo">
-            
             <span className="logo-text">RentEasy</span>
           </Link>
         </div>
@@ -185,46 +151,17 @@ const EstateHeader = () => {
             <Upload size={20} />
           </button>
 
-          {/* Notifications */}
-          <div className="notifications-dropdown" ref={notifRef}>
-            <button 
-              className="action-btn" 
-              onClick={() => setNotificationsOpen(!notificationsOpen)}
-            >
-              <Bell size={20} />
-              {unreadCount > 0 && (
-                <span className="badge">{unreadCount}</span>
-              )}
-            </button>
-            {notificationsOpen && (
-              <div className="dropdown-menu notifications-menu">
-                <div className="notifications-header">
-                  <h4>Notifications</h4>
-                  {unreadCount > 0 && (
-                    <button className="mark-read" onClick={markAllAsRead}>
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                {notifications.length === 0 ? (
-                  <p className="empty">No notifications</p>
-                ) : (
-                  <>
-                    {notifications.map(n => (
-                      <div
-                        key={n.id}
-                        className={`notification-item ${!n.read ? 'unread' : ''}`}
-                        onClick={() => !n.read && markAsRead(n.id)}
-                      >
-                        <p>{n.message}</p>
-                        <small>{new Date(n.created_at).toLocaleString()}</small>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
+          {/* Notifications Bell - navigates to notifications page */}
+          <Link 
+            to="/dashboard/estate-firm/notifications" 
+            className="action-btn notification-bell"
+            title="Notifications"
+          >
+            <Bell size={20} />
+            {unreadCount > 0 && (
+              <span className="badge">{unreadCount}</span>
             )}
-          </div>
+          </Link>
 
           {/* User Profile */}
           <div className="user-dropdown" ref={userMenuRef}>

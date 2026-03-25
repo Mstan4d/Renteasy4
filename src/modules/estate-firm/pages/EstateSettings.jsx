@@ -6,6 +6,7 @@ import {
   Users, Key, Eye, EyeOff
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { useAuth } from '../../../shared/context/AuthContext';
 import './EstateSettings.css';
 
@@ -218,15 +219,8 @@ const EstateSettings = () => {
   };
 
   if (loading) {
-    return (
-      <div className="estate-settings">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading settings...</p>
-        </div>
-      </div>
-    );
-  }
+  return <RentEasyLoader message="Loading your Settings..." fullScreen />;
+}
 
   const renderGeneralSettings = () => (
     <div className="settings-section">

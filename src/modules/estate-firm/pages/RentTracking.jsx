@@ -190,23 +190,46 @@ const RentTracking = () => {
     applyFilters(payments, newStatus, newProperty, newDate, newSearch);
   };
 
-  const handleConfirm = async (paymentId) => {
-    if (!window.confirm('Confirm this payment? It will be marked as confirmed.')) return;
-    try {
-      const { error } = await supabase
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_by: user.id,
-          confirmed_at: new Date().toISOString()
-        })
-        .eq('id', paymentId);
-      if (error) throw error;
-      loadData(); // refresh
-    } catch (err) {
-      alert('Failed to confirm payment');
+  const handleConfirm = async (payment) => {
+  if (!window.confirm('Confirm this payment?')) return;
+  try {
+    // Update payment status
+    const { error } = await supabase
+      .from('payments')
+      .update({
+        status: 'confirmed',
+        confirmed_by: user.id,
+        confirmed_at: new Date().toISOString()
+      })
+      .eq('id', payment.id);
+    if (error) throw error;
+
+    // Get estate firm profile ID (you can store it once to avoid re‑fetching)
+    const { data: profile, error: profileError } = await supabase
+      .from('estate_firm_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .single();
+    if (!profileError && profile) {
+      await supabase.from('notifications').insert({
+        user_id: profile.id,
+        type: 'rent_payment',
+        title: 'Payment Confirmed',
+        message: `Payment of ₦${payment.amount?.toLocaleString()} for ${payment.property_name} Unit ${payment.unit_number} has been confirmed.`,
+        link: payment.property_id
+          ? `/dashboard/estate-firm/properties/${payment.property_id}`
+          : '/dashboard/estate-firm/rent-tracking',
+        created_at: new Date().toISOString()
+      });
     }
-  };
+
+    // Refresh the list
+    loadData();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to confirm payment');
+  }
+};
 
   const handleReject = async (paymentId) => {
     const reason = prompt('Enter rejection reason (optional)');
@@ -249,7 +272,7 @@ const RentTracking = () => {
   };
 
   if (loading) {
-  return <RentEasyLoader message="Loading your Profile..." fullScreen />;
+  return <RentEasyLoader message="Loading your Payments..." fullScreen />;
 }
 
   if (error) {
@@ -406,7 +429,7 @@ const RentTracking = () => {
                   <td>
                     {payment.status === 'pending' && (
                       <div className="action-buttons">
-                        <button className="btn-confirm" onClick={() => handleConfirm(payment.id)}>
+                        <button className="btn-confirm" onClick={() => handleConfirm(payment)}>
                           <CheckCircle size={16} /> Confirm
                         </button>
                         <button className="btn-reject" onClick={() => handleReject(payment.id)}>

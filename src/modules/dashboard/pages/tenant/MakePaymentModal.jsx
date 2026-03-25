@@ -64,7 +64,7 @@ const MakePaymentModal = ({ lease, bankDetails, onClose, onSuccess }) => {
         .getPublicUrl(filePath);
 
       // 2. Create rent payment record
-      const { error: insertError } = await supabase
+      const { data: payment, error: insertError } = await supabase
         .from('rent_payments')
         .insert({
           lease_id: lease.id,
@@ -76,11 +76,73 @@ const MakePaymentModal = ({ lease, bankDetails, onClose, onSuccess }) => {
           proof_url: publicUrl,
           notes,
           created_at: new Date().toISOString()
-        });
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
 
-      alert('Payment recorded! The estate firm will confirm it shortly.');
+      // 3. Add document to tenant_documents
+      const { error: docError } = await supabase
+        .from('tenant_documents')
+        .insert({
+          tenant_id: user.id,
+          title: `Rent Payment - ${new Date(dueDate).toLocaleDateString()}`,
+          description: `Payment of ₦${amount.toLocaleString()} for rent due ${new Date(dueDate).toLocaleDateString()}`,
+          file_url: publicUrl,
+          file_type: file.type,
+          file_size: file.size,
+          category: 'receipt',
+          created_at: new Date().toISOString()
+        });
+
+      if (docError) console.error('Error saving document:', docError);
+
+      // 4. Determine who to notify (estate firm or landlord)
+      let ownerId = null;
+      let ownerType = null;
+
+      if (lease.unit?.property?.estate_firm_id) {
+        ownerId = lease.unit.property.estate_firm_id;
+        ownerType = 'estate_firm';
+        
+        // Get estate firm profile to get user_id
+        const { data: estateFirm } = await supabase
+          .from('estate_firm_profiles')
+          .select('user_id')
+          .eq('id', ownerId)
+          .single();
+        
+        if (estateFirm) {
+          ownerId = estateFirm.user_id;
+        }
+      } else if (lease.landlord_id) {
+        ownerId = lease.landlord_id;
+        ownerType = 'landlord';
+      }
+
+      // 5. Send notification to property owner
+      if (ownerId) {
+        const notificationTable = ownerType === 'estate_firm' 
+          ? 'estate_firm_notifications' 
+          : 'landlord_notifications';
+        
+        const notificationData = {
+          [ownerType === 'estate_firm' ? 'estate_firm_id' : 'landlord_id']: ownerId,
+          tenant_id: user.id,
+          title: 'New Rent Payment',
+          message: `Tenant has submitted a rent payment of ₦${amount.toLocaleString()} for ${lease.unit?.property?.title || 'property'}.`,
+          type: 'rent_payment',
+          read: false,
+          created_at: new Date().toISOString()
+        };
+        
+        await supabase
+          .from(notificationTable)
+          .insert(notificationData);
+      }
+
+      alert('Payment recorded! The property manager will confirm it shortly.');
       onSuccess();
       onClose();
     } catch (err) {

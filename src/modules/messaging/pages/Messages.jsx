@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './Messages.css';
 
 const Messages = () => {
@@ -247,118 +248,329 @@ const Messages = () => {
     subscriptionRef.current = channel;
   };
 
-  // Load or create a chat for a listing
-  const loadOrCreateChat = async (listingId) => {
-    try {
-      setLoading(true);
+  // Get user-specific message text for system messages
+  const getUserSpecificMessage = (msg) => {
+    if (!msg.is_system_message) return msg.content;
+    
+    const content = msg.content;
+    const listingTitle = listing?.title || 'the property';
+    const posterId = listing?.poster_id || listing?.user_id;
+    
+    // Tenant contacting estate firm
+    if (content.includes('You\'ve contacted the estate firm')) {
+      if (user.id === posterId) {
+        return `👋 A tenant has contacted you about "${listingTitle}". Please respond to their inquiry.`;
+      }
+      return content;
+    }
+    
+    // Tenant contacting landlord
+    if (content.includes('You\'ve contacted the landlord')) {
+      if (user.id === posterId) {
+        return `👋 A tenant has contacted you about "${listingTitle}". Please respond to their inquiry.`;
+      }
+      return content;
+    }
+    
+    // Tenant contacting outgoing tenant
+    if (content.includes('You\'ve contacted the outgoing tenant')) {
+      if (user.id === posterId) {
+        return `👋 A tenant has contacted you about "${listingTitle}". Please respond to their inquiry.`;
+      }
+      return content;
+    }
+    
+    // Manager assigned message
+    if (content.includes('manager has accepted')) {
+      return content;
+    }
+    
+    return content;
+  };
 
-      if (!isValidUUID(listingId)) {
-        alert('Invalid listing ID');
+  // Load or create a chat for a listing
+const loadOrCreateChat = async (listingId) => {
+  try {
+    setLoading(true);
+
+    if (!isValidUUID(listingId)) {
+      alert('Invalid listing ID');
+      navigate('/listings');
+      return;
+    }
+
+    const listingData = await fetchListing(listingId);
+    setListing(listingData);
+
+    const { data: existingChats, error: fetchError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('listing_id', listingId);
+
+    if (fetchError) throw fetchError;
+
+    let existingChat = existingChats?.find(c =>
+      c.participant1_id === user.id ||
+      c.participant2_id === user.id ||
+      c.monitoring_manager_id === user.id
+    );
+
+    if (existingChat) {
+      if (!hasChatAccess(existingChat)) {
+        alert('Access denied');
         navigate('/listings');
         return;
       }
+      setChat(existingChat);
+      await fetchParticipantProfiles(existingChat);
+      await fetchMessages(existingChat.id);
+      await fetchViewings(existingChat.id);
+      await fetchRentalConfirmation(listingData.id, existingChat.id);
+      await fetchPaymentProofs(existingChat.id);
+      setLoading(false);
+      return;
+    }
 
-      const listingData = await fetchListing(listingId);
-      setListing(listingData);
+    // Determine participants based on listing poster and current user role
+    const posterId = listingData.user_id;
+    const posterRole = listingData.poster_role;
+    const currentUserRole = user.role;
+    
+    let participant1_id = null;  // The listing owner/poster
+    let participant2_id = user.id; // The current user contacting
+    let monitoring_manager_id = null;
+    let commission_applied = false;
+    let estate_firm_listing = false;
+    let state = 'active';
+    let chatType = 'direct';
+    let needsManager = false;
 
-      const { data: existingChats, error: fetchError } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('listing_id', listingId);
-
-      if (fetchError) throw fetchError;
-
-      let existingChat = existingChats?.find(c =>
-        c.participant1_id === user.id ||
-        c.participant2_id === user.id ||
-        c.monitoring_manager_id === user.id
-      );
-
-      if (existingChat) {
-        if (!hasChatAccess(existingChat)) {
-          alert('Access denied');
-          navigate('/listings');
-          return;
-        }
-        setChat(existingChat);
-        await fetchParticipantProfiles(existingChat);
-        await fetchMessages(existingChat.id);
-        await fetchViewings(existingChat.id);
-        await fetchRentalConfirmation(listingData.id, existingChat.id);
-        await fetchPaymentProofs(existingChat.id);
-        setLoading(false);
-        return;
+    // BUSINESS RULES IMPLEMENTATION
+    if (currentUserRole === 'tenant') {
+      // Tenant contacting someone
+      if (posterRole === 'estate-firm') {
+        // Tenant → Estate Firm: NO manager, direct chat
+        participant1_id = posterId;
+        commission_applied = false;
+        state = 'active';
+        chatType = 'tenant_estate_firm';
+        needsManager = false;
+        
+      } else if (posterRole === 'landlord') {
+        // Tenant → Landlord: Manager MONITORS (not assigned, just observes)
+        participant1_id = posterId;
+        commission_applied = true;
+        state = 'active';
+        chatType = 'tenant_landlord';
+        needsManager = true;
+        // We'll assign a manager to MONITOR, not to manage the chat
+        monitoring_manager_id = null; // Will be assigned by admin/system
+        // This chat will be visible to managers in the area for monitoring
+        
+      } else if (posterRole === 'tenant') {
+        // Tenant → Outgoing Tenant: NEEDS manager ASSIGNED
+        participant1_id = posterId;
+        commission_applied = true;
+        state = 'pending_manager';
+        chatType = 'tenant_tenant';
+        needsManager = true;
+        monitoring_manager_id = null; // Will be assigned when a manager accepts
       }
-
-      // Determine participants based on listing poster role
-      let participant1_id = null;
-      let participant2_id = user.id;
-      let monitoring_manager_id = null;
-      let commission_applied = false;
-      let estate_firm_listing = false;
-      let state = 'pending_availability';
-
-      if (listingData.poster_role === 'tenant') {
-        participant1_id = listingData.poster_id;
-        const { data: assignment } = await supabase
-          .from('manager_assignments')
-          .select('manager_id')
-          .eq('listing_id', listingId)
-          .maybeSingle();
-        if (assignment) {
-          monitoring_manager_id = assignment.manager_id;
-          state = 'active';
-        } else {
-          state = 'pending_manager';
-        }
+      
+    } else if (currentUserRole === 'estate-firm') {
+      // Estate firm contacting someone
+      if (posterRole === 'tenant') {
+        // Estate Firm → Tenant: NEEDS manager ASSIGNED
+        participant1_id = posterId;
         commission_applied = true;
-      } else if (listingData.poster_role === 'landlord') {
-        participant1_id = listingData.poster_id;
+        state = 'pending_manager';
+        chatType = 'tenant_tenant';
+        needsManager = true;
+        monitoring_manager_id = null;
+        
+      } else if (posterRole === 'landlord') {
+        // Estate Firm → Landlord: Manager MONITORS
+        participant1_id = posterId;
         commission_applied = true;
-        state = 'pending_availability';
-      } else if (listingData.poster_role === 'estate_firm') {
-        participant1_id = listingData.poster_id;
+        state = 'active';
+        chatType = 'tenant_landlord';
+        needsManager = true;
+        monitoring_manager_id = null;
+        
+      } else if (posterRole === 'estate-firm') {
+        // Estate Firm → Estate Firm: Should not happen, but if it does, no manager
+        participant1_id = posterId;
         estate_firm_listing = true;
         commission_applied = false;
-        state = 'pending_availability';
+        state = 'active';
+        chatType = 'direct';
+        needsManager = false;
       }
-
-      const { data: newChat, error: createError } = await supabase
-        .from('chats')
-        .insert([{
-          listing_id: listingId,
-          participant1_id,
-          participant2_id,
-          monitoring_manager_id,
-          state,
-          commission_applied,
-          estate_firm_listing,
-          manager_assigned: !!monitoring_manager_id,
-        }])
-        .select()
-        .single();
-
-      if (createError) throw createError;
-
-      setChat(newChat);
-      await fetchParticipantProfiles(newChat);
-      await supabase.from('messages').insert([{
-        chat_id: newChat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `Conversation started for ${listingData.title}`,
-        is_system: true,
-      }]);
-
-      setMessages([]);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error creating chat:', error);
-      alert('Could not start conversation');
-      setLoading(false);
+      
+    } else if (currentUserRole === 'landlord') {
+      // Landlord contacting someone
+      if (posterRole === 'estate-firm') {
+        // Landlord → Estate Firm: NO manager, direct chat
+        participant1_id = posterId;
+        commission_applied = false;
+        state = 'active';
+        chatType = 'tenant_estate_firm';
+        needsManager = false;
+        
+      } else if (posterRole === 'landlord') {
+        // Landlord → Landlord: Should not happen, but direct
+        participant1_id = posterId;
+        commission_applied = true;
+        state = 'active';
+        chatType = 'direct';
+        needsManager = false;
+        
+      } else if (posterRole === 'tenant') {
+        // Landlord → Tenant: NOT ALLOWED
+        throw new Error('Landlords cannot directly contact tenants. Please use the proper channels.');
+      }
+      
+    } else if (currentUserRole === 'manager') {
+      // Manager can always chat directly
+      participant1_id = posterId;
+      monitoring_manager_id = user.id;
+      commission_applied = true;
+      state = 'active';
+      chatType = 'direct';
+      needsManager = false;
     }
-  };
 
+    // Don't allow self-contact
+    if (user.id === participant1_id) {
+      throw new Error('You cannot contact yourself for your own listing');
+    }
+
+    // If manager monitoring is needed but no manager assigned yet, we'll mark for monitoring
+    // The chat will be visible to managers in the area for monitoring
+
+    const { data: newChat, error: createError } = await supabase
+      .from('chats')
+      .insert([{
+        listing_id: listingId,
+        participant1_id,
+        participant2_id,
+        monitoring_manager_id,
+        state,
+        chat_type: chatType,
+        commission_applied,
+        estate_firm_listing: posterRole === 'estate-firm',
+        manager_assigned: !!monitoring_manager_id,
+        needs_manager: needsManager,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        unread_count: 1
+      }])
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Chat creation error:', createError);
+      throw createError;
+    }
+
+    setChat(newChat);
+    await fetchParticipantProfiles(newChat);
+
+    // Add appropriate system message
+    let systemMessage = '';
+    
+    if (currentUserRole === 'tenant') {
+      if (posterRole === 'estate-firm') {
+        systemMessage = `👋 Hello! You've contacted the estate firm for "${listingData.title}". They will respond to your inquiry shortly.`;
+      } else if (posterRole === 'landlord') {
+        systemMessage = `👋 Hello! You've contacted the landlord for "${listingData.title}". A RentEasy manager will monitor this conversation to ensure a smooth process.`;
+      } else if (posterRole === 'tenant') {
+        systemMessage = `👋 Hello! You've contacted the outgoing tenant for "${listingData.title}". A RentEasy manager will be assigned to assist you shortly.`;
+      }
+    } else if (currentUserRole === 'estate-firm') {
+      if (posterRole === 'tenant') {
+        systemMessage = `👋 Hello! You've contacted a tenant about their outgoing property "${listingData.title}". A RentEasy manager will be assigned to facilitate.`;
+      } else if (posterRole === 'landlord') {
+        systemMessage = `👋 Hello! You've contacted the landlord for "${listingData.title}". A RentEasy manager will monitor this conversation.`;
+      } else if (posterRole === 'estate-firm') {
+        systemMessage = `👋 Hello! You've contacted another estate firm about "${listingData.title}".`;
+      }
+    } else if (currentUserRole === 'landlord') {
+      if (posterRole === 'estate-firm') {
+        systemMessage = `👋 Hello! You've contacted the estate firm for "${listingData.title}". They will respond shortly.`;
+      } else {
+        systemMessage = `Chat started for "${listingData.title}"`;
+      }
+    } else if (currentUserRole === 'manager') {
+      systemMessage = `👨‍💼 Manager ${user.email} has joined the conversation for "${listingData.title}".`;
+    }
+
+    await supabase.from('messages').insert([{
+      chat_id: newChat.id,
+      sender_id: '00000000-0000-0000-0000-000000000000',
+      content: systemMessage,
+      is_system_message: true,
+      created_at: new Date().toISOString()
+    }]);
+
+    // Notify the other party
+    if (participant1_id && participant1_id !== user.id) {
+      await supabase.from('notifications').insert([{
+        user_id: participant1_id,
+        title: 'New Message',
+        message: `You have a new message about "${listingData.title}" from a ${currentUserRole}`,
+        type: 'chat',
+        link: `/dashboard/messages/chat/${newChat.id}`,
+        created_at: new Date().toISOString()
+      }]);
+    }
+
+    // If chat needs a manager (pending_manager state), notify available managers
+    if (state === 'pending_manager') {
+      await notifyAvailableManagers(listingData, newChat.id);
+    }
+    
+    // If chat needs manager monitoring (but not pending), notify managers in the area for monitoring
+    if (needsManager && state === 'active') {
+      await notifyManagersForMonitoring(listingData, newChat.id);
+    }
+
+    setMessages([]);
+    setLoading(false);
+  } catch (error) {
+    console.error('Error creating chat:', error);
+    alert(`Could not start conversation: ${error.message}`);
+    setLoading(false);
+  }
+};
+
+// Notify managers for monitoring (not assignment)
+const notifyManagersForMonitoring = async (listing, chatId) => {
+  try {
+    const { data: managers } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('role', 'manager')
+      .eq('verified', true)
+      .eq('state', listing.state)
+      .limit(10);
+
+    if (managers && managers.length > 0) {
+      const notifications = managers.map(manager => ({
+        user_id: manager.id,
+        title: 'Chat Monitoring Opportunity',
+        message: `A conversation has started about a property in ${listing.city || listing.state}. You can monitor this chat.`,
+        type: 'chat_monitoring',
+        data: { listingId: listing.id, chatId, action: 'monitor' },
+        created_at: new Date().toISOString()
+      }));
+
+      await supabase.from('notifications').insert(notifications);
+    }
+  } catch (error) {
+    console.error('Error notifying managers for monitoring:', error);
+  }
+};
   // Accept as manager (when manager receives proximity notification)
   const acceptAsManager = async () => {
     if (user.role !== 'manager') return;
@@ -369,13 +581,13 @@ const Messages = () => {
         .update({
           monitoring_manager_id: user.id,
           manager_assigned: true,
-          state: chat.state === 'pending_manager' ? 'pending_availability' : 'active',
+          state: 'active',
         })
         .eq('id', chat.id);
 
       if (error) throw error;
 
-      // Also update listing: assign manager and set verification_status
+      // Also update listing: assign manager
       await supabase
         .from('listings')
         .update({
@@ -389,7 +601,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `👨‍💼 Manager ${participantProfiles[user.id]?.full_name || user.email} has accepted this listing.`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       const { data: updatedChat } = await supabase
@@ -432,7 +644,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       const { data: updatedChat } = await supabase
@@ -445,8 +657,6 @@ const Messages = () => {
       console.error('Error responding availability:', error);
     }
   };
-
-  // ========== NEW FUNCTIONS FOR RENTAL FLOW ==========
 
   // Record viewing outcome (manager only)
   const recordViewingOutcome = async (outcome, notes = '') => {
@@ -473,10 +683,9 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `👁️ Viewing outcome: ${outcome} ${notes ? `– ${notes}` : ''}`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
-      // Refresh viewings
       await fetchViewings(chat.id);
     } catch (error) {
       console.error('Error recording viewing outcome:', error);
@@ -484,14 +693,13 @@ const Messages = () => {
     }
   };
 
-  // Mark listing as taken (manager only, after accepted viewing)
+  // Mark listing as taken (manager only)
   const markAsTaken = async () => {
     if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
       alert('Only assigned manager can mark as taken');
       return;
     }
 
-    // Check if there is an accepted viewing
     const acceptedViewing = viewings.find(v => v.outcome === 'accepted');
     if (!acceptedViewing) {
       alert('Tenant must accept the house before marking as taken');
@@ -499,13 +707,11 @@ const Messages = () => {
     }
 
     try {
-      // Update listing status
       await supabase
         .from('listings')
         .update({ status: 'taken', taken_at: new Date().toISOString() })
         .eq('id', listing.id);
 
-      // Create rental confirmation record
       const { error: rcError } = await supabase
         .from('rental_confirmations')
         .insert([{
@@ -522,14 +728,63 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `🏠 Property marked as TAKEN. Awaiting landlord and tenant confirmation.`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
-      // Refresh rental confirmation
       await fetchRentalConfirmation(listing.id, chat.id);
     } catch (error) {
       console.error('Error marking as taken:', error);
       alert('Failed to mark as taken');
+    }
+  };
+
+  // Mark as rented (manager only)
+  const markAsRented = async () => {
+    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
+      alert('Only the assigned manager can mark as rented');
+      return;
+    }
+
+    if (!window.confirm('Confirm this property is rented? This will trigger commission distribution.')) return;
+
+    try {
+      // Update chat
+      await supabase
+        .from('chats')
+        .update({
+          state: 'rented',
+          rented: true,
+          rented_at: new Date().toISOString(),
+          rented_by: user.id
+        })
+        .eq('id', chat.id);
+
+      // Update listing
+      await supabase
+        .from('listings')
+        .update({
+          status: 'rented',
+          rented_at: new Date().toISOString()
+        })
+        .eq('id', listing.id);
+
+      await supabase.from('messages').insert([{
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_role: 'system',
+        content: `✅ Property marked as RENTED! Commission will be distributed to manager and referrer.`,
+        is_system_message: true,
+      }]);
+
+      const { data: updatedChat } = await supabase
+        .from('chats')
+        .select('*')
+        .eq('id', chat.id)
+        .single();
+      setChat(updatedChat);
+    } catch (error) {
+      console.error('Error marking as rented:', error);
+      alert('Failed to mark as rented');
     }
   };
 
@@ -553,7 +808,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: confirm ? `✅ Tenant confirmed rental.` : `❌ Tenant denied rental.`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       await fetchRentalConfirmation(listing.id, chat.id);
@@ -600,7 +855,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `💰 Tenant uploaded payment proof (${proofType}). Pending verification.`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       await fetchPaymentProofs(chat.id);
@@ -631,7 +886,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `✅ Admin verified payment proof.`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       await fetchPaymentProofs(chat.id);
@@ -644,12 +899,17 @@ const Messages = () => {
   const sendMessage = async () => {
     if (!messageText.trim() || !chat) return;
 
+    // Check if chat is locked
+    if (chat.state !== 'active' || chat.admin_locked) {
+      alert('This chat is locked. You cannot send messages.');
+      return;
+    }
+
     const newMsg = {
       chat_id: chat.id,
       sender_id: user.id,
-      sender_role: user.role,
       content: messageText,
-      is_system: false,
+      is_system_message: false,
       created_at: new Date().toISOString(),
     };
 
@@ -664,7 +924,7 @@ const Messages = () => {
     }
   };
 
-  // Handle file upload (attachments) – existing
+  // Handle file upload (attachments)
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !chat) return;
@@ -685,15 +945,12 @@ const Messages = () => {
         .from('chat-attachments')
         .getPublicUrl(filePath);
 
-      const attachmentUrl = urlData.publicUrl;
-
       const attachmentMsg = {
         chat_id: chat.id,
         sender_id: user.id,
-        sender_role: user.role,
         content: `📎 ${file.name}`,
-        attachments: [{ url: attachmentUrl, name: file.name, type: file.type }],
-        is_system: false,
+        attachments: [{ url: urlData.publicUrl, name: file.name, type: file.type }],
+        is_system_message: false,
         created_at: new Date().toISOString(),
       };
 
@@ -733,7 +990,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: `⚖️ Dispute raised by ${user.role}: ${reason}`,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       const { data: updatedChat } = await supabase
@@ -782,7 +1039,7 @@ const Messages = () => {
         sender_id: '00000000-0000-0000-0000-000000000000',
         sender_role: 'system',
         content: messageContent,
-        is_system: true,
+        is_system_message: true,
       }]);
 
       const { data: updatedChat } = await supabase
@@ -803,14 +1060,14 @@ const Messages = () => {
     alert('Referral link copied!');
   };
 
-  // Determine verification status message
+  // Determine verification status display
   const getVerificationStatusDisplay = () => {
     if (!listing) return null;
     switch (listing.verification_status) {
       case 'pending_verification':
         return { text: '⏳ Pending verification by manager', class: 'pending' };
       case 'pending_admin':
-        return { text: '⏳ Pending admin verification (call landlord)', class: 'pending' };
+        return { text: '⏳ Pending admin verification', class: 'pending' };
       case 'verified':
         return { text: '✅ Verified', class: 'verified' };
       default:
@@ -818,7 +1075,9 @@ const Messages = () => {
     }
   };
 
-  if (loading) return <div className="messages-loading">Loading chat…</div>;
+   if (loading) {
+  return <RentEasyLoader message="Loading Messages..." fullScreen />;
+}
 
   if (!chat || !listing) {
     return (
@@ -831,7 +1090,7 @@ const Messages = () => {
     );
   }
 
-  // Business rule: block incoming tenant if manager not assigned for outgoing tenant listing
+  // Block incoming tenant if manager not assigned for outgoing tenant listing
   if (
     listing.poster_role === 'tenant' &&
     !chat.manager_assigned &&
@@ -858,6 +1117,9 @@ const Messages = () => {
 
   const showCommissionInfo = chat.commission_applied && !chat.estate_firm_listing;
   const verificationStatus = getVerificationStatusDisplay();
+  const canSendMessage = chat.state === 'active' && !chat.admin_locked;
+  const isEstateFirmUser = user.role === 'estate-firm';
+  const isPoster = user.id === (listing.poster_id || listing.user_id);
 
   return (
     <div className="messages-page">
@@ -883,11 +1145,6 @@ const Messages = () => {
             </span>
           )}
           {chat.monitoring_manager_id && <span className="manager-badge">👨‍💼 Manager Assigned</span>}
-          {chat.commission_details?.totalCommission && (
-            <span className="commission-badge">
-              💸 Commission: ₦{chat.commission_details.totalCommission.toLocaleString()}
-            </span>
-          )}
         </div>
       </header>
 
@@ -938,7 +1195,7 @@ const Messages = () => {
         </div>
       )}
 
-      {/* After manager submits verification, admin pending */}
+      {/* After manager submits verification */}
       {listing.verification_status === 'pending_admin' && (
         <div className="verification-box pending">
           <h4>⏳ Verification Submitted</h4>
@@ -946,27 +1203,18 @@ const Messages = () => {
         </div>
       )}
 
-      {/* After verification, manager can record viewing outcome */}
+      {/* Manager viewing outcome */}
       {user.role === 'manager' && listing.verification_status === 'verified' && chat.state === 'active' && (
         <div className="viewing-box">
           <h4>👁️ Record Viewing Outcome</h4>
           <div className="viewing-buttons">
-            <button
-              className="btn success"
-              onClick={() => recordViewingOutcome('accepted')}
-            >
+            <button className="btn success" onClick={() => recordViewingOutcome('accepted')}>
               ✅ Tenant Accepted
             </button>
-            <button
-              className="btn warning"
-              onClick={() => recordViewingOutcome('declined')}
-            >
+            <button className="btn warning" onClick={() => recordViewingOutcome('declined')}>
               ❌ Tenant Declined
             </button>
-            <button
-              className="btn secondary"
-              onClick={() => recordViewingOutcome('no_show')}
-            >
+            <button className="btn secondary" onClick={() => recordViewingOutcome('no_show')}>
               🚫 Tenant No-Show
             </button>
           </div>
@@ -974,13 +1222,22 @@ const Messages = () => {
         </div>
       )}
 
-      {/* Mark as taken button (after accepted viewing) */}
+      {/* Mark as taken button */}
       {user.role === 'manager' &&
        viewings.some(v => v.outcome === 'accepted') &&
        listing.status !== 'taken' && (
         <div className="taken-box">
           <button className="btn success" onClick={markAsTaken}>
             🏠 Mark as Taken
+          </button>
+        </div>
+      )}
+
+      {/* Mark as rented button (manager) */}
+      {user.role === 'manager' && chat.monitoring_manager_id === user.id && chat.state === 'active' && (
+        <div className="rented-box">
+          <button className="btn success" onClick={markAsRented}>
+            ✅ Mark as Rented (Triggers Commission)
           </button>
         </div>
       )}
@@ -1000,7 +1257,7 @@ const Messages = () => {
         </div>
       )}
 
-      {/* Payment proof upload (tenant, after rental confirmed) */}
+      {/* Payment proof upload (tenant) */}
       {user.role === 'tenant' && rentalConfirmation?.tenant_confirmed && (
         <div className="payment-proof-box">
           <h4>Upload Payment Proof (Optional)</h4>
@@ -1039,7 +1296,6 @@ const Messages = () => {
                   ) : (
                     <span className="pending-badge">⏳ Pending</span>
                   )}
-                  {/* Admin can verify directly in chat */}
                   {(user.role === 'admin' || user.role === 'super-admin') && !proof.verified && (
                     <button className="btn small" onClick={() => verifyPaymentProof(proof.id)}>
                       Verify
@@ -1081,17 +1337,23 @@ const Messages = () => {
       <div className="messages-thread">
         {messages.map((msg, idx) => {
           const isOwn = msg.sender_id === user.id;
-          const senderRole = msg.sender_role || (msg.sender_id === 'system' ? 'system' : '');
-          const senderName = participantProfiles[msg.sender_id]?.full_name || msg.sender_id?.slice(0, 8) || 'System';
+          const senderRole = msg.sender_role || (msg.sender_id === '00000000-0000-0000-0000-000000000000' ? 'system' : '');
+          const senderName = participantProfiles[msg.sender_id]?.full_name || 
+                            (msg.sender_id === '00000000-0000-0000-0000-000000000000' ? 'System' : 
+                            msg.sender_id?.slice(0, 8) || 'User');
+          
+          // Get user-specific message text for system messages
+          const displayContent = getUserSpecificMessage(msg);
+          
           return (
-            <div key={idx} className={`msg ${isOwn ? 'own' : ''} ${msg.is_system ? 'system' : ''}`}>
+            <div key={idx} className={`msg ${isOwn ? 'own' : ''} ${msg.is_system_message ? 'system' : ''}`}>
               <div className="msg-header">
                 <small className="msg-sender">
-                  {msg.is_system ? '⚙️ SYSTEM' : senderRole.toUpperCase() + ' ' + senderName}
+                  {msg.is_system_message ? '⚙️ SYSTEM' : senderRole.toUpperCase() + ' ' + senderName}
                 </small>
                 <small className="msg-time">{formatTime(msg.created_at)}</small>
               </div>
-              <p className="msg-text">{msg.content}</p>
+              <p className="msg-text">{displayContent}</p>
               {msg.attachments && msg.attachments.length > 0 && (
                 <div className="msg-attachments">
                   {msg.attachments.map((att, i) => (
@@ -1108,7 +1370,7 @@ const Messages = () => {
       </div>
 
       {/* Message Input */}
-      {chat.state === 'active' && !chat.admin_locked && (
+      {canSendMessage && (
         <div className="message-input">
           <input
             type="text"
@@ -1137,27 +1399,30 @@ const Messages = () => {
         </div>
       )}
 
+      {/* Locked chat message */}
+      {!canSendMessage && chat.state !== 'active' && (
+        <div className="chat-locked-message">
+          <p>🔒 This chat is {chat.state}. You cannot send messages.</p>
+          {chat.state === 'pending_manager' && (
+            <p>A manager will be assigned shortly to assist with your inquiry.</p>
+          )}
+          {chat.state === 'pending_availability' && (
+            <p>The property owner needs to confirm availability before messaging can begin.</p>
+          )}
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="chat-actions">
-        {user.role === 'manager' && chat.monitoring_manager_id === user.id && chat.state === 'active' && (
-          <button onClick={markAsRented} className="btn success">
-            ✅ Mark as Rented (Triggers Commission)
-          </button>
-        )}
-        {chat.state !== 'rented' && chat.state !== 'locked' && (
+        {chat.state !== 'rented' && chat.state !== 'locked' && chat.state !== 'dispute' && (
           <button onClick={raiseDispute} className="btn warning">
             ⚖️ Raise Dispute
           </button>
         )}
-        {chat.state === 'rented' && chat.commission_details && (
+        {chat.state === 'rented' && (
           <div className="rented-info">
             <h4>✅ Property Rented</h4>
-            <p>Commission of ₦{chat.commission_details.totalCommission?.toLocaleString() || '0'} calculated.</p>
-            <div className="commission-split">
-              <span>Manager: ₦{chat.commission_details.managerShare?.toLocaleString() || '0'}</span>
-              <span>Referrer: ₦{chat.commission_details.referrerShare?.toLocaleString() || '0'}</span>
-              <span>RentEasy: ₦{chat.commission_details.platformShare?.toLocaleString() || '0'}</span>
-            </div>
+            <p>Commission has been distributed.</p>
           </div>
         )}
         <button onClick={copyReferralLink} className="btn secondary">

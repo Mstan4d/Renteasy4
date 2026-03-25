@@ -1,232 +1,235 @@
+/* ================= BASE ================= */
 .header {
-    background: #ffffff;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-  }
-  
-  .header-container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    max-width: 1280px;
-    margin: 0 auto;
-  }
-  
-  /* Logo */
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .logo-image {
-    height: 60px;
-    width: auto;
-    border-radius: 2px;
-  }
-  
-  /* Desktop Navigation */
-  .desktop-nav {
-    display: none;
-  }
-  
-  .nav-list {
-    display: flex;
-    gap: 2rem;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  
-  .nav-link {
-    color: #333;
-    text-decoration: none;
-    font-weight: 500;
-    padding: 0.5rem 0;
-    position: relative;
-    transition: color 0.3s ease;
-  }
-  
-  .nav-link:hover {
-    color: #007bff;
-  }
-  
-  /* User Actions */
-  .user-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  
-  .notification-badge {
-    position: relative;
-    cursor: pointer;
-    color: #666;
-  }
-  
-  .badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 50%;
-    min-width: 16px;
-    text-align: center;
-  }
-  
-  .user-dropdown-container {
-    position: relative;
-    margin-left: 8px;
-  }
-  
-  .user-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #333;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    transition: background-color 0.3s ease;
-  }
-  
-  .user-button:hover {
-    background-color: #f3f4f6;
-  }
-  
-  .user-name {
-    font-weight: 500;
-  }
-  
- .header {
-    background: #ffffff;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-  }
-  
-  .header-container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    max-width: 1280px;
-    margin: 0 auto;
-  }
-  
-  /* Logo */
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .logo-image {
-    height: 60px;
-    width: auto;
-    border-radius: 2px;
-  }
-  
-  /* Desktop Navigation */
-  .desktop-nav {
-    display: none;
-  }
-  
-  .nav-list {
-    display: flex;
-    gap: 2rem;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  
-  .nav-link {
-    color: #333;
-    text-decoration: none;
-    font-weight: 500;
-    padding: 0.5rem 0;
-    position: relative;
-    transition: color 0.3s ease;
-  }
-  
-  .nav-link:hover {
-    color: #007bff;
-  }
-  
-  /* User Actions */
-  .user-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  
-  .notification-badge {
-    position: relative;
-    cursor: pointer;
-    color: #666;
-  }
-  
-  .badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 50%;
-    min-width: 16px;
-    text-align: center;
-  }
-  
-  .user-dropdown-container {
-    position: relative;
-  }
-  
-  .user-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #333;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    transition: background-color 0.3s ease;
-  }
-  
-  .user-button:hover {
-    background-color: #f3f4f6;
-  }
-  
-  .user-name {
-    font-weight: 500;
-  }
-  
-  /* ================= USER DROPDOWN ================= */
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
 
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.5rem;
+  height: 70px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ================= LOGO ================= */
+.logo {
+  display: flex;
+  align-items: center;
+}
+
+.logo-link {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+}
+
+.custom-logo {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  transition: transform 0.2s;
+}
+
+.custom-logo:hover {
+  transform: scale(1.02);
+}
+
+/* ================= DESKTOP NAVIGATION ================= */
+.desktop-nav {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+}
+
+.nav-list {
+  display: flex;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  color: #4b5563;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.nav-link:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.nav-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ================= USER ACTIONS ================= */
+.user-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Notification Bell */
+.notification-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.notification-bell:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.notification-bell .badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Messages Link */
+.messages-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.messages-link:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.messages-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Admin Badge in Header */
+.admin-badge-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f3f4f6;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4f46e5;
+}
+
+/* User Dropdown */
+.user-dropdown-container {
+  position: relative;
+}
+
+.user-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 30px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.user-button:hover {
+  background: #f3f4f6;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4b5563;
+}
+
+.user-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: #374151;
+}
+
+/* Dropdown Arrow */
+.dropdown-arrow {
+  transition: transform 0.2s;
+}
+
+.dropdown-arrow.rotated {
+  transform: rotate(180deg);
+}
+
+/* User Dropdown Menu */
 .user-dropdown {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   right: 0;
-  width: 260px;
-  background: #ffffff;
-  border-radius: 14px;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.15);
-  border: 1px solid #eef2f7;
+  width: 280px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.02);
+  border: 1px solid #e5e7eb;
+  z-index: 1001;
   overflow: hidden;
-  z-index: 2000;
-  animation: dropdownFade 0.25s ease;
+  animation: dropdownFade 0.2s ease;
 }
 
 @keyframes dropdownFade {
@@ -240,31 +243,35 @@
   }
 }
 
-/* Header Info */
 .user-dropdown-info {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: linear-gradient(135deg, #667eea10, #764ba210);
+  background: #f9fafb;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .user-dropdown-avatar {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea, #764ba2);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
   font-size: 1.2rem;
+  color: white;
+}
+
+.user-dropdown-details {
+  flex: 1;
 }
 
 .user-dropdown-details strong {
   display: block;
   font-size: 14px;
-  color: #1f2937;
+  color: #111827;
 }
 
 .user-role-badge {
@@ -274,735 +281,485 @@
   padding: 2px 8px;
   background: #eef2ff;
   color: #4f46e5;
-  border-radius: 999px;
+  border-radius: 9999px;
   text-transform: capitalize;
 }
 
-/* Divider */
 .dropdown-divider {
   height: 1px;
-  background: #eef2f7;
-  margin: 6px 0;
+  background: #f3f4f6;
+  margin: 8px 0;
 }
 
-/* Dropdown Items */
 .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 12px;
+  padding: 14px 20px;   /* increased from 12px 16px */
   font-size: 14px;
   color: #374151;
   text-decoration: none;
   background: transparent;
   border: none;
+  width: 90%;
+  text-align: left;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s;
+  /* optional: add margin between items */
+  margin-bottom: 4px;   /* adds space between consecutive items */
 }
 
+/* Remove margin on the last item to avoid extra space at the bottom */
+.dropdown-item:last-child {
+  margin-bottom: 0;
+}
 .dropdown-item:hover {
-  background: #f8fafc;
+  background: #f9fafb;
   color: #4f46e5;
 }
 
-.dropdown-item span {
-  flex: 1;
-}
-
-/* Admin Item Highlight */
 .dropdown-item.admin-menu-item {
   background: #f5f3ff;
   color: #6d28d9;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dropdown-item.admin-menu-item:hover {
   background: #ede9fe;
 }
 
-/* Logout */
+.dropdown-badge {
+  margin-left: auto;
+  background: #ef4444;
+  color: white;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 20px;
+}
+
 .logout-button {
   color: #dc2626;
-  font-weight: 500;
 }
 
 .logout-button:hover {
   background: #fee2e2;
 }
-  .login-button {
-    background: #007bff;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    text-decoration: none;
-    font-weight: 500;
-    transition: background-color 0.3s ease;
-  }
-  
-  .login-button:hover {
-    background: #0056b3;
-  }
-  
-  /* Mobile Menu */
-  .mobile-menu-button {
-    display: flex;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #333;
-    padding: 0.5rem;
-  }
-  
-  .mobile-nav {
-    background: white;
-    border-top: 1px solid #e5e7eb;
-  }
-  
-  .mobile-nav-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  
-  .mobile-nav-link {
-    display: block;
-    padding: 1rem;
-    color: #333;
-    text-decoration: none;
-    border-bottom: 1px solid #f3f4f6;
-    transition: background-color 0.3s ease;
-  }
-  
-  .mobile-nav-link:hover {
-    background-color: #f9fafb;
-  }
-  
-  .mobile-logout-button {
-    display: block;
-    width: 100%;
-    padding: 1rem;
-    background: none;
-    border: none;
-    color: #ef4444;
-    text-align: left;
-    cursor: pointer;
-    border-bottom: 1px solid #f3f4f6;
-  }
-  
-  /* Adjust mobile login button to match */
-.mobile-login-button {
-    display: block;
-    padding: 1rem;
-    background: #007bff;
-    color: white;
-    text-decoration: none;
-    text-align: center;
-    margin: 1rem;
-    border-radius: 0.5rem;
-  }
-  
-  .mobile-login-button:hover {
-    background: #0056b3;
-  }
-  
-  /* Responsive */
-  @media (min-width: 768px) {
-    .desktop-nav {
-      display: block;
-    }
-    
-    .mobile-menu-button,
-    .mobile-nav {
-      display: none;
-    }
-  }
-  
-  @media (max-width: 767px) {
-    .user-actions .user-button span {
-      display: none;
-    }
-    
-    .notification-badge {
-      display: none;
-    }
-  }
 
-  .auth-buttons {
-    display: flex;
-    gap: 0.5rem;
-  }
-  
-  .signup-button {
-    background: #28a745;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    text-decoration: none;
-    font-weight: 500;
-    transition: background-color 0.3s ease;
-  }
-  
-  .signup-button:hover {
-    background: #218838;
-  }
-
-  /* Add to existing Header.css */
-
-/* Messages Link */
-.messages-link {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #333;
-    text-decoration: none;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    transition: background-color 0.3s ease;
-  }
-  
-  .messages-link:hover {
-    background-color: #f3f4f6;
-  }
-  
-  .messages-badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 1rem;
-    min-width: 18px;
-    text-align: center;
-    border: 2px solid white;
-  }
-  
-  /* Navigation Badges */
-  .nav-badge {
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 1rem;
-    min-width: 18px;
-    text-align: center;
-    margin-left: 0.5rem;
-  }
-  
-  .mobile-nav-badge {
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 1rem;
-    min-width: 18px;
-    text-align: center;
-    margin-left: auto;
-  }
-  
-  /* Navigation Icons */
-  .nav-icon {
-    margin-right: 0.5rem;
-    vertical-align: middle;
-  }
-  
-  .mobile-nav-icon {
-    margin-right: 0.75rem;
-    vertical-align: middle;
-  }
-  
-  /* For mobile view - adjust user actions */
-  @media (max-width: 767px) {
-    .user-actions .messages-link,
-    .user-actions .notification-badge {
-      display: none;
-    }
-    
-    .mobile-nav-list .mobile-nav-link {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-  }
-
-  /* Add these styles to your existing Header.css file */
-
-/* Post Dropdown Styles */
-.post-dropdown-container {
-    position: relative;
-  }
-  
-  .post-dropdown-trigger {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-decoration: none;
-  }
-  
-  .post-dropdown-trigger:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
-  }
-  
-  .post-dropdown-trigger .nav-icon {
-    color: white;
-  }
-  
-  .post-dropdown-trigger .dropdown-arrow {
-    margin-left: 4px;
-    transition: transform 0.3s ease;
-  }
-  
-  .post-dropdown-trigger .dropdown-arrow.rotated {
-    transform: rotate(180deg);
-  }
-  
-  .post-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-    border: 1px solid #e2e8f0;
-    min-width: 280px;
-    z-index: 1001;
-    animation: dropdownIn 0.2s ease;
-  }
-  
-  @keyframes dropdownIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  .post-dropdown-header {
-    padding: 20px;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  
-  .post-dropdown-header h4 {
-    margin: 0 0 4px 0;
-    color: #2d3748;
-    font-size: 16px;
-  }
-  
-  .post-dropdown-header p {
-    margin: 0;
-    color: #718096;
-    font-size: 13px;
-  }
-  
-  .post-dropdown-options {
-    padding: 8px;
-  }
-  
-  .post-dropdown-option {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    text-decoration: none;
-    color: #4a5568;
-    border-radius: 8px;
-    transition: all 0.2s ease;
-  }
-  
-  .post-dropdown-option:hover {
-    background: #f7fafc;
-    color: #667eea;
-  }
-  
-  .post-option-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background: #f0f9ff;
-    color: #3182ce;
-  }
-  
-  .post-option-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-  
-  .post-option-title {
-    font-weight: 500;
-    font-size: 14px;
-    color: #2d3748;
-  }
-  
-  .post-option-description {
-    font-size: 12px;
-    color: #718096;
-    margin-top: 2px;
-  }
-  
-  /* User Dropdown Arrow */
-  .user-button .dropdown-arrow {
-    margin-left: 4px;
-    transition: transform 0.3s ease;
-  }
-  
-  .user-button .dropdown-arrow.rotated {
-    transform: rotate(180deg);
-  }
-  
-  /* Messages Link Styles (moved to right) */
-  .messages-link {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    background: #f8f9ff;
-    color: #667eea;
-    text-decoration: none;
-    transition: all 0.3s ease;
-  }
-  
-  .messages-link:hover {
-    background: #667eea;
-    color: white;
-    transform: translateY(-2px);
-  }
-  
-  .messages-badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background: #e53e3e;
-    color: white;
-    font-size: 11px;
-    font-weight: 600;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 4px;
-    border: 2px solid white;
-  }
-  
-  /* Mobile Post Section */
-  .mobile-post-section {
-    margin: 20px 0;
-    padding: 16px;
-    background: #f8f9ff;
-    border-radius: 12px;
-  }
-  
-  .mobile-post-title {
-    margin: 0 0 12px 0;
-    color: #667eea;
-    font-size: 16px;
-    font-weight: 600;
-  }
-  
-  .mobile-post-option {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    text-decoration: none;
-    color: #4a5568;
-    border-radius: 8px;
-    margin-bottom: 8px;
-    background: white;
-    border: 1px solid #e2e8f0;
-    transition: all 0.3s ease;
-  }
-  
-  .mobile-post-option:hover {
-    border-color: #667eea;
-    background: #f8f9ff;
-  }
-  
-  .mobile-post-option-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: #f0f9ff;
-    color: #3182ce;
-  }
-  
-  .mobile-post-option-title {
-    font-weight: 500;
-    font-size: 14px;
-    color: #2d3748;
-  }
-  
-  .mobile-post-option-description {
-    font-size: 12px;
-    color: #718096;
-    margin-top: 2px;
-  }
-  
-  /* Responsive Adjustments */
-  @media (max-width: 768px) {
-    .desktop-nav {
-      display: none;
-    }
-    
-    .mobile-menu-button {
-      display: block;
-    }
-    
-    .header-container {
-      padding: 0 16px;
-      height: 60px;
-    }
-    
-    .logo {
-      font-size: 20px;
-    }
-    
-    .messages-link {
-      margin-right: 12px;
-    }
-  }
-
-  /* src/shared/components/Header.css - ADD THESE STYLES */
-
-/* Admin Badge in Header */
-.admin-badge-header {
+/* Auth Buttons */
+.auth-buttons {
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  gap: 12px;
+}
+
+.login-button,
+.signup-button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.login-button {
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+}
+
+.login-button:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.signup-button {
+  background: #2563eb;
   color: white;
-  padding: 0.375rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-right: 0.5rem;
 }
 
-.admin-label {
-  margin-left: 0.25rem;
+.signup-button:hover {
+  background: #1d4ed8;
 }
 
-/* Admin Icon in User Button */
-.admin-icon {
-  color: #8b5cf6;
+/* ================= POST DROPDOWN ================= */
+.post-dropdown-container {
+  position: relative;
 }
 
-/* User Dropdown Admin Item */
-.dropdown-item.admin-menu-item {
-  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
-  border-left: 3px solid #667eea;
-  color: #667eea;
-  font-weight: 600;
-}
-
-.dropdown-item.admin-menu-item:hover {
-  background: linear-gradient(135deg, #667eea25 0%, #764ba225 100%);
-}
-
-/* User Dropdown Info */
-.user-dropdown-info {
+.post-dropdown-trigger {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 6px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.post-dropdown-trigger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+.post-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+  border: 1px solid #e5e7eb;
+  min-width: 280px;
+  z-index: 1001;
+  animation: dropdownFade 0.2s ease;
+}
+
+.post-dropdown-header {
+  padding: 16px;
   border-bottom: 1px solid #f3f4f6;
 }
 
-.user-dropdown-avatar {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.post-dropdown-header h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.post-dropdown-header p {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.post-dropdown-options {
+  padding: 8px;
+}
+
+.post-dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.post-dropdown-option:hover {
+  background: #f9fafb;
+}
+
+.post-option-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-size: 1.25rem;
-}
-
-.user-dropdown-details {
-  display: flex;
-  flex-direction: column;
-}
-
-.user-role-badge {
-  display: inline-block;
-  padding: 0.125rem 0.5rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   background: #f3f4f6;
-  color: #6b7280;
-  border-radius: 9999px;
-  font-size: 0.75rem;
+  color: #4f46e5;
+}
+
+.post-option-content {
+  flex: 1;
+}
+
+.post-option-title {
+  display: block;
+  font-size: 14px;
   font-weight: 500;
-  text-transform: capitalize;
-  margin-top: 0.25rem;
+  color: #111827;
 }
 
-/* Divider in Dropdown */
-.dropdown-divider {
-  height: 1px;
-  background: #f3f4f6;
-  margin: 0.5rem 1rem;
+.post-option-description {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
 }
 
-/* Mobile Admin Section */
-.mobile-admin-section {
-  background: #f8fafc;
-  border-radius: 0.5rem;
+/* ================= MOBILE MENU ================= */
+.mobile-menu-button {
+  display: none;
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #4b5563;
+}
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  top: 70px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: white;
+  z-index: 1000;
+  overflow-y: auto;
   padding: 1rem;
-  margin: 1rem 0;
-  border: 1px solid #e2e8f0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.mobile-nav.open {
+  display: block;
+}
+
+.mobile-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mobile-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: #374151;
+  text-decoration: none;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.2s;
+}
+
+.mobile-nav-link:hover {
+  background: #f9fafb;
+}
+
+.mobile-nav-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-nav-badge {
+  margin-left: auto;
+  background: #ef4444;
+  color: white;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 20px;
+}
+
+.mobile-user-section {
+  margin: 16px 0;
+}
+
+.mobile-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+}
+
+.mobile-user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: white;
+}
+
+.mobile-user-details {
+  flex: 1;
+}
+
+.mobile-user-details strong {
+  display: block;
+  font-size: 16px;
+  color: #111827;
+}
+
+.mobile-user-role {
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: capitalize;
+  margin-top: 4px;
+}
+
+.mobile-login-button,
+.mobile-signup-button,
+.mobile-logout-button {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  margin: 8px 0;
+  text-align: center;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: background 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.mobile-login-button {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.mobile-signup-button {
+  background: #2563eb;
+  color: white;
+}
+
+.mobile-logout-button {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.mobile-admin-section {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 12px;
 }
 
 .mobile-admin-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: #667eea;
-  margin: 0 0 0.75rem 0;
-  font-size: 1rem;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4f46e5;
 }
 
 .mobile-admin-option {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem;
+  gap: 12px;
+  padding: 12px;
   background: white;
-  border-radius: 0.5rem;
-  margin-bottom: 0.5rem;
+  border-radius: 8px;
+  margin-bottom: 8px;
   text-decoration: none;
   color: #374151;
-  border: 1px solid #f1f5f9;
-  transition: all 0.2s;
-}
-
-.mobile-admin-option:hover {
-  background: #f8fafc;
-  border-color: #e2e8f0;
+  border: 1px solid #e5e7eb;
 }
 
 .mobile-admin-icon {
-  color: #667eea;
+  color: #4f46e5;
 }
 
-.mobile-admin-option-title {
-  font-weight: 500;
-  font-size: 0.875rem;
+.mobile-post-section {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 12px;
 }
 
-.mobile-admin-option-description {
-  font-size: 0.75rem;
-  color: #6b7280;
+.mobile-post-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4f46e5;
 }
 
-/* Mobile User Info */
-.mobile-user-info {
+.mobile-post-option {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: #f8fafc;
-  border-radius: 0.5rem;
-  margin: 1rem 0;
-}
-
-.mobile-user-avatar {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 1.25rem;
-}
-
-.mobile-user-details {
-  display: flex;
-  flex-direction: column;
-}
-
-.mobile-user-role {
-  font-size: 0.75rem;
-  color: #6b7280;
-  text-transform: capitalize;
-  margin-top: 0.25rem;
-}
-
-/* Messages Badge */
-.messages-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  background: #ef4444;
-  color: white;
-  font-size: 0.75rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 9999px;
-  min-width: 1.25rem;
-  text-align: center;
-}
-
-.messages-link {
-  position: relative;
-  color: #6b7280;
-  padding: 0.5rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
-}
-
-.messages-link:hover {
-  background: #f3f4f6;
+  gap: 12px;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  text-decoration: none;
   color: #374151;
+  border: 1px solid #e5e7eb;
 }
 
-/* User Avatar in Header */
-.user-avatar {
+/* ================= RESPONSIVE ================= */
+@media (max-width: 1024px) {
+  .desktop-nav .nav-link span {
+    display: none;
+  }
+  .nav-link {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-container {
+    padding: 0 1rem;
+    height: 60px;
+  }
+
+  .desktop-nav {
+    display: none;
+  }
+
+  .mobile-menu-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .user-actions .messages-link,
+  .user-actions .notification-bell {
+    display: none;
+  }
+
+  .user-button .user-name {
+    display: none;
+  }
+
+  .user-button {
+    padding: 6px;
+  }
+
+  .post-dropdown-container {
+    display: none;
+  }
+
+  .admin-badge-header {
+    display: none;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-nav,
+  .mobile-menu-button {
+    display: none;
+  }
+}
+
+.notification-bell {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  background: #f3f4f6;
-  color: #6b7280;
+  gap: 8px;
+  position: relative;
+  text-decoration: none;
+  color: #0f2705;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
 }
 
-/* Dropdown Badge */
-.dropdown-badge {
-  background: #ef4444;
-  color: white;
-  font-size: 0.75rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 9999px;
-  margin-left: auto;
+.notification-bell:hover {
+  background: #1f3b74;
+}
+
+.bell-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Hide label on mobile if needed */
+@media (max-width: 768px) {
+  .bell-label {
+    display: none;
+  }
+  .notification-bell {
+    padding: 8px;
+  }
 }

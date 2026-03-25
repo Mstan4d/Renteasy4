@@ -1,60 +1,79 @@
 // src/modules/properties/components/steps/ImagesStep.jsx
 import React, { useCallback, useState } from 'react';
-import { Upload, Camera, Image as ImageIcon, X, Check, Plus } from 'lucide-react';
+import { Upload, Camera, Image as ImageIcon, X, Check, Plus, Video, Play } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
-import { supabase } from '../../../../shared/lib/supabaseClient';
 import './ImagesStep.css';
 
 const ImagesStep = ({ formData, updateFormData }) => {
   const [uploading, setUploading] = useState(false);
+  const [mediaType, setMediaType] = useState('images'); // 'images' or 'videos'
 
-  const handleImageUpload = async (files) => {
+  const handleMediaUpload = async (files, type) => {
     setUploading(true);
-    const uploadedImages = [];
+    const uploadedMedia = [];
     
     for (const file of files) {
       try {
         // Create a temporary object for preview
         const objectUrl = URL.createObjectURL(file);
         
-        uploadedImages.push({
+        uploadedMedia.push({
           file: file,
           preview: objectUrl,
           name: file.name,
           size: file.size,
+          type: type, // 'image' or 'video'
           uploadedAt: new Date().toISOString(),
           needsUpload: true
         });
         
       } catch (error) {
-        console.error('Error processing image:', error);
+        console.error(`Error processing ${type}:`, error);
         alert(`Failed to process ${file.name}`);
       }
     }
     
-    updateFormData({
-      images: [...formData.images, ...uploadedImages]
-    });
+    if (type === 'images') {
+      updateFormData({
+        images: [...formData.images, ...uploadedMedia]
+      });
+    } else {
+      updateFormData({
+        videos: [...(formData.videos || []), ...uploadedMedia]
+      });
+    }
     
     setUploading(false);
   };
 
-  const removeImage = (index) => {
-    const newImages = [...formData.images];
-    const removed = newImages.splice(index, 1)[0];
-    // Revoke blob URL to free memory
-    if (removed.preview && removed.preview.startsWith('blob:')) {
-      URL.revokeObjectURL(removed.preview);
+  const removeMedia = (index, type) => {
+    if (type === 'images') {
+      const newImages = [...formData.images];
+      const removed = newImages.splice(index, 1)[0];
+      if (removed.preview && removed.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(removed.preview);
+      }
+      updateFormData({ images: newImages });
+    } else {
+      const newVideos = [...(formData.videos || [])];
+      const removed = newVideos.splice(index, 1)[0];
+      if (removed.preview && removed.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(removed.preview);
+      }
+      updateFormData({ videos: newVideos });
     }
-    updateFormData({ images: newImages });
   };
 
-  const onDrop = useCallback((acceptedFiles) => {
-    handleImageUpload(acceptedFiles);
+  const onDropImages = useCallback((acceptedFiles) => {
+    handleMediaUpload(acceptedFiles, 'images');
   }, [formData.images]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
+  const onDropVideos = useCallback((acceptedFiles) => {
+    handleMediaUpload(acceptedFiles, 'videos');
+  }, [formData.videos]);
+
+  const { getRootProps: getImageRootProps, getInputProps: getImageInputProps, isDragActive: isImageDragActive } = useDropzone({
+    onDrop: onDropImages,
     accept: {
       'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif']
     },
@@ -62,34 +81,87 @@ const ImagesStep = ({ formData, updateFormData }) => {
     multiple: true
   });
 
+  const { getRootProps: getVideoRootProps, getInputProps: getVideoInputProps, isDragActive: isVideoDragActive } = useDropzone({
+    onDrop: onDropVideos,
+    accept: {
+      'video/*': ['.mp4', '.mov', '.webm', '.avi']
+    },
+    maxSize: 50 * 1024 * 1024, // 50MB for videos
+    multiple: true
+  });
+
+  const getVideoThumbnail = (videoFile) => {
+    // Return a video element or thumbnail
+    return <video src={videoFile.preview} className="preview-video" muted />;
+  };
+
   return (
     <div className="images-step">
       <div className="step-header">
-        <h2>Property Images</h2>
+        <h2>Property Media</h2>
         <p className="step-description">
-          Upload clear photos of your property. First image will be the cover photo.
-          Recommended: 5-10 images showing all rooms and features.
+          Upload clear photos and videos of your property. First image will be the cover photo.
+          Recommended: 5-10 images and 1-2 videos showing all rooms and features.
         </p>
       </div>
 
-      {/* Upload Zone */}
-      <div className="upload-zone">
-        <div
-          {...getRootProps()}
-          className={`dropzone ${isDragActive ? 'active' : ''}`}
+      {/* Media Type Tabs */}
+      <div className="media-tabs">
+        <button
+          className={`tab-btn ${mediaType === 'images' ? 'active' : ''}`}
+          onClick={() => setMediaType('images')}
         >
-          <input {...getInputProps()} />
-          <Upload size={48} />
-          <h3>Drag & Drop Images Here</h3>
-          <p>or click to browse files</p>
-          <p className="upload-info">
-            Supports JPG, PNG, WebP • Max 5MB per image
-          </p>
-          <button type="button" className="btn btn-outline">
-            Browse Files
-          </button>
-        </div>
+          <ImageIcon size={18} /> Images ({formData.images?.length || 0})
+        </button>
+        <button
+          className={`tab-btn ${mediaType === 'videos' ? 'active' : ''}`}
+          onClick={() => setMediaType('videos')}
+        >
+          <Video size={18} /> Videos ({formData.videos?.length || 0})
+        </button>
       </div>
+
+      {/* Images Upload Zone */}
+      {mediaType === 'images' && (
+        <div className="upload-zone">
+          <div
+            {...getImageRootProps()}
+            className={`dropzone ${isImageDragActive ? 'active' : ''}`}
+          >
+            <input {...getImageInputProps()} />
+            <Upload size={48} />
+            <h3>Drag & Drop Images Here</h3>
+            <p>or click to browse files</p>
+            <p className="upload-info">
+              Supports JPG, PNG, WebP • Max 5MB per image
+            </p>
+            <button type="button" className="btn btn-outline">
+              Browse Images
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Videos Upload Zone */}
+      {mediaType === 'videos' && (
+        <div className="upload-zone">
+          <div
+            {...getVideoRootProps()}
+            className={`dropzone ${isVideoDragActive ? 'active' : ''}`}
+          >
+            <input {...getVideoInputProps()} />
+            <Video size={48} />
+            <h3>Drag & Drop Videos Here</h3>
+            <p>or click to browse files</p>
+            <p className="upload-info">
+              Supports MP4, MOV, WebM • Max 50MB per video
+            </p>
+            <button type="button" className="btn btn-outline">
+              Browse Videos
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Upload Progress */}
       {uploading && (
@@ -97,12 +169,12 @@ const ImagesStep = ({ formData, updateFormData }) => {
           <div className="progress-bar">
             <div className="progress-fill"></div>
           </div>
-          <p>Uploading images...</p>
+          <p>Uploading media...</p>
         </div>
       )}
 
-      {/* Image Previews */}
-      {formData.images.length > 0 && (
+      {/* Images Preview */}
+      {formData.images?.length > 0 && mediaType === 'images' && (
         <div className="images-preview-section">
           <h3>
             <ImageIcon size={20} />
@@ -115,18 +187,15 @@ const ImagesStep = ({ formData, updateFormData }) => {
               <div key={index} className="image-preview-card">
                 <div className="image-container">
                   <img 
-                    src={image.url || image.preview} // Use uploaded URL or local preview
+                    src={image.url || image.preview}
                     alt={`Property ${index + 1}`}
                     className="preview-image"
                   />
-                  {index === 0 && (
-                    <div className="cover-badge">Cover</div>
-                  )}
+                  {index === 0 && <div className="cover-badge">Cover</div>}
                   <button
                     type="button"
                     className="remove-btn"
-                    onClick={() => removeImage(index)}
-                    title="Remove image"
+                    onClick={() => removeMedia(index, 'images')}
                   >
                     <X size={16} />
                   </button>
@@ -152,8 +221,47 @@ const ImagesStep = ({ formData, updateFormData }) => {
                   <span className="image-name">
                     {image.name?.substring(0, 20) || `Image ${index + 1}`}
                   </span>
-                  <span className="image-size">
-                    {image.size ? `${(image.size / 1024 / 1024).toFixed(2)}MB` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Videos Preview */}
+      {formData.videos?.length > 0 && mediaType === 'videos' && (
+        <div className="videos-preview-section">
+          <h3>
+            <Video size={20} />
+            Uploaded Videos ({formData.videos.length})
+          </h3>
+          
+          <div className="videos-grid">
+            {formData.videos.map((video, index) => (
+              <div key={index} className="video-preview-card">
+                <div className="video-container">
+                  <video 
+                    src={video.url || video.preview}
+                    className="preview-video"
+                    muted
+                  />
+                  <div className="play-icon-overlay">
+                    <Play size={24} />
+                  </div>
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    onClick={() => removeMedia(index, 'videos')}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="video-info">
+                  <span className="video-name">
+                    {video.name?.substring(0, 20) || `Video ${index + 1}`}
+                  </span>
+                  <span className="video-size">
+                    {video.size ? `${(video.size / 1024 / 1024).toFixed(2)}MB` : ''}
                   </span>
                 </div>
               </div>
@@ -162,65 +270,18 @@ const ImagesStep = ({ formData, updateFormData }) => {
         </div>
       )}
 
-      {/* Image Tips */}
-      <div className="image-tips">
-        <h4>📸 Image Tips for Better Results:</h4>
+      {/* Tips */}
+      <div className="media-tips">
+        <h4>📸 Media Tips for Better Results:</h4>
         <div className="tips-grid">
-          <div className="tip">
-            <Check size={16} />
-            <span>Use natural daylight</span>
-          </div>
-          <div className="tip">
-            <Check size={16} />
-            <span>Show all rooms clearly</span>
-          </div>
-          <div className="tip">
-            <Check size={16} />
-            <span>Include property exterior</span>
-          </div>
-          <div className="tip">
-            <Check size={16} />
-            <span>Show amenities and features</span>
-          </div>
-          <div className="tip">
-            <Check size={16} />
-            <span>Clean and tidy spaces</span>
-          </div>
-          <div className="tip">
-            <Check size={16} />
-            <span>Multiple angles of each room</span>
-          </div>
+          <div className="tip"><Check size={16} /><span>Use natural daylight</span></div>
+          <div className="tip"><Check size={16} /><span>Show all rooms clearly</span></div>
+          <div className="tip"><Check size={16} /><span>Include property exterior</span></div>
+          <div className="tip"><Check size={16} /><span>Show amenities and features</span></div>
+          <div className="tip"><Check size={16} /><span>Short videos (30-60 sec) walkthroughs</span></div>
+          <div className="tip"><Check size={16} /><span>Multiple angles of each room</span></div>
         </div>
       </div>
-
-      {/* Test Images Button (for development) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="test-images">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => {
-              const testImages = [
-                'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80',
-                'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80',
-                'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=800&q=80',
-                'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800&q=80',
-                'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?w=800&q=80'
-              ].map((url, index) => ({
-                url,
-                name: `Test Image ${index + 1}.jpg`,
-                size: 1024 * 1024,
-                uploadedAt: new Date().toISOString()
-              }));
-              
-              updateFormData({ images: testImages });
-              alert('Test images added!');
-            }}
-          >
-            Add Test Images (Dev Only)
-          </button>
-        </div>
-      )}
     </div>
   );
 };

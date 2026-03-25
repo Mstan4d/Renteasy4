@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../../shared/components/RentEasyLoader';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import {
   DollarSign, Calendar, CheckCircle, Clock,
@@ -228,13 +229,8 @@ const TenantDashboard = () => {
   };
 
   if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-spinner"></div>
-        <p>Verifying Session...</p>
-      </div>
-    );
-  }
+  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+}
 
   return (
     <div className="tenant-dashboard-content">

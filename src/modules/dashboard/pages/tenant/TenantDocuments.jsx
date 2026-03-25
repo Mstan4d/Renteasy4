@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import { supabase } from '../../../../shared/lib/supabaseClient';
+import { FileText, Download, Eye, Calendar, Folder, Image, File, Archive, Building, Home, User, Upload, X } from 'lucide-react';
+import RentEasyLoader from '../../../../shared/components/RentEasyLoader';
 import './TenantDocuments.css';
 
 const TenantDocuments = () => {
@@ -9,42 +11,93 @@ const TenantDocuments = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadCategory, setUploadCategory] = useState('identification');
   const [uploading, setUploading] = useState(false);
+  const [subscription, setSubscription] = useState(null);
 
-  // Categories for document classification
   const categories = [
-    'identification',
-    'income',
-    'agreements',
-    'utility_bills',
-    'references',
-    'other'
+    'identification', 'income', 'agreements', 'utility_bills', 'references', 'other'
   ];
 
   useEffect(() => {
-    if (user) loadDocuments();
+    if (user) {
+      loadDocuments();
+      subscribeToNewDocuments();
+    }
+    return () => {
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
+    };
   }, [user]);
 
   const loadDocuments = async () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase
+      // Fetch documents from tenant_documents table (shared by estate firm/landlord)
+      const { data: sharedDocs, error: sharedError } = await supabase
+        .from('tenant_documents')
+        .select(`
+          *,
+          estate_firm:estate_firm_id (
+            id,
+            firm_name,
+            logo_url
+          ),
+          landlord:landlord_id (
+            id,
+            name,
+            email
+          )
+        `)
+        .eq('tenant_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (sharedError) throw sharedError;
+
+      // Fetch documents from estate_documents (uploaded by tenant)
+      const { data: ownDocs, error: ownError } = await supabase
         .from('estate_documents')
         .select('*')
         .eq('client_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setDocuments(data || []);
+      if (ownError) throw ownError;
+
+      // Combine and mark source
+      const allDocs = [
+        ...(sharedDocs || []).map(doc => ({ ...doc, source: 'shared' })),
+        ...(ownDocs || []).map(doc => ({ ...doc, source: 'own' }))
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      setDocuments(allDocs);
     } catch (err) {
       console.error('Error loading documents:', err);
       setError('Failed to load documents. Please refresh.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const subscribeToNewDocuments = () => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('tenant-documents')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'tenant_documents',
+        filter: `tenant_id=eq.${user.id}`
+      }, (payload) => {
+        setDocuments(prev => [payload.new, ...prev]);
+      })
+      .subscribe();
+
+    setSubscription(channel);
   };
 
   const getCategoryIcon = (category) => {
@@ -54,6 +107,10 @@ const TenantDocuments = () => {
       agreements: '📝',
       utility_bills: '💡',
       references: '🤝',
+      lease: '📝',
+      receipt: '💰',
+      invoice: '📄',
+      notice: '🔔',
       other: '📄'
     };
     return icons[category] || '📄';
@@ -66,9 +123,44 @@ const TenantDocuments = () => {
       agreements: 'Agreements',
       utility_bills: 'Utility Bills',
       references: 'References',
+      lease: 'Lease Agreement',
+      receipt: 'Payment Receipt',
+      invoice: 'Invoice',
+      notice: 'Notice',
       other: 'Other Documents'
     };
     return labels[category] || category;
+  };
+
+  const getSenderInfo = (doc) => {
+    if (doc.source === 'shared') {
+      if (doc.estate_firm) {
+        return {
+          name: doc.estate_firm.firm_name,
+          icon: <Building size={14} />,
+          type: 'Estate Firm'
+        };
+      }
+      if (doc.landlord) {
+        return {
+          name: doc.landlord.name,
+          icon: <Home size={14} />,
+          type: 'Landlord'
+        };
+      }
+    }
+    return {
+      name: 'You',
+      icon: <User size={14} />,
+      type: 'Uploaded by you'
+    };
+  };
+
+  const getFileIcon = (fileType) => {
+    if (fileType?.includes('pdf')) return <FileText size={24} />;
+    if (fileType?.includes('image')) return <Image size={24} />;
+    if (fileType?.includes('zip')) return <Archive size={24} />;
+    return <File size={24} />;
   };
 
   const getStatusBadge = (status) => {
@@ -81,17 +173,22 @@ const TenantDocuments = () => {
     return badges[status] || { label: status, class: 'badge-secondary' };
   };
 
+  const formatFileSize = (bytes) => {
+    if (!bytes) return 'Unknown';
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
   const handleUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validate file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
       alert('File size must be less than 10MB');
       return;
     }
 
-    // Validate file type
     const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!allowedTypes.includes(file.type)) {
       alert('Only PDF, JPG, and PNG files are allowed');
@@ -99,29 +196,21 @@ const TenantDocuments = () => {
     }
 
     setUploading(true);
-    setError(null);
-
     try {
-      // 1. Upload file to Supabase Storage
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `tenant-documents/${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('estate-documents')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+        .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Get public URL
       const { data: urlData } = supabase.storage
         .from('estate-documents')
         .getPublicUrl(filePath);
 
-      // 3. Create database record
       const { data: newDoc, error: insertError } = await supabase
         .from('estate_documents')
         .insert({
@@ -140,14 +229,13 @@ const TenantDocuments = () => {
 
       if (insertError) throw insertError;
 
-      // 4. Update local state
-      setDocuments(prev => [newDoc, ...prev]);
+      setDocuments(prev => [{ ...newDoc, source: 'own' }, ...prev]);
       setShowUploadModal(false);
       setUploadCategory('identification');
-      alert('Document uploaded successfully! It will be reviewed soon.');
+      alert('Document uploaded successfully!');
     } catch (err) {
       console.error('Upload error:', err);
-      setError('Upload failed. Please try again.');
+      alert('Upload failed. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -160,332 +248,223 @@ const TenantDocuments = () => {
       const docToDelete = documents.find(d => d.id === docId);
       if (!docToDelete) return;
 
-      // 1. Delete from storage if we have the path
-      if (docToDelete.storage_path) {
-        const { error: storageError } = await supabase.storage
-          .from('estate-documents')
-          .remove([docToDelete.storage_path]);
-
-        if (storageError) throw storageError;
+      // Don't allow deleting shared documents
+      if (docToDelete.source === 'shared') {
+        alert('You cannot delete documents shared by your property manager');
+        return;
       }
 
-      // 2. Delete database record
-      const { error: deleteError } = await supabase
+      if (docToDelete.storage_path) {
+        await supabase.storage
+          .from('estate-documents')
+          .remove([docToDelete.storage_path]);
+      }
+
+      await supabase
         .from('estate_documents')
         .delete()
         .eq('id', docId)
-        .eq('client_id', user.id); // Extra safety
+        .eq('client_id', user.id);
 
-      if (deleteError) throw deleteError;
-
-      // 3. Update local state
       setDocuments(prev => prev.filter(doc => doc.id !== docId));
     } catch (err) {
       console.error('Delete error:', err);
-      alert('Failed to delete document. Please try again.');
+      alert('Failed to delete document');
     }
   };
 
   const downloadDocument = (doc) => {
-    // Open in new tab (if PDF) or trigger download
     window.open(doc.file_url, '_blank');
   };
 
-  // Stats calculation
   const totalDocs = documents.length;
-  const verifiedCount = documents.filter(d => d.status === 'verified').length;
-  const pendingCount = documents.filter(d => d.status === 'pending').length;
-  const completeness = Math.min(85, Math.round((verifiedCount / 3) * 100)); // example
+  const ownDocs = documents.filter(d => d.source === 'own').length;
+  const sharedDocs = documents.filter(d => d.source === 'shared').length;
+
+  const filterCategories = [
+    { id: 'all', name: 'All Documents', icon: <Folder size={16} /> },
+    { id: 'lease', name: 'Lease Agreements', icon: <FileText size={16} /> },
+    { id: 'receipt', name: 'Receipts', icon: <FileText size={16} /> },
+    { id: 'identification', name: 'ID Documents', icon: <FileText size={16} /> },
+    { id: 'other', name: 'Other', icon: <FileText size={16} /> }
+  ];
+
+  const filteredDocuments = selectedCategory === 'all'
+    ? documents
+    : documents.filter(d => d.category === selectedCategory);
 
   if (loading) {
-    return (
-      <div className="documents-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading documents...</p>
-      </div>
-    );
-  }
+  return <RentEasyLoader message="Loading your Documents..." fullScreen />;
+}
 
   return (
-    <div className="tenant-documents">
-      {/* Header */}
-      <div className="documents-header">
-        <div className="header-content">
+    <div className="tenant-documents-page">
+      <div className="page-header">
+        <div>
           <h1>My Documents</h1>
-          <p>Manage your identification, agreements, and important documents</p>
+          <p>Documents you've uploaded and those shared by your property manager</p>
         </div>
-        <button 
-          className="btn btn-primary"
-          onClick={() => setShowUploadModal(true)}
-        >
-          + Upload Document
+        <button className="btn-primary" onClick={() => setShowUploadModal(true)}>
+          <Upload size={18} /> Upload Document
         </button>
       </div>
 
-      {/* Error display */}
-      {error && (
-        <div className="error-banner">
-          <p>{error}</p>
-          <button onClick={loadDocuments}>Retry</button>
-        </div>
-      )}
-
-      {/* Document Stats */}
+      {/* Stats */}
       <div className="document-stats">
         <div className="stat-card">
-          <div className="stat-icon">📄</div>
-          <div className="stat-info">
+          <FileText size={20} />
+          <div>
             <span className="stat-value">{totalDocs}</span>
             <span className="stat-label">Total Documents</span>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">✅</div>
-          <div className="stat-info">
-            <span className="stat-value">{verifiedCount}</span>
-            <span className="stat-label">Verified</span>
+          <Upload size={20} />
+          <div>
+            <span className="stat-value">{ownDocs}</span>
+            <span className="stat-label">Uploaded by You</span>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">⏳</div>
-          <div className="stat-info">
-            <span className="stat-value">{pendingCount}</span>
-            <span className="stat-label">Pending Review</span>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">📊</div>
-          <div className="stat-info">
-            <span className="stat-value">{completeness}%</span>
-            <span className="stat-label">Profile Completeness</span>
+          <Building size={20} />
+          <div>
+            <span className="stat-value">{sharedDocs}</span>
+            <span className="stat-label">From Property Manager</span>
           </div>
         </div>
       </div>
 
-      {/* Document Categories */}
-      <div className="document-categories">
-        <h3>Document Categories</h3>
-        <div className="categories-grid">
-          {categories.map(category => {
-            const categoryDocs = documents.filter(d => d.category === category);
+      {/* Categories */}
+      <div className="categories-scroll">
+        {filterCategories.map(cat => (
+          <button
+            key={cat.id}
+            className={`category-chip ${selectedCategory === cat.id ? 'active' : ''}`}
+            onClick={() => setSelectedCategory(cat.id)}
+          >
+            {cat.icon}
+            <span>{cat.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Documents Grid */}
+      <div className="documents-grid">
+        {filteredDocuments.length === 0 ? (
+          <div className="empty-state">
+            <FileText size={48} />
+            <h3>No documents yet</h3>
+            <p>Upload your first document or wait for your property manager to share documents.</p>
+            <button className="btn-primary" onClick={() => setShowUploadModal(true)}>
+              <Upload size={18} /> Upload Document
+            </button>
+          </div>
+        ) : (
+          filteredDocuments.map(doc => {
+            const sender = getSenderInfo(doc);
+            const statusBadge = doc.status ? getStatusBadge(doc.status) : null;
+            
             return (
-              <div key={category} className="category-card">
-                <div className="category-header">
-                  <span className="category-icon">{getCategoryIcon(category)}</span>
-                  <h4>{getCategoryLabel(category)}</h4>
+              <div key={doc.id} className="document-card">
+                <div className="document-preview">
+                  {getFileIcon(doc.file_type)}
                 </div>
-                <div className="category-info">
-                  <span className="doc-count">{categoryDocs.length} documents</span>
-                  <span className="verified-count">
-                    {categoryDocs.filter(d => d.status === 'verified').length} verified
-                  </span>
-                </div>
-                {categoryDocs.length > 0 ? (
-                  <div className="category-docs">
-                    {categoryDocs.slice(0, 3).map(doc => (
-                      <div key={doc.id} className="doc-preview">
-                        <span className="doc-name">{doc.name}</span>
-                        <span className={`doc-status ${doc.status}`}>
-                          {getStatusBadge(doc.status).label}
-                        </span>
-                      </div>
-                    ))}
-                    {categoryDocs.length > 3 && (
-                      <div className="more-docs">
-                        +{categoryDocs.length - 3} more
-                      </div>
+                <div className="document-details">
+                  <h4>{doc.name || doc.title}</h4>
+                  <p>{doc.description || 'No description'}</p>
+                  <div className="document-meta">
+                    <span className="sender-info">
+                      {sender.icon} {sender.name} ({sender.type})
+                    </span>
+                    <span><Calendar size={12} /> {new Date(doc.created_at).toLocaleDateString()}</span>
+                    <span>{formatFileSize(doc.file_size)}</span>
+                  </div>
+                  <div className="document-tags">
+                    {doc.category && (
+                      <span className="category-badge">
+                        {getCategoryIcon(doc.category)} {getCategoryLabel(doc.category)}
+                      </span>
+                    )}
+                    {statusBadge && (
+                      <span className={`status-badge ${statusBadge.class}`}>
+                        {statusBadge.label}
+                      </span>
+                    )}
+                    {doc.source === 'shared' && (
+                      <span className="shared-badge">📎 Shared</span>
                     )}
                   </div>
-                ) : (
-                  <p className="no-docs">No documents in this category</p>
-                )}
+                </div>
+                <div className="document-actions">
+                  <button
+                    className="btn-icon"
+                    onClick={() => downloadDocument(doc)}
+                    title="Download"
+                  >
+                    <Download size={18} />
+                  </button>
+                  <button
+                    className="btn-icon"
+                    onClick={() => window.open(doc.file_url, '_blank')}
+                    title="View"
+                  >
+                    <Eye size={18} />
+                  </button>
+                  {doc.source === 'own' && (
+                    <button
+                      className="btn-icon delete"
+                      onClick={() => deleteDocument(doc.id)}
+                      title="Delete"
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
+                </div>
               </div>
             );
-          })}
-        </div>
-      </div>
-
-      {/* All Documents Table */}
-      <div className="all-documents">
-        <h3>All Documents</h3>
-        
-        <div className="documents-table-container">
-          <table className="documents-table">
-            <thead>
-              <tr>
-                <th>Document Name</th>
-                <th>Category</th>
-                <th>Uploaded Date</th>
-                <th>Size</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.length > 0 ? (
-                documents.map(doc => {
-                  const statusBadge = getStatusBadge(doc.status);
-                  const uploadedDate = new Date(doc.created_at).toLocaleDateString();
-                  const size = doc.file_size 
-                    ? (doc.file_size / 1024).toFixed(1) + ' KB'
-                    : '—';
-
-                  return (
-                    <tr key={doc.id}>
-                      <td data-label="Document Name">
-                        <div className="document-name">
-                          <span className="doc-icon">
-                            {doc.file_type?.includes('pdf') ? '📕' : 
-                             doc.file_type?.includes('image') ? '🖼️' : '📄'}
-                          </span>
-                          <span>{doc.name}</span>
-                        </div>
-                      </td>
-                      <td data-label="Category">
-                        <span className="category-label">
-                          {getCategoryIcon(doc.category)} {getCategoryLabel(doc.category)}
-                        </span>
-                      </td>
-                      <td data-label="Uploaded Date">{uploadedDate}</td>
-                      <td data-label="Size">{size}</td>
-                      <td data-label="Status">
-                        <span className={`status-badge ${statusBadge.class}`}>
-                          {statusBadge.label}
-                        </span>
-                      </td>
-                      <td data-label="Actions">
-                        <div className="document-actions">
-                          <button 
-                            className="btn-action download"
-                            onClick={() => downloadDocument(doc)}
-                          >
-                            Download
-                          </button>
-                          <button 
-                            className="btn-action delete"
-                            onClick={() => deleteDocument(doc.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="6" className="empty-table">
-                    No documents found. Upload your first document to get started.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Required Documents (static guidance) */}
-      <div className="required-documents">
-        <h3>Required Documents for Verification</h3>
-        <div className="requirements-list">
-          <div className="requirement-item completed">
-            <span className="requirement-icon">✅</span>
-            <div className="requirement-info">
-              <h4>Government-Issued ID</h4>
-              <p>National ID, Passport, or Driver's License</p>
-            </div>
-          </div>
-          <div className="requirement-item pending">
-            <span className="requirement-icon">⏳</span>
-            <div className="requirement-info">
-              <h4>Proof of Income</h4>
-              <p>Recent payslips or bank statements (last 3 months)</p>
-            </div>
-          </div>
-          <div className="requirement-item completed">
-            <span className="requirement-icon">✅</span>
-            <div className="requirement-info">
-              <h4>Utility Bill</h4>
-              <p>Recent utility bill showing your address</p>
-            </div>
-          </div>
-          <div className="requirement-item optional">
-            <span className="requirement-icon">📄</span>
-            <div className="requirement-info">
-              <h4>References (Optional)</h4>
-              <p>Reference letters from previous landlords</p>
-            </div>
-          </div>
-        </div>
+          })
+        )}
       </div>
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="upload-modal-overlay" onClick={() => setShowUploadModal(false)}>
-          <div className="upload-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Upload Document</h3>
-              <button className="close-modal" onClick={() => setShowUploadModal(false)}>
-                ×
-              </button>
+              <h2>Upload Document</h2>
+              <button className="close-btn" onClick={() => setShowUploadModal(false)}>×</button>
             </div>
-            
-            <div className="modal-content">
+            <div className="modal-body">
               <div className="upload-instructions">
                 <p>Upload important documents for verification and records.</p>
                 <ul>
                   <li>Accepted formats: PDF, JPG, PNG</li>
                   <li>Maximum file size: 10MB</li>
-                  <li>Make sure documents are clear and legible</li>
                 </ul>
               </div>
               
               <div className="form-group">
-                <label>Select Category</label>
-                <select 
-                  value={uploadCategory}
-                  onChange={(e) => setUploadCategory(e.target.value)}
-                >
-                  {categories.map(category => (
-                    <option key={category} value={category}>
-                      {getCategoryLabel(category)}
-                    </option>
+                <label>Category</label>
+                <select value={uploadCategory} onChange={(e) => setUploadCategory(e.target.value)}>
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{getCategoryLabel(cat)}</option>
                   ))}
                 </select>
               </div>
               
               <div className="file-upload-area">
-                <label className="file-upload-label">
-                  <input
-                    type="file"
-                    onChange={handleUpload}
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    className="file-input"
-                    disabled={uploading}
-                  />
-                  <div className="upload-placeholder">
-                    <span className="upload-icon">📤</span>
-                    {uploading ? (
-                      <p>Uploading...</p>
-                    ) : (
-                      <>
-                        <p>Click to browse or drag & drop files</p>
-                        <small>PDF, JPG, PNG up to 10MB</small>
-                      </>
-                    )}
-                  </div>
-                </label>
-              </div>
-              
-              <div className="modal-actions">
-                <button 
-                  className="btn btn-outline"
-                  onClick={() => setShowUploadModal(false)}
+                <input
+                  type="file"
+                  onChange={handleUpload}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="file-input"
                   disabled={uploading}
-                >
-                  Cancel
-                </button>
+                />
+                {uploading && <p className="uploading-text">Uploading...</p>}
               </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowUploadModal(false)}>Cancel</button>
             </div>
           </div>
         </div>
