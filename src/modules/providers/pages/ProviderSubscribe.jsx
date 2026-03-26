@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-
 import {
   CheckCircle, XCircle, Zap, Shield,
   Star, Users, TrendingUp, Award,
