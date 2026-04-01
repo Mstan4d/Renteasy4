@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { paymentService } from '@shared/lib/paymentService';
+import { paymentService } from '@shared/lib/paymentService.js';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { Eye, EyeOff, Upload, FileText, CheckCircle, XCircle, Clock, Download, CreditCard, Banknote, TrendingUp, Home } from 'lucide-react';
 import './ManagerPayments.css';
