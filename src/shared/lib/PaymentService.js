@@ -3,8 +3,8 @@ import { supabase } from './supabaseClient';
 
 // Bank details – you can store these in system_settings table instead of hardcoding
 const BANK_DETAILS = {
-  bankName: 'Opay',
-  accountName: 'RentEasy/Oforma Obinna Stanley',
+  bankName: 'Monie Point',
+  accountName: 'Stable Pilla Resources',
   accountNumber: '8149113218',
 };
 
