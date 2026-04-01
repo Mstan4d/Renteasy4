@@ -1,10 +1,11 @@
 // src/modules/messaging/pages/ChatListPage.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import { messagesService } from '../../../shared/services/messagesService';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
-import { Shield } from 'lucide-react';
+import { Shield, MessageSquare, Home, Users, Building, ChevronRight } from 'lucide-react';
 import './ChatListPage.css';
 
 const ChatListPage = () => {
@@ -42,73 +43,58 @@ const ChatListPage = () => {
     getUserRole();
   }, [user]);
 
+  // Load chats on mount and set up real-time subscription
   useEffect(() => {
     if (!user) {
       navigate('/login');
       return;
     }
     loadChats();
+    
+    // Subscribe to new messages for real-time updates
+    const subscription = supabase
+      .channel('chat-list-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages'
+        },
+        () => {
+          // Reload chats when new message arrives
+          loadChats();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chats'
+        },
+        () => {
+          // Reload chats when chat is updated
+          loadChats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, [user]);
 
   const loadChats = async () => {
     try {
       setLoading(true);
 
-      // Build base query
-      let query = supabase
+      // Query chats without embeds to avoid relationship ambiguity
+      const { data: chatsData, error } = await supabase
         .from('chats')
         .select('*')
+        .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id}`)
         .order('updated_at', { ascending: false });
-
-      // Role-based filtering
-      if (user.role === 'estate-firm' && isStaff && staffRole === 'associate') {
-        // Associates: only see chats from listings they created
-        // First get all listings created by this associate
-        const { data: myListings } = await supabase
-          .from('listings')
-          .select('id')
-          .eq('created_by_staff_id', user.id);
-        
-        const myListingIds = myListings?.map(l => l.id) || [];
-        
-        if (myListingIds.length > 0) {
-          query = query.in('listing_id', myListingIds);
-        } else {
-          // No listings created, return empty
-          setChats([]);
-          setLoading(false);
-          return;
-        }
-      } else if (user.role === 'estate-firm' && isStaff && staffRole === 'executive') {
-        // Executives: see all chats for the firm
-        // Get the main firm ID first
-        const { data: firmData } = await supabase
-          .from('estate_firm_profiles')
-          .select('parent_estate_firm_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        
-        const firmId = firmData?.parent_estate_firm_id;
-        
-        if (firmId) {
-          // Get all listings for this firm
-          const { data: firmListings } = await supabase
-            .from('listings')
-            .select('id')
-            .eq('estate_firm_id', firmId);
-          
-          const firmListingIds = firmListings?.map(l => l.id) || [];
-          
-          if (firmListingIds.length > 0) {
-            query = query.in('listing_id', firmListingIds);
-          }
-        }
-      } else {
-        // Principal or non-staff: see all chats where they are participant
-        query = query.or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id}`);
-      }
-
-      const { data: chatsData, error } = await query;
 
       if (error) throw error;
 
@@ -118,64 +104,67 @@ const ChatListPage = () => {
         return;
       }
 
-      // Get unique listing IDs
-      const listingIds = [...new Set(chatsData.map(c => c.listing_id).filter(Boolean))];
-
-      // Fetch all relevant listings
-      if (listingIds.length > 0) {
-        const { data: listingsData, error: listingsError } = await supabase
-          .from('listings')
-          .select('id, title, images, poster_role, created_by_staff_id')
-          .in('id', listingIds);
-
-        if (!listingsError && listingsData) {
-          const cache = {};
-          listingsData.forEach(l => { cache[l.id] = l; });
-          setListingsCache(cache);
-        }
-      }
-
-      // Get all participant IDs
+      // Get all unique participant IDs from both sides
       const participantIds = new Set();
       chatsData.forEach(chat => {
         if (chat.participant1_id) participantIds.add(chat.participant1_id);
         if (chat.participant2_id) participantIds.add(chat.participant2_id);
-        if (chat.monitoring_manager_id) participantIds.add(chat.monitoring_manager_id);
       });
 
-      // Fetch participant profiles
+      // Fetch profiles for all participants
+      let profilesMap = {};
       if (participantIds.size > 0) {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, full_name, role, avatar_url')
+          .select('id, full_name, name, avatar_url, role')
           .in('id', Array.from(participantIds));
-
         if (!profilesError && profiles) {
-          const profileMap = {};
-          profiles.forEach(p => { profileMap[p.id] = p; });
-          setUserProfiles(profileMap);
+          profilesMap = profiles.reduce((map, p) => {
+            map[p.id] = p;
+            return map;
+          }, {});
         }
       }
 
-      // For each chat, fetch the last message
+      // Get listing IDs and fetch listings
+      const listingIds = [...new Set(chatsData.map(c => c.listing_id).filter(Boolean))];
+      let listingsMap = {};
+      if (listingIds.length > 0) {
+        const { data: listingsData, error: listingsError } = await supabase
+          .from('listings')
+          .select('id, title, images, poster_role, price, status, address, city, state, created_by_staff_id')
+          .in('id', listingIds);
+        if (!listingsError && listingsData) {
+          listingsMap = listingsData.reduce((map, l) => {
+            map[l.id] = l;
+            return map;
+          }, {});
+        }
+      }
+
+      // Get last message for each chat
       const chatsWithLastMsg = await Promise.all(
         chatsData.map(async (chat) => {
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('content, created_at, is_system_message, sender_id')
-            .eq('chat_id', chat.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
+          const lastMsg = await messagesService.getChatMessages(chat.id).then(msgs => msgs[msgs.length - 1]);
           return {
             ...chat,
+            listing: listingsMap[chat.listing_id] || null,
+            participant1: profilesMap[chat.participant1_id] || null,
+            participant2: profilesMap[chat.participant2_id] || null,
             lastMessage: lastMsg || null,
+            lastMessageTime: lastMsg?.created_at || chat.updated_at
           };
         })
       );
 
+      // Sort by last message time
+      chatsWithLastMsg.sort((a, b) => 
+        new Date(b.lastMessageTime || b.updated_at) - new Date(a.lastMessageTime || a.updated_at)
+      );
+
       setChats(chatsWithLastMsg);
+      setListingsCache(listingsMap);
+      setUserProfiles(profilesMap);
     } catch (error) {
       console.error('Error loading chats:', error);
     } finally {
@@ -184,35 +173,49 @@ const ChatListPage = () => {
   };
 
   const getChatTitle = (chat) => {
-    return listingsCache[chat.listing_id]?.title || 'Unknown Listing';
+    return chat.listing?.title || 'Unknown Property';
+  };
+
+  const getOtherParticipant = (chat) => {
+    // For manager monitoring chats
+    if (chat.monitoring_manager_id === user.id && chat.participant2) {
+      return chat.participant2;
+    }
+    // For direct chats
+    if (chat.participant1_id === user.id) {
+      return chat.participant2;
+    }
+    if (chat.participant2_id === user.id) {
+      return chat.participant1;
+    }
+    return null;
   };
 
   const getOtherParticipantName = (chat) => {
-    if (chat.participant1_id === user.id) {
-      const other = userProfiles[chat.participant2_id];
-      return other?.full_name || 'User';
-    }
-    if (chat.participant2_id === user.id) {
-      const other = userProfiles[chat.participant1_id];
-      return other?.full_name || 'User';
-    }
-    return 'System';
+    const other = getOtherParticipant(chat);
+    return other?.full_name || other?.name || 'User';
+  };
+
+  const getOtherParticipantRole = (chat) => {
+    const other = getOtherParticipant(chat);
+    return other?.role || 'User';
   };
 
   const getChatPreview = (chat) => {
     if (!chat.lastMessage) return 'No messages yet';
+    
     const isOwn = chat.lastMessage.sender_id === user.id;
-    const content = chat.lastMessage.is_system_message ? 'System message' : chat.lastMessage.content;
+    const content = chat.lastMessage.is_system_message ? '🔔 System message' : chat.lastMessage.content;
     
     if (chat.lastMessage.is_system_message && content.includes('You\'ve contacted')) {
       if (chat.participant2_id === user.id) {
-        return 'A tenant has contacted you';
+        return 'Someone has contacted you about this property';
       }
       return content;
     }
     
     const sender = isOwn ? 'You: ' : `${getOtherParticipantName(chat)}: `;
-    return `${sender}${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
+    return `${sender}${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`;
   };
 
   const formatDate = (dateString) => {
@@ -223,7 +226,7 @@ const ChatListPage = () => {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) {
-      return 'Today';
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (diffDays === 1) {
       return 'Yesterday';
     } else if (diffDays < 7) {
@@ -233,26 +236,50 @@ const ChatListPage = () => {
     }
   };
 
-  const getChatRoleIcon = (chat) => {
-    const listing = listingsCache[chat.listing_id];
+  const getChatIcon = (chat) => {
+    const listing = chat.listing;
     if (listing?.poster_role === 'estate-firm') return '🏢';
     if (listing?.poster_role === 'landlord') return '🏠';
     if (listing?.poster_role === 'tenant') return '👤';
     if (chat.monitoring_manager_id === user.id) return '👨‍💼';
+    if (chat.is_manager_intermediary) return '🔄';
     return '💬';
   };
 
+  const getUnreadCount = (chat) => {
+    return chat.unread_count || 0;
+  };
+
+  const canAccessChat = (chat) => {
+    // Admin can access all
+    if (user.role === 'admin' || user.role === 'super-admin') return true;
+    
+    // Associate staff: only chats from their listings
+    if (user.role === 'estate-firm' && isStaff && staffRole === 'associate') {
+      const listing = chat.listing;
+      return listing?.created_by_staff_id === user.id;
+    }
+    
+    // Executive staff: all firm chats
+    if (user.role === 'estate-firm' && isStaff && staffRole === 'executive') {
+      return true;
+    }
+    
+    // Regular users: chats they participate in
+    return true;
+  };
+
   if (loading) {
-    return <RentEasyLoader message="Loading Messages..." fullScreen />;
+    return <RentEasyLoader message="Loading conversations..." fullScreen />;
   }
 
   return (
     <div className="chat-list-page">
-      {/* Role Banner for Associates */}
+      {/* Role Banner for Staff */}
       {user.role === 'estate-firm' && isStaff && staffRole === 'associate' && (
         <div className="role-banner">
           <Shield size={16} />
-          <span>Associate View - You can only see conversations from your listings</span>
+          <span>Associate View - You can only see conversations from listings you created</span>
         </div>
       )}
       
@@ -263,8 +290,14 @@ const ChatListPage = () => {
         </div>
       )}
 
-      <header className="messages-header">
-        <h2>Your Conversations</h2>
+      <header className="chat-list-header">
+        <div className="header-content">
+          <h1>
+            <MessageSquare size={24} />
+            Messages
+          </h1>
+          <p>Manage your conversations and inquiries</p>
+        </div>
         <button 
           className="btn btn-primary"
           onClick={() => navigate('/listings')}
@@ -273,9 +306,9 @@ const ChatListPage = () => {
         </button>
       </header>
 
-      <div className="chat-list">
+      <div className="chat-list-container">
         {chats.length === 0 ? (
-          <div className="empty-chats">
+          <div className="empty-state">
             <div className="empty-icon">💬</div>
             <h3>No conversations yet</h3>
             <p>
@@ -283,42 +316,89 @@ const ChatListPage = () => {
                 ? 'When tenants contact your listings, conversations will appear here.'
                 : 'Start a conversation by contacting a listing'}
             </p>
-            <button onClick={() => navigate('/listings')} className="btn primary">
+            <button onClick={() => navigate('/listings')} className="btn btn-primary">
               Browse Listings to Start Chat
             </button>
           </div>
         ) : (
-          chats.map(chat => {
-            const lastMsgTime = chat.lastMessage?.created_at ? formatDate(chat.lastMessage.created_at) : '';
-            const listing = listingsCache[chat.listing_id];
-            
-            return (
-              <div 
-                key={chat.id} 
-                className="chat-item"
-                onClick={() => navigate(`/dashboard/messages/chat/${chat.id}`)}
-              >
-                <div className="chat-item-header">
-                  <div className="chat-icon">{getChatRoleIcon(chat)}</div>
-                  <div className="chat-info">
-                    <h4>{getChatTitle(chat)}</h4>
-                    <p className="chat-preview">{getChatPreview(chat)}</p>
+          <div className="chat-list">
+            {chats.map(chat => {
+              const unreadCount = getUnreadCount(chat);
+              const listing = chat.listing;
+              const otherRole = getOtherParticipantRole(chat);
+              
+              if (!canAccessChat(chat)) return null;
+              
+              return (
+                <div 
+                  key={chat.id} 
+                  className={`chat-item ${unreadCount > 0 ? 'unread' : ''}`}
+                  onClick={() => navigate(`/dashboard/messages/chat/${chat.id}`)}
+                >
+                  <div className="chat-avatar">
+                    <div className="avatar-icon">{getChatIcon(chat)}</div>
+                    {unreadCount > 0 && (
+                      <span className="unread-badge">{unreadCount}</span>
+                    )}
                   </div>
-                  <span className="chat-time">{lastMsgTime}</span>
+                  
+                  <div className="chat-content">
+                    <div className="chat-header">
+                      <div className="chat-title-section">
+                        <h4 className="chat-title">{getChatTitle(chat)}</h4>
+                        <span className={`chat-role-badge ${otherRole.toLowerCase()}`}>
+                          {otherRole}
+                        </span>
+                      </div>
+                      <span className="chat-time">{formatDate(chat.lastMessageTime || chat.updated_at)}</span>
+                    </div>
+                    
+                    <div className="chat-preview">
+                      <span className="preview-text">{getChatPreview(chat)}</span>
+                    </div>
+                    
+                    <div className="chat-meta">
+                      <span className="chat-with">
+                        <Users size={12} />
+                        With: {getOtherParticipantName(chat)}
+                      </span>
+                      {listing?.poster_role === 'estate-firm' && (
+                        <span className="tag-estate">🏢 No Commission</span>
+                      )}
+                      {listing?.poster_role !== 'estate-firm' && listing?.price && (
+                        <span className="tag-commission">💰 7.5% Commission</span>
+                      )}
+                      {chat.monitoring_manager_id === user.id && (
+                        <span className="tag-monitoring">👁️ Monitoring</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <ChevronRight size={18} className="chevron-icon" />
                 </div>
-                <div className="chat-meta">
-                  <span className={`status-badge status-${chat.state}`}>
-                    {chat.state?.replace('_', ' ') || 'active'}
-                  </span>
-                  <span className="chat-with">With: {getOtherParticipantName(chat)}</span>
-                  {chat.estate_firm_listing && <span className="tag-estate">🏢 No Commission</span>}
-                  {chat.commission_applied && !chat.estate_firm_listing && <span className="tag-commission">💰 7.5% Commission</span>}
-                </div>
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
+      
+      {/* Quick Stats */}
+      {chats.length > 0 && (
+        <div className="chat-stats">
+          <div className="stat-item">
+            <span className="stat-value">{chats.length}</span>
+            <span className="stat-label">Total Conversations</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value">{chats.filter(c => c.unread_count > 0).length}</span>
+            <span className="stat-label">Unread</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value">{chats.filter(c => c.state === 'active').length}</span>
+            <span className="stat-label">Active</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

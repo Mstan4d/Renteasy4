@@ -4,6 +4,11 @@ import { supabase } from '../lib/supabaseClient';
 export const messagesService = {
   async initiateContact(listingId, userId, userRole) {
     try {
+      console.log('=== initiateContact DEBUG ===');
+      console.log('Listing ID:', listingId);
+      console.log('User ID:', userId);
+      console.log('User Role:', userRole);
+
       // Get user profile
       const { data: userProfile, error: userError } = await supabase
         .from('profiles')
@@ -29,10 +34,9 @@ export const messagesService = {
       console.log('Listing found:', {
         id: listing.id,
         poster_role: listing.poster_role,
-        estate_firm_id: listing.estate_firm_id,
-        landlord_id: listing.landlord_id,
-        tenant_id: listing.tenant_id,
-        user_id: listing.user_id
+        assigned_manager_id: listing.assigned_manager_id,
+        managed_by: listing.managed_by,
+        poster_id: listing.user_id
       });
 
       // Check if listing is active
@@ -40,69 +44,119 @@ export const messagesService = {
         throw new Error('This property is no longer available');
       }
 
-      // Determine the other party ID
       let otherPartyId = null;
       let otherPartyRole = null;
+      let monitoringManagerId = null;
+      let chatType = null;
+
+      // ============================================================
+      // BUSINESS RULES FOR OUTGOING TENANT LISTINGS
+      // ============================================================
       
-      if (listing.poster_role === 'estate-firm' && listing.estate_firm_id) {
-        // Try to get estate firm profile
-        const { data: firmProfile, error: firmError } = await supabase
-          .from('estate_firm_profiles')
-          .select('user_id, firm_name')
-          .eq('id', listing.estate_firm_id)
-          .maybeSingle();
+      if (listing.poster_role === 'tenant') {
+        // This is an outgoing tenant listing
         
-        if (firmProfile) {
-          otherPartyId = firmProfile.user_id;
-          otherPartyRole = 'estate-firm';
-          console.log('Found estate firm profile, using user_id:', otherPartyId);
-        } else {
-          // Try direct profile lookup
-          const { data: directProfile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', listing.estate_firm_id)
-            .maybeSingle();
+        if (userRole === 'tenant' && userId !== listing.user_id) {
+          // INCOMING TENANT contacting the listing
+          const assignedManagerId = listing.assigned_manager_id || listing.managed_by;
           
-          if (directProfile) {
-            otherPartyId = directProfile.id;
-            otherPartyRole = 'estate-firm';
-            console.log('Using estate_firm_id as direct profile ID:', otherPartyId);
-          } else if (listing.user_id) {
-            otherPartyId = listing.user_id;
-            otherPartyRole = 'estate-firm';
-            console.log('Using listing.user_id as fallback:', otherPartyId);
+          if (!assignedManagerId) {
+            throw new Error('This listing is waiting for a manager to be assigned. Please try again later.');
+          }
+          
+          // Incoming tenant chats with the assigned MANAGER
+          otherPartyId = assignedManagerId;
+          otherPartyRole = 'manager';
+          monitoringManagerId = assignedManagerId;
+          chatType = 'tenant_manager';
+          
+          console.log('✅ Incoming Tenant → Manager');
+        } 
+        else if (userRole === 'manager') {
+          // MANAGER contacting the listing (to chat with outgoing tenant)
+          otherPartyId = listing.user_id;
+          otherPartyRole = 'tenant';
+          monitoringManagerId = userId;
+          chatType = 'tenant_manager';
+          
+          console.log('✅ Manager → Outgoing Tenant');
+        }
+        else if (userRole === 'tenant' && userId === listing.user_id) {
+          // OUTGOING TENANT contacting their own listing (should go through manager)
+          const assignedManagerId = listing.assigned_manager_id || listing.managed_by;
+          
+          if (!assignedManagerId) {
+            throw new Error('No manager assigned to this listing yet.');
+          }
+          
+          otherPartyId = assignedManagerId;
+          otherPartyRole = 'manager';
+          monitoringManagerId = assignedManagerId;
+          chatType = 'tenant_manager';
+          
+          console.log('✅ Outgoing Tenant → Manager');
+        }
+      }
+      
+      // Landlord Listing
+      else if (listing.poster_role === 'landlord') {
+        if (userRole === 'tenant') {
+          // Tenant contacting landlord listing
+          const assignedManagerId = listing.assigned_manager_id || listing.managed_by;
+          
+          if (assignedManagerId) {
+            // Landlord has assigned a manager - tenant chats with manager
+            otherPartyId = assignedManagerId;
+            otherPartyRole = 'manager';
+            monitoringManagerId = assignedManagerId;
+            chatType = 'tenant_manager';
+            console.log('✅ Tenant → Manager (Landlord assigned)');
           } else {
-            throw new Error('Unable to find the estate firm\'s profile. Please contact support.');
+            // No manager - tenant chats with landlord directly
+            otherPartyId = listing.landlord_id || listing.user_id;
+            otherPartyRole = 'landlord';
+            chatType = 'tenant_landlord';
+            console.log('✅ Tenant → Landlord (Direct)');
           }
         }
-        
-      } else if (listing.poster_role === 'landlord' && listing.landlord_id) {
-        otherPartyId = listing.landlord_id;
-        otherPartyRole = 'landlord';
-        
-      } else if (listing.poster_role === 'tenant' && listing.tenant_id) {
-        otherPartyId = listing.tenant_id;
-        otherPartyRole = 'tenant';
-        
-      } else if (listing.user_id) {
-        otherPartyId = listing.user_id;
-        otherPartyRole = listing.poster_role || 'user';
+        else if (userRole === 'manager') {
+          // Manager contacting landlord listing
+          otherPartyId = listing.landlord_id || listing.user_id;
+          otherPartyRole = 'landlord';
+          monitoringManagerId = userId;
+          chatType = 'tenant_landlord';
+          console.log('✅ Manager → Landlord');
+        }
+        else if (userRole === 'landlord') {
+          // Landlord responding
+          otherPartyId = listing.assigned_manager_id || listing.user_id;
+          otherPartyRole = listing.assigned_manager_id ? 'manager' : 'landlord';
+          chatType = 'tenant_landlord';
+          console.log('✅ Landlord responding');
+        }
+      }
+      
+      // Estate Firm Listing
+      else if (listing.poster_role === 'estate-firm') {
+        if (userRole === 'tenant') {
+          // Tenant contacting estate firm
+          otherPartyId = listing.user_id;
+          otherPartyRole = 'estate-firm';
+          chatType = 'tenant_estate_firm';
+          console.log('✅ Tenant → Estate Firm');
+        }
+        else if (userRole === 'estate-firm') {
+          // Estate firm responding
+          otherPartyId = listing.user_id;
+          otherPartyRole = 'estate-firm';
+          chatType = 'tenant_estate_firm';
+          console.log('✅ Estate Firm responding');
+        }
       }
 
+      // Validate we have a party to contact
       if (!otherPartyId) {
-        throw new Error('Unable to identify property owner. Please contact support.');
-      }
-
-      // Verify other party exists in profiles
-      const { data: otherProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', otherPartyId)
-        .maybeSingle();
-
-      if (!otherProfile) {
-        throw new Error('The property owner\'s profile was not found. Please contact support.');
+        throw new Error('Unable to identify who to contact. Please contact support.');
       }
 
       // Don't allow self-contact
@@ -113,51 +167,48 @@ export const messagesService = {
       // Check for existing chat
       const { data: existingChat } = await supabase
         .from('chats')
-        .select('id')
+        .select('id, chat_type, state')
         .eq('listing_id', listingId)
-        .eq('tenant_id', userId)
+        .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
         .maybeSingle();
 
       if (existingChat) {
-        return { chatId: existingChat.id, existing: true };
+        console.log('Existing chat found:', existingChat.id);
+        return { 
+          chatId: existingChat.id, 
+          existing: true, 
+          chatType: existingChat.chat_type,
+          state: existingChat.state
+        };
       }
 
-      // Determine monitoring manager
-      let monitoringManagerId = null;
-      if (listing.managed_by) {
-        const { data: managerProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', listing.managed_by)
-          .maybeSingle();
-        if (managerProfile) monitoringManagerId = managerProfile.id;
-      }
-
-      // Create chat
+      // Create new chat - ONLY use columns that exist in your table
       const chatData = {
         listing_id: listingId,
-        tenant_id: userId,
-        other_party_id: otherPartyId,
         participant1_id: userId,
         participant2_id: otherPartyId,
         participant1_role: userRole,
         participant2_role: otherPartyRole,
         monitoring_manager_id: monitoringManagerId,
-        chat_type: this.getChatType(listing.poster_role),
-        status: 'active',
+        chat_type: chatType,
+        state: 'active',
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         unread_count: 1,
-        needs_manager: listing.poster_role === 'tenant' && !listing.managed_by,
+        needs_manager: false,
         estate_firm_listing: listing.poster_role === 'estate-firm',
-        manager_assigned: !!monitoringManagerId
+        manager_assigned: !!monitoringManagerId,
+        commission_applied: listing.poster_role !== 'estate-firm',
+        other_party_id: otherPartyId,
+        tenant_id: userRole === 'tenant' ? userId : null
       };
 
-      console.log('Creating chat with:', {
-        tenant_id: userId,
-        other_party_id: otherPartyId,
-        participant2_role: otherPartyRole
+      console.log('Creating new chat with existing columns:', {
+        chat_type: chatType,
+        participant1: userId,
+        participant2: otherPartyId,
+        monitoring_manager: monitoringManagerId
       });
 
       const { data: newChat, error: chatError } = await supabase
@@ -171,28 +222,43 @@ export const messagesService = {
         throw new Error(`Failed to create chat: ${chatError.message}`);
       }
 
-      // Add initial message
-      const initialMessage = this.getInitialMessage(listing.poster_role, listing.title);
-      await supabase.from('messages').insert([{
+      // Add initial system message
+      let initialMessage = '';
+      
+      if (listing.poster_role === 'tenant') {
+        if (userRole === 'tenant' && userId !== listing.user_id) {
+          initialMessage = `👋 Hello! You're chatting with the RentEasy manager for "${listing.title}". They will help you with the rental process and coordinate with the outgoing tenant.`;
+        } else if (userRole === 'manager') {
+          initialMessage = `👋 Hello! You're the assigned manager for "${listing.title}". You can now communicate with the outgoing tenant.`;
+        } else if (userRole === 'tenant' && userId === listing.user_id) {
+          initialMessage = `👋 Hello! You're the outgoing tenant for "${listing.title}". The assigned manager will help find a new tenant.`;
+        }
+      } else if (listing.poster_role === 'landlord') {
+        if (userRole === 'tenant') {
+          initialMessage = `👋 Hello! You're interested in "${listing.title}". ${monitoringManagerId ? 'A RentEasy manager is monitoring this conversation.' : 'The landlord will respond shortly.'}`;
+        } else if (userRole === 'manager') {
+          initialMessage = `👋 Hello! You're monitoring this conversation for "${listing.title}".`;
+        }
+      } else if (listing.poster_role === 'estate-firm') {
+        initialMessage = `👋 Hello! You've contacted the estate firm for "${listing.title}". They will respond shortly.`;
+      }
+
+      await supabase.from('messages').insert({
         chat_id: newChat.id,
-        sender_id: userId,
+        sender_id: '00000000-0000-0000-0000-000000000000',
         content: initialMessage,
         is_system_message: true,
         created_at: new Date().toISOString()
-      }]);
+      });
 
-      // Notify managers if needed
-      if (listing.poster_role === 'tenant' && !listing.managed_by) {
-        await this.notifyAvailableManagers(listing, newChat.id);
-      }
-      if (monitoringManagerId) {
-        await this.notifyManager(monitoringManagerId, listingId, newChat.id);
-      }
+      // Send notifications
+      await this.sendNotification(newChat.id, listing, otherPartyId, monitoringManagerId);
 
       return { 
         chatId: newChat.id, 
         existing: false,
-        listingTitle: listing.title
+        listingTitle: listing.title,
+        chatType: chatType
       };
 
     } catch (error) {
@@ -201,55 +267,29 @@ export const messagesService = {
     }
   },
 
-  getChatType(posterRole) {
-    const types = {
-      'estate-firm': 'tenant_estate_firm',
-      'landlord': 'tenant_landlord',
-      'tenant': 'tenant_tenant'
-    };
-    return types[posterRole] || 'direct';
-  },
-
-  getInitialMessage(posterRole, listingTitle) {
-    const messages = {
-      'estate-firm': `👋 Hello! You've contacted the estate firm for "${listingTitle}". They will respond shortly.`,
-      'landlord': `👋 Hello! You've contacted the landlord for "${listingTitle}". Please be respectful.`,
-      'tenant': `👋 Hello! You've contacted the outgoing tenant for "${listingTitle}". They can provide information.`,
-      'default': `👋 Hello! You've expressed interest in "${listingTitle}". The owner will respond shortly.`
-    };
-    return messages[posterRole] || messages.default;
-  },
-
-  async notifyManager(managerId, listingId, chatId) {
-    await supabase.from('notifications').insert([{
-      user_id: managerId,
-      title: 'New Chat to Monitor',
-      message: 'A tenant has contacted a landlord. Please monitor.',
-      type: 'chat_monitoring',
-      data: { listingId, chatId },
-      created_at: new Date().toISOString()
-    }]);
-  },
-
-  async notifyAvailableManagers(listing, chatId) {
-    const { data: managers } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('role', 'manager')
-      .eq('verified', true)
-      .eq('state', listing.state)
-      .limit(10);
-
-    if (managers?.length) {
-      const notifications = managers.map(manager => ({
-        user_id: manager.id,
-        title: 'New Tenant Inquiry',
-        message: `A tenant is interested in a property in ${listing.city || listing.state}.`,
-        type: 'tenant_inquiry',
-        data: { listingId: listing.id, chatId },
+  async sendNotification(chatId, listing, otherPartyId, monitoringManagerId) {
+    // Notify the other party
+    if (otherPartyId) {
+      await supabase.from('notifications').insert({
+        user_id: otherPartyId,
+        title: 'New Message',
+        message: `Someone is interested in "${listing.title}". Click to respond.`,
+        type: 'new_chat',
+        data: { chatId, listingId: listing.id },
         created_at: new Date().toISOString()
-      }));
-      await supabase.from('notifications').insert(notifications);
+      });
+    }
+
+    // Notify monitoring manager if different
+    if (monitoringManagerId && monitoringManagerId !== otherPartyId) {
+      await supabase.from('notifications').insert({
+        user_id: monitoringManagerId,
+        title: 'New Chat to Monitor',
+        message: `A new conversation has started for "${listing.title}". Please monitor.`,
+        type: 'chat_monitoring',
+        data: { chatId, listingId: listing.id },
+        created_at: new Date().toISOString()
+      });
     }
   },
 
@@ -297,21 +337,82 @@ export const messagesService = {
       .from('chats')
       .select(`
         *,
-        listing:listing_id (id, title, images, price, address),
-        other_party:other_party_id (id, full_name, avatar_url),
-        tenant:tenant_id (id, full_name)
+        listing:listing_id (id, title, images, price, address, poster_role, status),
+        other_party:other_party_id (id, full_name, avatar_url, role)
       `)
-      .or(`tenant_id.eq.${userId},other_party_id.eq.${userId},monitoring_manager_id.eq.${userId}`)
+      .or(`participant1_id.eq.${userId},participant2_id.eq.${userId},monitoring_manager_id.eq.${userId}`)
       .order('updated_at', { ascending: false });
 
     if (error) throw error;
     return data || [];
   },
 
-  async markChatAsRead(chatId) {
+  async markChatAsRead(chatId, userId) {
     await supabase
       .from('chats')
       .update({ unread_count: 0 })
       .eq('id', chatId);
+    
+    await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('chat_id', chatId)
+      .neq('sender_id', userId)
+      .is('read_at', null);
+  },
+    // ✅ ADD THE NEW FUNCTION HERE, INSIDE THE OBJECT
+  async initiateProviderChat(providerUserId, userId, userRole) {
+    // providerUserId: the user ID of the service provider or estate firm
+    // userId: current user ID
+    // userRole: current user role (tenant, landlord, etc.)
+
+    // Check if a chat already exists between these two users
+    const { data: existingChat } = await supabase
+      .from('chats')
+      .select('id')
+      .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
+      .or(`participant1_id.eq.${providerUserId},participant2_id.eq.${providerUserId}`)
+      .maybeSingle();
+
+    if (existingChat) {
+      return { chatId: existingChat.id, existing: true };
+    }
+
+    // Determine chat_type
+    const chatType = 'direct';
+
+    // Create new chat
+    const chatData = {
+      participant1_id: userId,
+      participant2_id: providerUserId,
+      participant1_role: userRole,
+      participant2_role: 'service-provider',
+      chat_type: chatType,
+      state: 'active',
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      unread_count: 1,
+    };
+
+    const { data: newChat, error } = await supabase
+      .from('chats')
+      .insert([chatData])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Add initial system message
+    await supabase.from('messages').insert({
+      chat_id: newChat.id,
+      sender_id: '00000000-0000-0000-0000-000000000000',
+      content: `👋 You have started a conversation with a service provider.`,
+      is_system_message: true,
+      created_at: new Date().toISOString(),
+    });
+
+    return { chatId: newChat.id, existing: false };
   }
 };
+

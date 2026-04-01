@@ -61,23 +61,39 @@ const ServiceDetailsPage = () => {
   };
 
   const handleContact = async () => {
-    if (!user) {
-      navigate('/login');
+  if (!user) {
+    navigate('/login');
+    return;
+  }
+
+  try {
+    // Get the user_id of the estate firm
+    const { data: firmData, error: firmError } = await supabase
+      .from('estate_firm_profiles')
+      .select('user_id')
+      .eq('id', service.estate_firm_id)
+      .single();
+
+    if (firmError) throw firmError;
+
+    const providerUserId = firmData.user_id;
+
+    if (providerUserId === user.id) {
+      alert('You cannot contact yourself.');
       return;
     }
-    try {
-      const providerId = service.estate_firm_id;
-      const result = await messagesService.initiateProviderChat(providerId, user.id, user.role);
-      if (result?.chatId) {
-        navigate(`/dashboard/messages/chat/${result.chatId}`);
-      } else {
-        alert('Failed to start chat. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error starting chat:', error);
-      alert(error.message || 'Failed to start chat');
+
+    const result = await messagesService.initiateProviderChat(providerUserId, user.id, user.role);
+    if (result?.chatId) {
+      navigate(`/dashboard/messages/chat/${result.chatId}`);
+    } else {
+      alert('Failed to start chat. Please try again.');
     }
-  };
+  } catch (error) {
+    console.error('Error starting chat:', error);
+    alert(error.message || 'Failed to start chat');
+  }
+};
 
   if (loading) return <div className="loading">Loading...</div>;
   if (error) return <div className="error">Error: {error}</div>;

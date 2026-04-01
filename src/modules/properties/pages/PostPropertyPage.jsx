@@ -773,7 +773,7 @@ const notifyNearbyManagers = async (listingId, coordinates) => {
       const notifications = nearbyManagers.map(manager => ({
         manager_id: manager.id,
         listing_id: listingId,
-        type: 'proximity_alert',
+        notification_type: 'proximity_alert',
         title: 'New Property Nearby',
         message: `A new property has been posted within your coverage area.`,
         distance: calculateDistance(
@@ -782,8 +782,11 @@ const notifyNearbyManagers = async (listingId, coordinates) => {
           manager.lat,
           manager.lng
         ),
+         is_read: false,
         created_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min expiry
+        price: formData.rent_amount,
+        commission: (formData.rent_amount || 0) * 0.025,
         accepted: false
       }));
 

@@ -22,8 +22,47 @@ const TenantPayments = () => {
   useEffect(() => {
     if (user) {
       fetchCommissionData();
+      subscribeToUpdates();
     }
+
+    return () => {
+      if (window.commissionSubscription) {
+        supabase.removeChannel(window.commissionSubscription);
+      }
+    };
   }, [user]);
+
+  const subscribeToUpdates = () => {
+    if (window.commissionSubscription) {
+      supabase.removeChannel(window.commissionSubscription);
+    }
+
+    const channel = supabase
+      .channel('tenant-commissions')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'commissions',
+          filter: `referrer_id=eq.${user.id}`
+        },
+        () => fetchCommissionData()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tenant_commissions',
+          filter: `tenant_id=eq.${user.id}`
+        },
+        () => fetchCommissionData()
+      )
+      .subscribe();
+
+    window.commissionSubscription = channel;
+  };
 
   const fetchCommissionData = async () => {
     if (!user) return;
@@ -32,10 +71,8 @@ const TenantPayments = () => {
     setError(null);
     
     try {
-      console.log('Fetching commission data for tenant:', user.id);
-      
-      // Try to fetch from tenant_commissions table first
-      let { data: commissionsData, error: commissionsError } = await supabase
+      // 1. Fetch from tenant_commissions table
+      const { data: tenantCommissions, error: tcError } = await supabase
         .from('tenant_commissions')
         .select(`
           *,
@@ -53,31 +90,60 @@ const TenantPayments = () => {
         `)
         .eq('tenant_id', user.id)
         .order('created_at', { ascending: false });
-      
-      // If no data in tenant_commissions, try commissions table
-      if ((!commissionsData || commissionsData.length === 0) && commissionsError?.code !== 'PGRST116') {
-        const { data: altCommissions, error: altError } = await supabase
-          .from('commissions')
-          .select(`
-            *,
-            listing:listing_id (
-              id,
-              title,
-              price,
-              address,
-              city,
-              state
-            )
-          `)
-          .eq('user_id', user.id)
-          .eq('user_role', 'tenant')
-          .order('created_at', { ascending: false });
-        
-        if (!altError && altCommissions) {
-          commissionsData = altCommissions;
+
+      // 2. Fetch from commissions table (referrer_id = user.id)
+      const { data: commissionsData, error: cError } = await supabase
+        .from('commissions')
+        .select(`
+          *,
+          listing:listing_id (
+            id,
+            title,
+            price,
+            address,
+            city,
+            state
+          )
+        `)
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      // Combine both sources, avoid duplicates (listing_id as key)
+      const combined = [];
+      const listingIds = new Set();
+
+      // Add tenant_commissions first (they may contain `paid` status)
+      (tenantCommissions || []).forEach(comm => {
+        if (comm.listing_id && !listingIds.has(comm.listing_id)) {
+          combined.push({
+            ...comm,
+            source: 'tenant_commissions',
+            commission_amount: comm.commission_amount || (comm.listing?.price * 0.015),
+            // For tenant_commissions, paid status is likely stored in `status`
+            is_paid: comm.status === 'paid' || comm.status === 'completed',
+            is_pending: comm.status === 'pending'
+          });
+          listingIds.add(comm.listing_id);
         }
-      }
-      
+      });
+
+      // Add from commissions (referrer)
+      (commissionsData || []).forEach(comm => {
+        if (comm.listing_id && !listingIds.has(comm.listing_id)) {
+          // Determine paid status: either via status='paid' or via paid_to_referrer flag
+          const isPaid = comm.status === 'paid' || comm.paid_to_referrer === true;
+          combined.push({
+            ...comm,
+            source: 'commissions',
+            commission_amount: comm.referrer_share || (comm.listing?.price * 0.015),
+            is_paid: isPaid,
+            is_pending: !isPaid && (comm.status === 'pending' || comm.status === 'verified'),
+            paid_at: comm.referrer_paid_at || comm.paid_at
+          });
+          listingIds.add(comm.listing_id);
+        }
+      });
+
       // Also fetch listings posted by this tenant to show potential earnings
       const { data: listingsData, error: listingsError } = await supabase
         .from('listings')
@@ -85,42 +151,57 @@ const TenantPayments = () => {
         .eq('user_id', user.id)
         .eq('poster_role', 'tenant')
         .order('created_at', { ascending: false });
-      
+
       if (!listingsError && listingsData) {
-        // Add potential commissions for listings that are rented but not yet commissioned
+        // Add potential commissions for rented listings not yet recorded
         const rentedListings = listingsData.filter(l => l.status === 'rented');
-        const existingCommissionIds = (commissionsData || []).map(c => c.listing_id);
-        
+        const existingListingIds = new Set(combined.map(c => c.listing_id));
+
         rentedListings.forEach(listing => {
-          if (!existingCommissionIds.includes(listing.id)) {
-            // Create a temporary commission entry for this listing
-            const potentialCommission = {
+          if (!existingListingIds.has(listing.id)) {
+            combined.push({
               id: `temp_${listing.id}`,
               listing_id: listing.id,
               commission_amount: (listing.price || 0) * 0.015,
               status: 'pending',
               created_at: listing.rented_at || listing.created_at,
               listing: listing,
-              is_potential: true
-            };
-            commissionsData = [...(commissionsData || []), potentialCommission];
+              is_potential: true,
+              is_paid: false,
+              is_pending: true
+            });
+            existingListingIds.add(listing.id);
           }
         });
       }
-      
-      if (commissionsData) {
-        processCommissionData(commissionsData);
-      } else {
-        setCommissions([]);
-        setWalletBalance(0);
-        setStats({
-          totalEarned: 0,
-          pending: 0,
-          paid: 0,
-          listingsCount: listingsData?.length || 0
-        });
-      }
-      
+
+      // Sort by date (newest first)
+      combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      setCommissions(combined);
+
+      // Calculate stats
+      let totalEarned = 0;
+      let paid = 0;
+      let pending = 0;
+
+      combined.forEach(c => {
+        const amount = c.commission_amount || 0;
+        if (c.is_paid) {
+          totalEarned += amount;
+          paid += amount;
+        } else if (c.is_pending || c.is_potential) {
+          pending += amount;
+        }
+      });
+
+      setStats({
+        totalEarned,
+        pending,
+        paid,
+        listingsCount: listingsData?.length || 0
+      });
+      setWalletBalance(pending); // Pending amounts are "available" in a sense (not yet paid)
     } catch (err) {
       console.error('Error fetching commission data:', err);
       setError(err.message);
@@ -128,64 +209,18 @@ const TenantPayments = () => {
       setLoading(false);
     }
   };
-  
-  const processCommissionData = (commissionsData) => {
-    setCommissions(commissionsData || []);
-    
-    // Calculate totals
-    let totalEarned = 0;
-    let pending = 0;
-    let paid = 0;
-    let listingsCount = 0;
-    
-    commissionsData.forEach(comm => {
-      const amount = parseFloat(comm.commission_amount) || 0;
-      if (comm.status === 'paid' || comm.status === 'completed') {
-        totalEarned += amount;
-        paid += amount;
-      } else if (comm.status === 'pending' || comm.status === 'calculated') {
-        pending += amount;
-      }
-      if (comm.listing_id) listingsCount++;
-    });
-    
-    setWalletBalance(pending); // Only pending amounts are available
-    setStats({
-      totalEarned,
-      pending,
-      paid,
-      listingsCount
-    });
-  };
 
-  const formatCurrency = (amount) => {
-    return `₦${(amount || 0).toLocaleString('en-NG')}`;
-  };
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString('en-NG')}`;
+  const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString() : 'N/A';
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
-
-  const getStatusBadge = (status, isPotential) => {
-    if (isPotential) {
+  const getStatusBadge = (comm) => {
+    if (comm.is_paid) {
+      return <span className="status-badge paid"><CheckCircle size={12} /> Paid</span>;
+    }
+    if (comm.is_potential) {
       return <span className="status-badge potential"><Clock size={12} /> Awaiting Admin</span>;
     }
-    switch(status) {
-      case 'paid':
-      case 'completed':
-        return <span className="status-badge paid"><CheckCircle size={12} /> Paid</span>;
-      case 'pending':
-        return <span className="status-badge pending"><Clock size={12} /> Pending</span>;
-      case 'calculated':
-        return <span className="status-badge calculated"><Receipt size={12} /> Calculated</span>;
-      default:
-        return <span className="status-badge">{status}</span>;
-    }
+    return <span className="status-badge pending"><Clock size={12} /> Pending</span>;
   };
 
   if (loading) {
@@ -257,7 +292,6 @@ const TenantPayments = () => {
             <p className="balance-note">Commissions are paid after tenant moves in and admin confirms payment</p>
           </div>
         </div>
-        {/* Withdrawal button removed as requested - payments are offline */}
       </div>
 
       {/* Commission Info Section */}
@@ -306,7 +340,7 @@ const TenantPayments = () => {
                 <div key={commission.id} className={`commission-card ${isPotential ? 'potential' : ''}`}>
                   <div className="commission-main">
                     <div className="commission-icon">
-                      {commission.status === 'paid' || commission.status === 'completed' ? 
+                      {commission.is_paid ? 
                         <CheckCircle size={24} /> : 
                         isPotential ? <Home size={24} /> : <Clock size={24} />
                       }
@@ -314,7 +348,7 @@ const TenantPayments = () => {
                     <div className="commission-details">
                       <div className="commission-header">
                         <h4>{listing?.title || 'Property Commission'}</h4>
-                        {getStatusBadge(commission.status, isPotential)}
+                        {getStatusBadge(commission)}
                       </div>
                       <div className="commission-meta">
                         <span className="meta-item">
@@ -336,7 +370,7 @@ const TenantPayments = () => {
                       <div className="commission-description">
                         {isPotential ? (
                           `This property has been rented! Your 1.5% commission (${formatCurrency(commission.commission_amount)}) will be processed shortly.`
-                        ) : commission.status === 'paid' || commission.status === 'completed' ? (
+                        ) : commission.is_paid ? (
                           `1.5% commission of ${formatCurrency(listing?.price)} has been paid to your account`
                         ) : (
                           `1.5% commission (${formatCurrency(commission.commission_amount)}) will be paid when the tenant moves in`
@@ -352,25 +386,11 @@ const TenantPayments = () => {
                     </div>
                   </div>
                   
-                  {/* Payment Proof for paid commissions */}
-                  {(commission.status === 'paid' || commission.status === 'completed') && commission.paid_at && (
+                  {commission.is_paid && commission.paid_at && (
                     <div className="commission-footer">
                       <span className="paid-info">
                         <CheckCircle size={12} />
                         Paid on {formatDate(commission.paid_at)}
-                      </span>
-                      {commission.paid_by && (
-                        <span className="admin-info">by Admin</span>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* For potential commissions that are ready */}
-                  {isPotential && (
-                    <div className="commission-footer potential">
-                      <span className="potential-info">
-                        <Clock size={12} />
-                        Awaiting admin confirmation. This usually takes 1-3 business days.
                       </span>
                     </div>
                   )}

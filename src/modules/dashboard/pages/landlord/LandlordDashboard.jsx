@@ -1,179 +1,240 @@
+// src/modules/dashboard/pages/landlord/LandlordDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import { supabase } from '../../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../../shared/components/RentEasyLoader';
 import {
   PlusCircle, DollarSign, Building, Users,
   TrendingUp, CheckCircle, Clock, AlertCircle,
   Copy, ExternalLink, Eye, Edit, Trash2,
   Filter, Search, Download, Upload, Bell,
-  Wrench, FileText, Home
+  Wrench, FileText, Home, ChevronRight, RefreshCw,
+  Tag, Shield, Zap, Calendar, MessageSquare
 } from 'lucide-react';
 import './LandlordDashboard.css';
 
 const LandlordDashboard = () => {
-  const [stats, setStats] = useState({
-    totalEarnings: 0,
-    commission: 0,
-    listings: 0,
-    referrals: 0,
-    pendingMaintenance: 0,
-    unreadDocuments: 0
-  });
-  const [recentItems, setRecentItems] = useState([]); // combined feed for dashboard
-  const [properties, setProperties] = useState([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
-    if (!user) return;
-    loadDashboardData();
-  }, [user]);
+  // State for dashboard data
+  const [stats, setStats] = useState({
+    totalEarnings: 0,
+    pendingCommissions: 0,
+    listings: 0,
+    maintenance: 0,
+    documents: 0,
+    completedRentals: 0
+  });
+
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+
+  const formatCurrency = (amount) => {
+    if (amount === undefined || amount === null) return '₦0';
+    return `₦${Number(amount).toLocaleString('en-NG')}`;
+  };
+
+  const formatRelativeTime = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString();
+  };
 
   const loadDashboardData = async () => {
+    if (!user) return;
     setLoading(true);
+    setError(null);
+
     try {
-      // 1. Fetch listings (properties) count and recent ones
-      const { count: listingCount, data: listingsData } = await supabase
+      // 1. Get landlord's listings
+      const { data: listingsData, error: listingsError } = await supabase
         .from('listings')
-        .select('*', { count: 'exact' })
-        .eq('owner_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('poster_role', 'landlord')
+        .order('created_at', { ascending: false });
 
-      // 2. Fetch completed bookings (earnings)
-      const { data: bookings } = await supabase
-        .from('bookings')
-        .select('total_price')
-        .eq('poster_id', user.id)
-        .eq('status', 'completed');
+      if (listingsError) throw listingsError;
+      setProperties(listingsData || []);
 
-      const totalRevenue = bookings?.reduce((acc, curr) => acc + (curr.total_price || 0), 0) || 0;
-      const commission = totalRevenue * 0.015; // 1.5%
+      const activeListings = (listingsData || []).filter(l => l.status !== 'rented').length;
+      const rentedListings = (listingsData || []).filter(l => l.status === 'rented').length;
 
-      // 3. Fetch maintenance requests (pending/unread counts + recent)
-      const { data: maintenance, error: maintError } = await supabase
+      // 2. Get commissions for landlord (as referrer)
+      const { data: commissionsData, error: commError } = await supabase
+        .from('commissions')
+        .select('*')
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (commError) throw commError;
+
+      const totalEarned = (commissionsData || []).reduce(
+        (sum, c) => sum + (c.status === 'paid' ? (c.referrer_share || 0) : 0), 0
+      );
+      const pendingCommissions = (commissionsData || []).reduce(
+        (sum, c) => sum + ((c.status === 'verified' || c.status === 'pending') ? (c.referrer_share || 0) : 0), 0
+      );
+
+      // 3. Maintenance requests for landlord
+      const { data: maintenanceData, error: maintError } = await supabase
         .from('maintenance_requests')
         .select('*')
         .eq('landlord_id', user.id)
         .order('created_at', { ascending: false });
 
       if (maintError) throw maintError;
+      const openMaintenance = (maintenanceData || []).filter(
+        m => !['resolved', 'closed'].includes(m.status)
+      ).length;
 
-      const pendingMaintenance = maintenance?.filter(m => 
-        ['open', 'pending', 'in_progress'].includes(m.status)
-      ).length || 0;
-
-      // 4. Fetch documents shared with landlord
-      const { data: documents, error: docError } = await supabase
+      // 4. Documents shared with landlord (client_id = user.id)
+      const { data: documentsData, error: docError } = await supabase
         .from('estate_documents')
         .select('*')
         .eq('client_id', user.id)
         .order('created_at', { ascending: false });
 
       if (docError) throw docError;
+      const unreadDocs = (documentsData || []).filter(d => !d.viewed).length;
 
-      const unreadDocs = documents?.filter(d => !d.viewed).length || 0;
+      // 5. Build recent activities
+      const activities = [];
 
-      // 5. Fetch payments for landlord's properties
-      // First get property ids
-      const { data: propertiesData } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('landlord_id', user.id);
+      (listingsData || []).slice(0, 3).forEach(listing => {
+        activities.push({
+          id: `listing_${listing.id}`,
+          type: 'listing',
+          title: 'Property Listed',
+          description: `"${listing.title}" was posted on RentEasy`,
+          time: listing.created_at,
+          icon: <Home size={16} />,
+          link: `/listings/${listing.id}`
+        });
+      });
 
-      let recentPayments = [];
-      if (propertiesData && propertiesData.length > 0) {
-        const propIds = propertiesData.map(p => p.id);
-        const { data: units } = await supabase
-          .from('units')
-          .select('id')
-          .in('property_id', propIds);
+      (commissionsData || []).slice(0, 3).forEach(comm => {
+        const isPaid = comm.status === 'paid';
+        activities.push({
+          id: `comm_${comm.id}`,
+          type: 'commission',
+          title: isPaid ? 'Commission Paid' : 'Commission Earned',
+          description: `₦${(comm.referrer_share || 0).toLocaleString()} from rental`,
+          time: comm.paid_at || comm.created_at,
+          icon: isPaid ? <CheckCircle size={16} /> : <TrendingUp size={16} />,
+          link: '/dashboard/landlord/earnings'
+        });
+      });
 
-        if (units && units.length > 0) {
-          const unitIds = units.map(u => u.id);
-          const { data: payments } = await supabase
-            .from('payments')
-            .select(`
-              *,
-              unit:unit_id (
-                unit_number,
-                property:property_id (title, address),
-                tenant:tenant_id (full_name)
-              )
-            `)
-            .in('unit_id', unitIds)
-            .order('payment_date', { ascending: false })
-            .limit(5);
+      (maintenanceData || []).slice(0, 3).forEach(maint => {
+        activities.push({
+          id: `maint_${maint.id}`,
+          type: 'maintenance',
+          title: 'Maintenance Request',
+          description: `${maint.title} – ${maint.status}`,
+          time: maint.created_at,
+          icon: <Wrench size={16} />,
+          link: '/dashboard/landlord/reports?type=maintenance'
+        });
+      });
 
-          recentPayments = payments || [];
+      (documentsData || []).slice(0, 3).forEach(doc => {
+        activities.push({
+          id: `doc_${doc.id}`,
+          type: 'document',
+          title: 'New Document',
+          description: `${doc.name || 'Document'} was shared with you`,
+          time: doc.created_at,
+          icon: <FileText size={16} />,
+          link: '/dashboard/landlord/documents'
+        });
+      });
+
+      activities.sort((a, b) => new Date(b.time) - new Date(a.time));
+      setRecentActivities(activities.slice(0, 5));
+
+      // 6. Set stats
+      setStats({
+        totalEarnings: totalEarned,
+        pendingCommissions,
+        listings: activeListings,
+        maintenance: openMaintenance,
+        documents: unreadDocs,
+        completedRentals: rentedListings
+      });
+
+      // 7. Build alerts (using landlord's own profile)
+      const newAlerts = [];
+
+      // Get landlord's KYC status
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('kyc_status')
+        .eq('id', user.id)
+        .single();
+
+      if (!profileError && profile) {
+        if (profile.kyc_status !== 'approved' && profile.kyc_status !== 'pending') {
+          newAlerts.push({
+            id: 'verification',
+            priority: 'high',
+            message: 'Complete KYC verification to build trust with tenants.',
+            link: '/verify'
+          });
         }
       }
 
-      // 6. Build combined recent items (for dashboard feed)
-      const maintItems = (maintenance || []).slice(0, 3).map(m => ({
-        id: `maint-${m.id}`,
-        type: 'maintenance',
-        title: m.title,
-        description: m.description,
-        date: m.created_at,
-        status: m.status,
-        priority: m.priority,
-        emergency: m.emergency,
-        viewed: m.viewed,
-        icon: <Wrench size={16} />
-      }));
+      if (openMaintenance > 0) {
+        newAlerts.push({
+          id: 'maintenance',
+          priority: 'medium',
+          message: `${openMaintenance} open maintenance request(s) need your attention.`,
+          link: '/dashboard/landlord/reports?type=maintenance'
+        });
+      }
+      if (unreadDocs > 0) {
+        newAlerts.push({
+          id: 'documents',
+          priority: 'medium',
+          message: `${unreadDocs} new document(s) awaiting your review.`,
+          link: '/dashboard/landlord/documents'
+        });
+      }
+      setAlerts(newAlerts);
 
-      const docItems = (documents || []).slice(0, 3).map(d => ({
-        id: `doc-${d.id}`,
-        type: 'document',
-        title: d.name,
-        description: `${d.category} document`,
-        date: d.created_at,
-        status: d.status,
-        viewed: d.viewed,
-        icon: <FileText size={16} />
-      }));
-
-      const payItems = recentPayments.slice(0, 3).map(p => ({
-  id: `pay-${p.id}`,
-  type: 'payment',
-  paymentType: p.payment_type,
-  title: p.payment_type === 'utility' 
-    ? `Utility payment for ${p.unit?.property?.title}` 
-    : `Rent payment from ${p.unit?.tenant?.full_name || 'Tenant'}`,
-  description: `₦${p.amount.toLocaleString()} - ${p.unit?.property?.title} unit ${p.unit?.unit_number}`,
-  date: p.payment_date,
-  viewed: true,
-  icon: p.payment_type === 'utility' ? <Zap size={16} /> : <DollarSign size={16} />
-}));
-
-      // Merge, sort by date, take top 5
-      const combined = [...maintItems, ...docItems, ...payItems]
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 5);
-
-      setRecentItems(combined);
-      setProperties(listingsData || []);
-      setStats({
-        totalEarnings: totalRevenue,
-        commission,
-        listings: listingCount || 0,
-        referrals: 0, // placeholder; can be added later
-        pendingMaintenance,
-        unreadDocuments: unreadDocs
-      });
-
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
+    } catch (err) {
+      console.error('Error loading landlord dashboard:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (user) loadDashboardData();
+  }, [user, refreshKey]);
+
+  const handleRefresh = () => {
+    setRefreshKey(prev => prev + 1);
+  };
+
   const handlePostProperty = () => {
-    const confirmed = window.confirm(
+    const confirm = window.confirm(
       '🏠 POST PROPERTY - COMMISSION STRUCTURE\n\n' +
       'TOTAL COMMISSION: 7.5%\n' +
       '• Manager: 2.5% (verifies & monitors)\n' +
@@ -182,168 +243,161 @@ const LandlordDashboard = () => {
       '💰 YOU EARN 1.5% when this property gets rented!\n\n' +
       'Do you understand and agree?'
     );
-    if (confirmed) navigate('/post-property');
-  };
-
-  const formatCurrency = (amount) => {
-    if (!amount && amount !== 0) return '₦0';
-    return `₦${parseFloat(amount).toLocaleString('en-NG')}`;
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const getStatusBadge = (item) => {
-    if (item.type === 'maintenance') {
-      const colors = {
-        open: '#ef4444',
-        pending: '#f59e0b',
-        in_progress: '#3b82f6',
-        resolved: '#10b981'
-      };
-      return <span className="badge" style={{ backgroundColor: colors[item.status] || '#6b7280' }}>{item.status}</span>;
-    } else if (item.type === 'document') {
-      const colors = {
-        verified: '#10b981',
-        pending: '#f59e0b',
-        rejected: '#ef4444'
-      };
-      {item.paymentType === 'utility' && <span className="badge utility">Utility</span>}
-      return <span className="badge" style={{ backgroundColor: colors[item.status] || '#6b7280' }}>{item.status}</span>;
-    } else {
-      return <span className="badge" style={{ backgroundColor: '#10b981' }}>completed</span>;
-    }
+    if (confirm) navigate('/post-property');
   };
 
   if (loading) {
+    return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+  }
+
+  if (error) {
     return (
-      <div className="loading-overlay">
-        <div className="loading-spinner"></div>
-        <p className="loading-text">Loading dashboard...</p>
+      <div className="landlord-dashboard-content">
+        <div className="error-container">
+          <AlertCircle size={48} />
+          <h3>Error Loading Dashboard</h3>
+          <p>{error}</p>
+          <button className="btn btn-primary" onClick={handleRefresh}>Retry</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="landlord-dashboard-content">
+    <div className="landlord-dashboard-modern">
       {/* Header */}
       <div className="dashboard-header">
-        <h1>Welcome back, {user?.name || 'Landlord'}</h1>
-        <p className="subtitle">Here's what's happening with your properties</p>
+        <div className="header-content">
+          <div>
+            <h1>Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Landlord'} 👋</h1>
+            <p className="header-subtitle">Here's what's happening with your properties</p>
+          </div>
+          <div className="header-actions">
+            <button className="btn-outline-light" onClick={handleRefresh}>
+              <RefreshCw size={16} /> Refresh
+            </button>
+            <button className="btn-primary" onClick={handlePostProperty}>
+              <PlusCircle size={16} /> Post Listing
+            </button>
+          </div>
+        </div>
+        <div className="header-stats">
+          <div className="stat-item">
+            <span className="stat-label">Net Balance</span>
+            <span className="stat-value">{formatCurrency(stats.totalEarnings)}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Pending Commission</span>
+            <span className="stat-value">{formatCurrency(stats.pendingCommissions)}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Active Listings</span>
+            <span className="stat-value">{stats.listings}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Completed Rentals</span>
+            <span className="stat-value">{stats.completedRentals}</span>
+          </div>
+        </div>
       </div>
+
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="alerts-section">
+          {alerts.map(alert => (
+            <div key={alert.id} className={`alert-card priority-${alert.priority}`}>
+              <div className="alert-content">
+                <AlertCircle size={20} />
+                <span>{alert.message}</span>
+              </div>
+              <button className="alert-action" onClick={() => navigate(alert.link)}>
+                Take Action <ChevronRight size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="stats-grid">
-        <div className="stat-card">
+        <div className="stat-card" onClick={() => navigate('/dashboard/landlord/earnings')}>
           <div className="stat-icon"><DollarSign size={24} /></div>
           <div className="stat-info">
-            <p className="stat-label">Net Balance</p>
+            <p className="stat-label">Total Earnings</p>
             <p className="stat-value">{formatCurrency(stats.totalEarnings)}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon commission"><TrendingUp size={24} /></div>
+        <div className="stat-card" onClick={() => navigate('/dashboard/landlord/earnings')}>
+          <div className="stat-icon"><TrendingUp size={24} /></div>
           <div className="stat-info">
-            <p className="stat-label">Your Commission (1.5%)</p>
-            <p className="stat-value">{formatCurrency(stats.commission)}</p>
+            <p className="stat-label">Pending Commission</p>
+            <p className="stat-value">{formatCurrency(stats.pendingCommissions)}</p>
           </div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" onClick={() => navigate('/dashboard/landlord/properties')}>
           <div className="stat-icon"><Building size={24} /></div>
           <div className="stat-info">
-            <p className="stat-label">Total Listings</p>
+            <p className="stat-label">Active Listings</p>
             <p className="stat-value">{stats.listings}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon"><Users size={24} /></div>
+        <div className="stat-card" onClick={() => navigate('/dashboard/landlord/reports?filter=maintenance')}>
+          <div className="stat-icon"><Wrench size={24} /></div>
           <div className="stat-info">
-            <p className="stat-label">Referral Bonus</p>
-            <p className="stat-value">{formatCurrency(stats.referrals)}</p>
+            <p className="stat-label">Open Maintenance</p>
+            <p className="stat-value">{stats.maintenance}</p>
           </div>
         </div>
       </div>
 
-      {/* Additional Stats Row */}
-      <div className="stats-row">
-        <div className="stat-mini-card" onClick={() => navigate('/dashboard/landlord/reports?filter=maintenance')}>
-          <Wrench size={20} />
-          <div>
-            <span className="stat-label">Pending Maintenance</span>
-            <span className="stat-number">{stats.pendingMaintenance}</span>
-          </div>
+      {/* Recent Activity */}
+      <div className="recent-activity">
+        <div className="section-header">
+          <h3>Recent Activity</h3>
+          <button onClick={() => navigate('/dashboard/landlord/reports')} className="view-all-btn">
+            View All
+          </button>
         </div>
-        <div className="stat-mini-card" onClick={() => navigate('/dashboard/landlord/reports?filter=documents')}>
-          <FileText size={20} />
-          <div>
-            <span className="stat-label">Unread Documents</span>
-            <span className="stat-number">{stats.unreadDocuments}</span>
+        {recentActivities.length === 0 ? (
+          <div className="empty-activities">
+            <Bell size={32} className="empty-icon" />
+            <p>No recent activity</p>
+            <small>When something happens, it will appear here</small>
           </div>
-        </div>
-        <div className="stat-mini-card" onClick={() => navigate('/dashboard/landlord/reports')}>
-          <Bell size={20} />
-          <div>
-            <span className="stat-label">All Reports</span>
-            <span className="stat-number">{stats.pendingMaintenance + stats.unreadDocuments}+</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Action Banner */}
-      <div className="action-banner">
-        <div className="banner-content">
-          <h3>Ready to list a new property?</h3>
-          <p>Remember, you earn 1.5% commission as the poster!</p>
-        </div>
-        <button onClick={handlePostProperty} className="add-property-btn">
-          <PlusCircle size={20} /> Post Listing
-        </button>
-      </div>
-
-      {/* Recent Activity Feed */}
-      {recentItems.length > 0 && (
-        <div className="recent-activity">
-          <div className="section-header">
-            <h2>Recent Activity</h2>
-            <button onClick={() => navigate('/dashboard/landlord/reports')} className="view-all-btn">
-              View All Reports
-            </button>
-          </div>
-          <div className="activity-feed">
-            {recentItems.map(item => (
-              <div 
-                key={item.id} 
-                className={`feed-item ${!item.viewed ? 'unread' : ''}`}
-                onClick={() => navigate('/dashboard/landlord/reports')} // or drill to specific item
+        ) : (
+          <div className="activity-list">
+            {recentActivities.map(activity => (
+              <div
+                key={activity.id}
+                className="activity-item"
+                onClick={() => activity.link && navigate(activity.link)}
               >
-                <div className="item-icon">{item.icon}</div>
-                <div className="item-details">
-                  <div className="item-header">
-                    <span className="item-title">{item.title}</span>
-                    {getStatusBadge(item)}
-                  </div>
-                  <p className="item-description">{item.description}</p>
-                  <span className="item-date">{formatDate(item.date)}</span>
+                <div className="activity-icon">{activity.icon}</div>
+                <div className="activity-details">
+                  <div className="activity-title">{activity.title}</div>
+                  <div className="activity-description">{activity.description}</div>
+                  <div className="activity-time">{formatRelativeTime(activity.time)}</div>
+                </div>
+                <div className="activity-arrow">
+                  <ChevronRight size={16} />
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Recent Properties */}
       {properties.length > 0 && (
         <div className="recent-properties">
           <div className="section-header">
-            <h2>Recent Properties</h2>
+            <h3>Recent Properties</h3>
             <button onClick={() => navigate('/dashboard/landlord/properties')} className="view-all-btn">
               View All
             </button>
           </div>
           <div className="properties-grid">
-            {properties.map((property) => (
+            {properties.slice(0, 3).map(property => (
               <div key={property.id} className="property-card">
                 <div className="property-image">
                   <img src={property.images?.[0] || '/default-property.jpg'} alt={property.title} />
@@ -352,7 +406,7 @@ const LandlordDashboard = () => {
                   <h4>{property.title}</h4>
                   <p className="property-address">{property.address}</p>
                   <div className="property-details">
-                    <span className="price">{formatCurrency(property.price)}/month</span>
+                    <span className="price">{formatCurrency(property.price)}/year</span>
                     <span className={`status ${property.status}`}>{property.status}</span>
                   </div>
                 </div>
@@ -361,6 +415,25 @@ const LandlordDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Quick Actions */}
+      <div className="quick-actions-card">
+        <h3>Quick Actions</h3>
+        <div className="action-buttons">
+          <button className="action-btn" onClick={handlePostProperty}>
+            <PlusCircle size={18} /> Post Property
+          </button>
+          <button className="action-btn" onClick={() => navigate('/dashboard/landlord/earnings')}>
+            <DollarSign size={18} /> View Earnings
+          </button>
+          <button className="action-btn" onClick={() => navigate('/dashboard/landlord/properties')}>
+            <Building size={18} /> Manage Properties
+          </button>
+          <button className="action-btn" onClick={() => navigate('/dashboard/landlord/reports')}>
+            <FileText size={18} /> Reports
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

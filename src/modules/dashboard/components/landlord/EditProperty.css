@@ -1,371 +1,341 @@
-/* src/modules/dashboard/components/landlord/EditProperty.css */
-.edit-property {
-    padding: 24px;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  
-  .edit-header {
-    margin-bottom: 32px;
-  }
-  
-  .edit-header h1 {
-    font-size: 32px;
-    font-weight: 700;
-    color: #1a202c;
-    margin: 8px 0 4px 0;
-  }
-  
-  .edit-header p {
-    color: #718096;
-    margin: 0;
-  }
-  
-  .edit-form {
-    background: white;
-    border-radius: 16px;
-    padding: 32px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e2e8f0;
-  }
-  
-  .form-sections {
-    display: flex;
-    flex-direction: column;
-    gap: 40px;
-  }
-  
-  .form-section h3 {
-    font-size: 20px;
-    color: #2d3748;
-    margin-bottom: 24px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid #e2e8f0;
-  }
-  
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 24px;
-  }
-  
-  .form-group {
-    margin-bottom: 20px;
-  }
-  
-  .form-group label {
-    display: block;
-    font-size: 14px;
-    font-weight: 600;
-    color: #4a5568;
-    margin-bottom: 8px;
-  }
-  
-  .form-group input,
-  .form-group select,
-  .form-group textarea {
-    width: 100%;
-    padding: 12px 16px;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
-    font-size: 14px;
-    color: #4a5568;
-    transition: border-color 0.3s;
-    background: white;
-  }
-  
-  .form-group input:focus,
-  .form-group select:focus,
-  .form-group textarea:focus {
-    outline: none;
-    border-color: #5930e0;
-    box-shadow: 0 0 0 3px rgba(89, 48, 224, 0.1);
-  }
-  
-  .form-group textarea {
-    resize: vertical;
-    min-height: 120px;
-  }
-  
-  .help-text {
-    display: block;
-    margin-top: 4px;
-    font-size: 12px;
-    color: #718096;
-  }
-  
-  .price-input,
-  .area-input {
-    position: relative;
-  }
-  
-  .price-input .currency,
-  .area-input .unit {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    font-weight: 600;
-    color: #4a5568;
-  }
-  
-  .price-input .currency {
-    left: 16px;
-    font-size: 18px;
-  }
-  
-  .area-input .unit {
-    right: 16px;
-    font-size: 14px;
-  }
-  
-  .price-input input,
-  .area-input input {
-    padding-left: 40px;
-  }
-  
-  .area-input input {
-    padding-right: 60px;
-  }
-  
-  .commission-display {
-    background: #f0f9ff;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
+/* src/modules/dashboard/pages/landlord/EditProperty.css */
+
+.edit-property-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #f8fafc;
+  min-height: 100vh;
+}
+
+.edit-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.back-circle-btn {
+  background: white;
+  border: 1px solid #e2e8f0;
+  width: 40px;
+  height: 40px;
+  border-radius: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-circle-btn:hover {
+  background: #f1f5f9;
+  transform: translateX(-2px);
+}
+
+.edit-header-nav h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.edit-header-nav p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.modern-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.form-card {
+  background: white;
+  border-radius: 24px;
+  padding: 24px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.form-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 20px 0;
+  color: #1e293b;
+}
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: #eff6ff;
+  color: #3b82f6;
+  border-radius: 28px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.highlight-card {
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+}
+
+.input-group {
+  margin-bottom: 20px;
+}
+
+.input-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.input-group input,
+.input-group select,
+.input-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  background: white;
+}
+
+.input-group input:focus,
+.input-group select:focus,
+.input-group textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.commission-preview {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-top: 12px;
+}
+
+.commission-preview p {
+  margin: 0 0 4px 0;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.commission-preview strong {
+  font-size: 1.2rem;
+  color: #10b981;
+  display: block;
+}
+
+.commission-preview span {
+  font-size: 0.7rem;
+  color: #64748b;
+  display: block;
+  margin-top: 4px;
+}
+
+.amenities-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.amenity-chip {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 8px 16px;
+  border-radius: 40px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.amenity-chip:hover {
+  background: #e2e8f0;
+}
+
+.amenity-chip.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.form-submit-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.btn-cancel {
+  background: white;
+  border: 1px solid #cbd5e1;
+  padding: 10px 24px;
+  border-radius: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+  background: #f1f5f9;
+}
+
+.btn-save {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-save:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.btn-save:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.edit-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 16px;
+  color: #64748b;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .edit-property-container {
     padding: 16px;
-    text-align: center;
   }
-  
-  .commission-display .rate {
-    display: block;
-    font-size: 24px;
-    font-weight: 800;
-    color: #5930e0;
-    margin-bottom: 4px;
+
+  .grid-2 {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
-  
-  .commission-display .amount {
-    display: block;
-    font-size: 14px;
-    color: #059669;
-    font-weight: 600;
-  }
-  
-  .amenities-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 12px;
-  }
-  
-  .amenity-item {
-    display: flex;
-    align-items: center;
-  }
-  
-  .amenity-checkbox {
-    display: none;
-  }
-  
-  .amenity-label {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: white;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.3s;
-    width: 100%;
-  }
-  
-  .amenity-checkbox:checked + .amenity-label {
-    background: #f0f9ff;
-    border-color: #5930e0;
-    color: #5930e0;
-  }
-  
-  .amenity-label:hover {
-    border-color: #cbd5e0;
-  }
-  
-  .amenity-icon {
-    font-size: 20px;
-  }
-  
-  .amenity-text {
-    font-size: 14px;
-    font-weight: 500;
-  }
-  
-  .photos-upload {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-  
-  .upload-area {
-    background: #f8fafc;
-    border: 3px dashed #cbd5e0;
-    border-radius: 12px;
-    padding: 40px 20px;
-    text-align: center;
-    position: relative;
-    transition: all 0.3s;
-    cursor: pointer;
-  }
-  
-  .upload-area:hover {
-    border-color: #5930e0;
-    background: #edf2f7;
-  }
-  
-  .upload-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-  }
-  
-  .upload-area h4 {
-    font-size: 18px;
-    color: #2d3748;
-    margin: 0 0 8px 0;
-  }
-  
-  .upload-area p {
-    color: #718096;
-    margin: 0 0 12px 0;
-  }
-  
-  .file-input {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-  }
-  
-  .uploaded-photos {
-    background: white;
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
+
+  .form-card {
     padding: 20px;
   }
-  
-  .photo-count {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 2px solid #e2e8f0;
-  }
-  
-  .photo-count span {
-    font-weight: 600;
-    color: #2d3748;
-  }
-  
-  .photo-thumbnails {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  
-  .thumbnail {
-    width: 80px;
-    height: 80px;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    background: #f7fafc;
-    cursor: pointer;
-    transition: all 0.3s;
-  }
-  
-  .thumbnail:hover {
-    border-color: #cbd5e0;
-    transform: translateY(-2px);
-  }
-  
-  .add-thumbnail {
-    width: 80px;
-    height: 80px;
-    border: 2px dashed #cbd5e0;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    color: #718096;
-    cursor: pointer;
-    transition: all 0.3s;
-  }
-  
-  .add-thumbnail:hover {
-    border-color: #5930e0;
-    color: #5930e0;
-  }
-  
-  .form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 16px;
-    padding-top: 32px;
-    border-top: 2px solid #e2e8f0;
-    margin-top: 20px;
-  }
-  
-  .edit-property-loading {
-    display: flex;
+
+  .form-submit-row {
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 400px;
-    gap: 20px;
+    gap: 12px;
   }
-  
-  /* Responsive Design */
-  @media (max-width: 768px) {
-    .edit-property {
-      padding: 16px;
-    }
-    
-    .edit-form {
-      padding: 20px;
-    }
-    
-    .form-grid {
-      grid-template-columns: 1fr;
-    }
-    
-    .amenities-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .form-actions {
-      flex-direction: column;
-    }
-    
-    .form-actions .btn {
-      width: 100%;
-      justify-content: center;
-    }
+
+  .btn-cancel,
+  .btn-save {
+    width: 100%;
+    text-align: center;
   }
-  
-  @media (max-width: 480px) {
-    .edit-header h1 {
-      font-size: 24px;
-    }
-    
-    .amenities-grid {
-      grid-template-columns: 1fr;
-    }
-    
-    .photo-thumbnails {
-      justify-content: center;
-    }
+
+  .amenity-chip {
+    padding: 6px 12px;
+    font-size: 0.75rem;
   }
+}
+
+/* Dark mode support (optional) */
+@media (prefers-color-scheme: dark) {
+  .edit-property-container {
+    background: #111827;
+  }
+
+  .form-card {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .form-card h3 {
+    color: #f3f4f6;
+  }
+
+  .input-group label {
+    color: #9ca3af;
+  }
+
+  .input-group input,
+  .input-group select,
+  .input-group textarea {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+
+  .input-group input:focus,
+  .input-group select:focus,
+  .input-group textarea:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  .commission-preview {
+    background: #374151;
+  }
+
+  .commission-preview p {
+    color: #9ca3af;
+  }
+
+  .amenity-chip {
+    background: #374151;
+    border-color: #4b5563;
+    color: #e2e8f0;
+  }
+
+  .amenity-chip:hover {
+    background: #4b5563;
+  }
+
+  .btn-cancel {
+    background: #374151;
+    border-color: #4b5563;
+    color: #e2e8f0;
+  }
+
+  .btn-cancel:hover {
+    background: #4b5563;
+  }
+
+  .edit-loading {
+    color: #9ca3af;
+  }
+}

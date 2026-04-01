@@ -53,11 +53,11 @@ const ManagerCommissionSummary = ({ earnings }) => {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
           <span>Referrer:</span>
-          <span style={{ fontWeight: 'bold', color: '#6c757d' }}>1%</span>
+          <span style={{ fontWeight: 'bold', color: '#6c757d' }}>1.5%</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>RentEasy Platform:</span>
-          <span style={{ fontWeight: 'bold', color: '#007bff' }}>4%</span>
+          <span style={{ fontWeight: 'bold', color: '#007bff' }}>3.5%</span>
         </div>
       </div>
     </div>

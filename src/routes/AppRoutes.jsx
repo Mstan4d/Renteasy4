@@ -79,7 +79,7 @@ const AdminPaymentProofs = lazy(() => import('../modules/admin/pages/AdminPaymen
 
 // Manager Dashboard Components
 const ManagerDashboard = lazy(() => import('../modules/manager/pages/ManagerDashboard'));
-const ManagerProfile = lazy(() => import('../modules/profile/pages/ManagerProfile'));
+const ManagerProfile = lazy(() => import('../modules/manager/pages/ManagerProfile'));
 const ManagerCommission = lazy(() => import('../modules/manager/pages/ManagerCommission'));
 const ManagerAnalytics = lazy(() => import('../modules/manager/pages/ManagerAnalytics'));
 const ManagerSetup = lazy(() => import('../modules/manager/pages/ManagerSetup'));
@@ -111,9 +111,11 @@ const TenantRentManagement = lazy(() => import('../modules/dashboard/pages/tenan
 const NewTenantKycForm = lazy(() => import('../modules/dashboard/pages/tenant/NewTenantKycForm'));
 
 
-// Landlord Components
+ // ========== LANDLORD IMPORTS ==========
 const LandlordDashboard = lazy(() => import('../modules/dashboard/pages/landlord/LandlordDashboard'));
+const LandlordProperties = lazy(() => import('../modules/dashboard/components/landlord/LandlordProperties'));
 const LandlordPropertyDetail = lazy(() => import('../modules/dashboard/components/landlord/PropertyDetail'));
+const EditProperty = lazy(() => import('../modules/dashboard/components/landlord/EditProperty'));
 const LandlordEarnings = lazy(() => import('../modules/dashboard/components/landlord/WithdrawFunds'));
 const LandlordWallet = lazy(() => import('../modules/dashboard/components/landlord/WalletHistory'));
 const LandlordReferrals = lazy(() => import('../modules/dashboard/components/landlord/ReferralHistory'));
@@ -121,6 +123,8 @@ const LandlordAnalytics = lazy(() => import('../modules/dashboard/components/lan
 const LandlordSettings = lazy(() => import('../modules/dashboard/components/landlord/Reports'));
 const LandlordProfile = lazy(() => import('../modules/profile/pages/LandlordProfile'));
 const LandlordRentTracking = lazy(() => import('../modules/dashboard/components/landlord/LandlordRentTracking'));
+const LandlordNotifications = lazy(() => import('../modules/dashboard/components/landlord/LandlordNotifications'));
+
 
 // Estate Firm Components
 const EstateDashboard = lazy(() => import('../modules/estate-firm/pages/EstateDashboard'));
@@ -340,47 +344,34 @@ const AppRoutes = () => {
         <Route path="rent-management" element={<TenantRentManagement />} />
       </Route>
 
-      {/* ========== LANDLORD ROUTES ========== */}
-      <Route 
-        path="/dashboard/landlord/*"
-        element={
-          <PrivateRoute allowedRoles={['landlord']}>
-            <ForceSingleLayout>
-            <Suspense fallback={<DashboardLoading />}>
-              <LandlordLayout /> 
-            </Suspense>
-            </ForceSingleLayout>
-          </PrivateRoute>
-        }
-      >
-        <Route index element={<LandlordDashboard />} />
-        <Route path="profile" element={<LandlordProfile />} />
-        <Route path="property-detail" element={<LandlordPropertyDetail />} />
-        <Route path="earnings" element={<LandlordEarnings />} />
-        <Route path="wallet" element={<LandlordWallet />} />
-        <Route path="referrals" element={<LandlordReferrals />} />
-        <Route path="analytics" element={<LandlordAnalytics />} />
-        <Route path="settings" element={<LandlordSettings />} />
-        <Route path="rent-tracking" element={<LandlordRentTracking />} />
-      
-      </Route>
      
+
+// ========== LANDLORD ROUTES ==========
 <Route 
-  path="/debug-layouts" 
+  path="/dashboard/landlord/*"
   element={
-    <div style={{ padding: '20px' }}>
-      <h2>Layout Debug</h2>
-      <p>Current URL: {window.location.pathname}</p>
-      <button onClick={() => window.location.href = '/dashboard/landlord'}>
-        Go to Landlord Dashboard
-      </button>
-      <div style={{ marginTop: '20px', background: '#f0f0f0', padding: '10px' }}>
-        <h4>Rendered Components:</h4>
-        {/* This will show you what's actually being rendered */}
-      </div>
-    </div>
-  } 
-/>
+    <PrivateRoute allowedRoles={['landlord']}>
+      <ForceSingleLayout>
+        <Suspense fallback={<DashboardLoading />}>
+          <LandlordLayout />
+        </Suspense>
+      </ForceSingleLayout>
+    </PrivateRoute>
+  }
+>
+  <Route index element={<LandlordDashboard />} />
+  <Route path="profile" element={<LandlordProfile />} />
+  <Route path="properties" element={<LandlordProperties />} />
+  <Route path="properties/:propertyId" element={<LandlordPropertyDetail />} />
+  <Route path="properties/:propertyId/edit" element={<EditProperty />} />
+  <Route path="earnings" element={<LandlordEarnings />} />
+  <Route path="wallet" element={<LandlordWallet />} />
+  <Route path="referrals" element={<LandlordReferrals />} />
+  <Route path="analytics" element={<LandlordAnalytics />} />
+  <Route path="settings" element={<LandlordSettings />} />
+  <Route path="notifications" element={<LandlordNotifications />} />
+  <Route path="rent-tracking" element={<LandlordRentTracking />} />
+</Route>
 
       {/* ========== MANAGER ROUTES ========== */}
       <Route 

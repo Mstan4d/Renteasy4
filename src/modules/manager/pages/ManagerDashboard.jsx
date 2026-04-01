@@ -1,4 +1,4 @@
-// src/modules/manager/pages/ManagerDashboard.jsx (updated)
+// src/modules/manager/pages/ManagerDashboard.jsx (updated with correct stats)
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
@@ -14,16 +14,25 @@ import './ManagerDashboard.css';
 const ManagerDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-
+  const [userLocationSet, setUserLocationSet] = useState(false);
   const [assignedChats, setAssignedChats] = useState([]);
   const [availableListings, setAvailableListings] = useState([]);
   const [verifiedProperties, setVerifiedProperties] = useState([]);
-  const [pendingVerifications, setPendingVerifications] = useState([]); // NEW
+  const [pendingVerifications, setPendingVerifications] = useState([]);
   const [earnings, setEarnings] = useState(0);
+  const [pendingEarnings, setPendingEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [kycStatus, setKycStatus] = useState(null);
   const [proximityNotifications, setProximityNotifications] = useState([]);
+  const [stats, setStats] = useState({
+    activeChats: 0,
+    pendingVerifications: 0,
+    verifiedProperties: 0,
+    totalEarnings: 0,
+    pendingEarnings: 0,
+    completedRentals: 0
+  });
 
   // ---------- Check KYC status ----------
   useEffect(() => {
@@ -47,69 +56,79 @@ const ManagerDashboard = () => {
     }
   };
 
-  // ---------- Load proximity notifications (real‑time) ----------
- // src/modules/manager/pages/ManagerDashboard.jsx (Update the relevant sections)
-
-// Update the proximity notifications useEffect
+  // ---------- Load proximity notifications ----------
+  
 useEffect(() => {
   if (!user) return;
 
   const fetchInitialNotifications = async () => {
     try {
-      // First get the manager's location and radius
-      const { data: managerProfile } = await supabase
+      // 1. Get manager's location and radius
+      const { data: managerProfile, error: profileError } = await supabase
         .from('profiles')
         .select('lat, lng, notification_radius_km')
         .eq('id', user.id)
         .single();
 
-      if (!managerProfile?.lat || !managerProfile?.lng) {
-        console.log('Manager location not set');
+      if (profileError) {
+        console.error('Error fetching manager profile:', profileError);
         return;
       }
 
-      // Get available listings within radius that are not assigned
-      const { data: availableListings } = await supabase
+      const locationSet = !!(managerProfile?.lat && managerProfile?.lng);
+      setUserLocationSet(locationSet);
+      if (!locationSet) {
+        console.warn('Manager location not set. Please set your location in profile.');
+        return;
+      }
+
+      // 2. Fetch available listings (not assigned, not estate-firm, with coordinates)
+      const { data: availableListings, error: listingsError } = await supabase
         .from('listings')
         .select('*')
         .neq('poster_role', 'estate-firm')
         .is('assigned_manager_id', null)
         .not('lat', 'is', null)
-        .not('lng', 'is', null);
+        .not('lng', 'is', null)
+        .eq('status', 'active'); // Only active listings
 
-      if (availableListings) {
-        // Calculate distance and filter
-        const withDistance = availableListings.map(listing => {
-          const distance = calculateDistance(
-            managerProfile.lat,
-            managerProfile.lng,
-            listing.lat,
-            listing.lng
-          );
-          return {
-            id: listing.id,
-            listingId: listing.id,
-            title: listing.title,
-            price: listing.price,
-            location: `${listing.city || ''} ${listing.state || ''}`,
-            posterRole: listing.poster_role,
-            commission: (listing.price || 0) * 0.025,
-            distance: `${distance.toFixed(1)}km`,
-            expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-            accepted: false
-          };
-        }).filter(l => parseFloat(l.distance) <= (managerProfile.notification_radius_km || 5));
-
-        setProximityNotifications(withDistance);
+      if (listingsError) {
+        console.error('Error fetching listings:', listingsError);
+        return;
       }
+
+      // 3. Calculate distance and filter
+      const radiusKm = managerProfile.notification_radius_km || 5;
+      const withDistance = (availableListings || []).map(listing => {
+        const distance = calculateDistance(
+          managerProfile.lat,
+          managerProfile.lng,
+          listing.lat,
+          listing.lng
+        );
+        return {
+          id: listing.id,
+          listingId: listing.id,
+          title: listing.title,
+          price: listing.price,
+          location: `${listing.city || ''} ${listing.state || ''}`,
+          posterRole: listing.poster_role,
+          commission: (listing.price || 0) * 0.025,
+          distance: `${distance.toFixed(1)}km`,
+          expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          accepted: false
+        };
+      }).filter(l => parseFloat(l.distance) <= radiusKm);
+
+      setProximityNotifications(withDistance);
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error('Error in fetchInitialNotifications:', error);
     }
   };
 
   fetchInitialNotifications();
 
-  // Real-time subscription for new listings
+  // Real‑time subscription for new listings
   const channel = supabase
     .channel('new-listings')
     .on(
@@ -123,14 +142,16 @@ useEffect(() => {
         const newListing = payload.new;
         if (newListing.poster_role === 'estate-firm') return;
         
-        // Get manager location
+        // Re‑fetch manager location (could have changed)
         const { data: managerProfile } = await supabase
           .from('profiles')
           .select('lat, lng, notification_radius_km')
           .eq('id', user.id)
           .single();
         
-        if (managerProfile?.lat && managerProfile?.lng && newListing.lat && newListing.lng) {
+        if (!managerProfile?.lat || !managerProfile?.lng) return;
+        
+        if (newListing.lat && newListing.lng) {
           const distance = calculateDistance(
             managerProfile.lat,
             managerProfile.lng,
@@ -151,7 +172,10 @@ useEffect(() => {
               expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
               accepted: false
             };
-            setProximityNotifications(prev => [notification, ...prev]);
+            setProximityNotifications(prev => {
+              if (prev.some(n => n.id === notification.id)) return prev;
+              return [notification, ...prev];
+            });
           }
         }
       }
@@ -163,90 +187,118 @@ useEffect(() => {
   };
 }, [user]);
 
-// Add distance calculation helper
-const calculateDistance = (lat1, lng1, lat2, lng2) => {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng/2) * Math.sin(dLng/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-};
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
 
-  // ---------- Load all dashboard data ----------
+  // ---------- Load all dashboard data with correct stats ----------
   const loadDashboardData = async () => {
-  setLoading(true);
-  try {
-    // 1. Get manager's assigned chats (listings where manager is assigned)
-    const { data: myListings, error: listingsError } = await supabase
-      .from('listings')
-      .select('*')
-      .eq('assigned_manager_id', user.id)
-      .order('assigned_at', { ascending: false });
+    setLoading(true);
+    try {
+      // 1. Get all listings where manager is assigned
+      const { data: myListings, error: listingsError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('assigned_manager_id', user.id)
+        .order('assigned_at', { ascending: false });
 
-    if (listingsError) throw listingsError;
-    
-    // Separate into pending and verified
-    const pending = (myListings || []).filter(l => l.verification_status === 'pending_verification');
-    const verified = (myListings || []).filter(l => l.verification_status === 'verified');
-    
-    setPendingVerifications(pending);
-    setVerifiedProperties(verified);
-    
-    // 2. Get chats related to these listings
-    const listingIds = (myListings || []).map(l => l.id);
-    let chatsData = [];
-    if (listingIds.length > 0) {
-      const { data: chats, error: chatsError } = await supabase
+      if (listingsError) throw listingsError;
+
+      const myListingsArray = myListings || [];
+      
+      // Separate into pending and verified
+      const pending = myListingsArray.filter(l => l.verification_status === 'pending_verification');
+      const verified = myListingsArray.filter(l => l.verification_status === 'verified' && l.status !== 'rented');
+      const completed = myListingsArray.filter(l => l.status === 'rented');
+      
+      setPendingVerifications(pending);
+      setVerifiedProperties(verified);
+      
+      // 2. Get all chats where manager is involved (monitoring or participating)
+      const { data: chatsData, error: chatsError } = await supabase
         .from('chats')
         .select(`
           *,
-          messages:messages!chat_id (
-            content,
-            created_at,
-            is_system_message
-          )
+          listing:listing_id (id, title, price, poster_role, status, verification_status)
         `)
-        .in('listing_id', listingIds);
+        .or(`monitoring_manager_id.eq.${user.id},participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+        .order('updated_at', { ascending: false });
+
+      if (chatsError) throw chatsError;
+
+      // Enhance chats with listing details
+      const enhancedChats = (chatsData || []).map(chat => {
+        const listing = chat.listing || {};
+        return {
+          ...chat,
+          listingTitle: listing.title || 'Unknown Property',
+          listingPrice: listing.price || 0,
+          listingStatus: listing.status || 'unknown',
+          listingVerificationStatus: listing.verification_status,
+          posterRole: listing.poster_role,
+          chatType: chat.monitoring_manager_id === user.id ? 'monitoring' : 'direct',
+          isActive: chat.state === 'active' && listing.status !== 'rented'
+        };
+      });
       
-      if (!chatsError) chatsData = chats || [];
+      setAssignedChats(enhancedChats);
+      
+      // 3. Calculate earnings from commissions
+      // Total earned (paid commissions)
+      const { data: paidCommissions, error: paidError } = await supabase
+        .from('commissions')
+        .select('manager_share')
+        .eq('manager_id', user.id)
+        .eq('status', 'paid');
+      
+      const totalEarned = (paidCommissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      
+      // Pending earnings (verified but not yet paid)
+      const { data: pendingCommissions, error: pendingError } = await supabase
+        .from('commissions')
+        .select('manager_share')
+        .eq('manager_id', user.id)
+        .eq('status', 'verified')
+        .eq('paid_to_manager', false);
+      
+      const pendingEarningsTotal = (pendingCommissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      
+      setEarnings(totalEarned);
+      setPendingEarnings(pendingEarningsTotal);
+      
+      // 4. Calculate all stats
+      const activeChatsCount = enhancedChats.filter(c => 
+        c.state === 'active' && 
+        c.listingStatus !== 'rented' &&
+        c.listingVerificationStatus !== 'rented'
+      ).length;
+      
+      const pendingVerificationsCount = pending.length;
+      const verifiedPropertiesCount = verified.length;
+      const completedRentalsCount = completed.length;
+      
+      setStats({
+        activeChats: activeChatsCount,
+        pendingVerifications: pendingVerificationsCount,
+        verifiedProperties: verifiedPropertiesCount,
+        totalEarnings: totalEarned,
+        pendingEarnings: pendingEarningsTotal,
+        completedRentals: completedRentalsCount
+      });
+      
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
     }
-    
-    // Enhance chats with listing details
-    const enhancedChats = chatsData.map(chat => {
-      const listing = myListings?.find(l => l.id === chat.listing_id);
-      return {
-        ...chat,
-        listingTitle: listing?.title || 'Unknown Property',
-        listingPrice: listing?.price || 0,
-        listingStatus: listing?.status || 'unknown',
-        chatType: chat.monitoring_manager_id === user.id ? 'monitoring' : 'direct',
-        messages: chat.messages || []
-      };
-    });
-    
-    setAssignedChats(enhancedChats);
-    
-    // 3. Calculate total earnings
-    const { data: commissions, error: commError } = await supabase
-      .from('commissions')
-      .select('manager_share')
-      .eq('manager_id', user.id)
-      .eq('status', 'paid');
-    
-    if (!commError) {
-      const total = (commissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
-      setEarnings(total);
-    }
-    
-  } catch (error) {
-    console.error('Error loading dashboard data:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     if (user) loadDashboardData();
@@ -261,7 +313,6 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
     }
 
     try {
-      // Fetch listing details
       const { data: listing, error: listingError } = await supabase
         .from('listings')
         .select('*')
@@ -269,18 +320,18 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
         .single();
       if (listingError) throw listingError;
 
-      // Check if it's an estate firm – they don't need managers
       if (listing.poster_role === 'estate-firm' || listing.poster_role === 'estate_firm') {
         alert('Estate firm listings do not require managers');
         return;
       }
 
-      // UPDATE THE LISTING: assign manager and set verification status
+      // Update listing
       const { error: updateListingError } = await supabase
         .from('listings')
         .update({
           assigned_manager_id: user.id,
-          verification_status: 'pending_verification', // manager must now verify
+          verification_status: 'pending_verification',
+          assigned_at: new Date().toISOString()
         })
         .eq('id', listingId);
       if (updateListingError) throw updateListingError;
@@ -293,43 +344,38 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
         .maybeSingle();
 
       if (!existingChat) {
-        // Create new chat with manager assigned
         const chatTemplate = {
           listing_id: listingId,
-          participant1_id: listing.poster_role === 'tenant' ? listing.poster_id : null,
-          participant2_id: listing.poster_role === 'landlord' ? listing.poster_id : null,
+          participant1_id: listing.poster_role === 'tenant' ? listing.user_id : null,
+          participant2_id: listing.poster_role === 'landlord' ? listing.user_id : null,
           monitoring_manager_id: user.id,
-          state: 'pending_availability',
+          state: 'active',
           manager_assigned: true,
           manager_assigned_at: new Date().toISOString(),
-          chat_type: listing.poster_role === 'tenant' ? 'manager_intermediary' : 'monitoring',
+          chat_type: listing.poster_role === 'tenant' ? 'tenant_manager' : 'tenant_landlord',
         };
 
         const { error: chatError } = await supabase.from('chats').insert([chatTemplate]);
         if (chatError) throw chatError;
 
-        // Get the newly created chat id
         const { data: newChat } = await supabase
           .from('chats')
           .select('id')
           .eq('listing_id', listingId)
           .single();
 
-        // Add a system message
         await supabase.from('messages').insert([
           {
             chat_id: newChat.id,
             sender_id: '00000000-0000-0000-0000-000000000000',
-            content:
-              listing.poster_role === 'tenant'
-                ? `🏠 Manager ${user.name} assigned. All communication will go through manager.`
-                : `👨‍💼 Manager ${user.name} assigned to monitor this conversation.`,
-            is_system: true,
+            content: listing.poster_role === 'tenant'
+              ? `🏠 Manager assigned to handle this property. All communication will go through the manager.`
+              : `👨‍💼 Manager assigned to monitor this conversation.`,
+            is_system_message: true,
           },
         ]);
       } else {
-        // Update existing chat – assign manager if not already
-        const { error: updateError } = await supabase
+        await supabase
           .from('chats')
           .update({
             monitoring_manager_id: user.id,
@@ -337,28 +383,19 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
             manager_assigned_at: new Date().toISOString(),
           })
           .eq('id', existingChat.id);
-        if (updateError) throw updateError;
       }
 
-      // Mark notification as accepted
-      await supabase
-        .from('manager_notifications')
-        .update({ accepted: true })
-        .eq('listing_id', listingId)
-        .eq('manager_id', user.id);
-
-      // Remove from local notifications
-      setProximityNotifications((prev) => prev.filter((n) => n.listing_id !== listingId));
+      setProximityNotifications((prev) => prev.filter((n) => n.listingId !== listingId));
 
       alert(`✅ You are now assigned to manage "${listing.title}" – please verify the property.`);
-      loadDashboardData(); // refresh data
+      loadDashboardData();
     } catch (error) {
       console.error('Error accepting listing:', error);
       alert('Failed to accept listing');
     }
   };
 
-  // ---------- Verify a property (mark as verified) ----------
+  // ---------- Verify a property ----------
   const verifyProperty = async (listingId) => {
     if (kycStatus !== 'approved') {
       alert('Complete KYC verification first');
@@ -367,7 +404,6 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
     }
 
     try {
-      // Check if manager is assigned to this property
       const { data: listing, error: listingError } = await supabase
         .from('listings')
         .select('assigned_manager_id, verification_status')
@@ -380,7 +416,6 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
         return;
       }
 
-      // Update listing to verified
       const { error: updateError } = await supabase
         .from('listings')
         .update({
@@ -392,7 +427,6 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
         .eq('id', listingId);
       if (updateError) throw updateError;
 
-      // Add system message to chat (if chat exists)
       const { data: chat } = await supabase
         .from('chats')
         .select('id')
@@ -404,8 +438,8 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
           {
             chat_id: chat.id,
             sender_id: '00000000-0000-0000-0000-000000000000',
-            content: `✅ Property verified on‑site by manager ${user.name}.`,
-            is_system: true,
+            content: `✅ Property verified on-site by manager.`,
+            is_system_message: true,
           },
         ]);
       }
@@ -418,395 +452,340 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
     }
   };
 
-  // ---------- Confirm rental (mark as rented) ----------
-  const confirmRental = async (chat) => {
-    try {
-      // Fetch listing details
-      const { data: listing, error: listingError } = await supabase
-        .from('listings')
-        .select('price, title')
-        .eq('id', chat.listing_id)
-        .single();
-      if (listingError) throw listingError;
-
-      const rentalAmount = listing.price || 0;
-      const managerShare = rentalAmount * 0.025;
-      const referrerShare = rentalAmount * 0.015;
-      const platformShare = rentalAmount * 0.035;
-
-      // Insert commission record
-      const { error: commError } = await supabase.from('commissions').insert([
-        {
-          listing_id: chat.listing_id,
-          manager_id: user.id,
-          rental_amount: rentalAmount,
-          manager_share: managerShare,
-          referrer_share: referrerShare,
-          platform_share: platformShare,
-          status: 'pending', // will be paid after admin confirmation
-        },
-      ]);
-      if (commError) throw commError;
-
-      // Update chat state
-      await supabase
-        .from('chats')
-        .update({ state: 'rented', rented_at: new Date().toISOString() })
-        .eq('id', chat.id);
-
-      // Update listing status
-      await supabase
-        .from('listings')
-        .update({ status: 'rented', rented_at: new Date().toISOString() })
-        .eq('id', chat.listing_id);
-
-      // Add system message
-      await supabase.from('messages').insert([
-        {
-          chat_id: chat.id,
-          sender_id: '00000000-0000-0000-0000-000000000000',
-          content: `🏠 PROPERTY RENTED\nRental: ₦${rentalAmount.toLocaleString()}\nYour share: ₦${managerShare.toLocaleString()}`,
-          is_system: true,
-        },
-      ]);
-
-      alert(`✅ Rental confirmed! Your commission: ₦${managerShare.toLocaleString()}`);
-      loadDashboardData();
-    } catch (error) {
-      console.error('Error confirming rental:', error);
-      alert('Failed to confirm rental');
-    }
-  };
-
-   if (loading) {
-  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+  }
 
   return (
-  <div className="manager-dashboard">
-    {/* Hero Section */}
-    <div className="dashboard-hero">
-      <div className="hero-content">
-        <div className="hero-left">
-          <h1>Welcome back, {user?.name || 'Manager'} 👋</h1>
-          <p className="hero-subtitle">Manage your listings, chats, and earnings from one place.</p>
-          <div className="hero-badges">
-            <span className="badge role-badge">👨‍💼 Manager</span>
-            <span className={`badge kyc-badge ${kycStatus === 'approved' ? 'verified' : kycStatus === 'pending' ? 'pending' : 'unverified'}`}>
-              {kycStatus === 'approved' ? '✅ KYC Verified' : 
-               kycStatus === 'pending' ? '⏳ KYC Pending' : 
-               '⚠️ KYC Required'}
-            </span>
-            <span className="badge commission-badge">💰 2.5% Commission</span>
-          </div>
-        </div>
-        <div className="hero-right">
-          <div className="hero-stats">
-            <div className="hero-stat">
-              <span className="stat-value">{assignedChats.length}</span>
-              <span className="stat-label">Active Chats</span>
-            </div>
-            <div className="hero-stat">
-              <span className="stat-value">{pendingVerifications.length}</span>
-              <span className="stat-label">Pending Verifications</span>
-            </div>
-            <div className="hero-stat">
-              <span className="stat-value">₦{earnings.toLocaleString()}</span>
-              <span className="stat-label">Total Earnings</span>
+    <div className="manager-dashboard">
+      {/* Hero Section */}
+      <div className="dashboard-hero">
+        <div className="hero-content">
+          <div className="hero-left">
+            <h1>Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Manager'} 👋</h1>
+            <p className="hero-subtitle">Manage your listings, chats, and earnings from one place.</p>
+            <div className="hero-badges">
+              <span className="badge role-badge">👨‍💼 Manager</span>
+              <span className={`badge kyc-badge ${kycStatus === 'approved' ? 'verified' : kycStatus === 'pending' ? 'pending' : 'unverified'}`}>
+                {kycStatus === 'approved' ? '✅ KYC Verified' : 
+                 kycStatus === 'pending' ? '⏳ KYC Pending' : 
+                 '⚠️ KYC Required'}
+              </span>
+              <span className="badge commission-badge">💰 2.5% Commission</span>
             </div>
           </div>
-          {kycStatus !== 'approved' && (
-            <button 
-              className="hero-kyc-btn"
-              onClick={() => navigate('/dashboard/manager/kyc')}
-            >
-              Complete KYC Now →
-            </button>
-          )}
+          <div className="hero-right">
+            <div className="hero-stats">
+              <div className="hero-stat">
+                <span className="stat-value">{stats.activeChats}</span>
+                <span className="stat-label">Active Chats</span>
+              </div>
+              <div className="hero-stat">
+                <span className="stat-value">{stats.pendingVerifications}</span>
+                <span className="stat-label">Pending Verifications</span>
+              </div>
+              <div className="hero-stat">
+                <span className="stat-value">₦{stats.totalEarnings.toLocaleString()}</span>
+                <span className="stat-label">Total Earnings</span>
+              </div>
+            </div>
+            {kycStatus !== 'approved' && (
+              <button 
+                className="hero-kyc-btn"
+                onClick={() => navigate('/dashboard/manager/kyc')}
+              >
+                Complete KYC Now →
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
 
-    {/* Proximity notifications panel */}
-    {proximityNotifications.length > 0 && (
-      <ManagerNotificationsPanel
-        notifications={proximityNotifications}
-        onAccept={acceptListing}
-        onDismiss={(id) => setProximityNotifications((prev) => prev.filter((n) => n.id !== id))}
-      />
-    )}
-
-    {/* Tabs */}
-    <div className="manager-tabs">
-      <button
-        className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-        onClick={() => setActiveTab('overview')}
-      >
-        📊 Overview
-      </button>
-      <button
-        className={`tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
-        onClick={() => setActiveTab('notifications')}
-      >
-        🔔 Notifications ({proximityNotifications.length})
-      </button>
-      <button
-        className={`tab-btn ${activeTab === 'chats' ? 'active' : ''}`}
-        onClick={() => setActiveTab('chats')}
-      >
-        💬 My Chats ({assignedChats.length})
-      </button>
-      <button
-        className={`tab-btn ${activeTab === 'properties' ? 'active' : ''}`}
-        onClick={() => setActiveTab('properties')}
-      >
-        🏠 Verified ({verifiedProperties.length})
-      </button>
-      <button
-        className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
-        onClick={() => setActiveTab('pending')}
-      >
-        ⏳ Pending Verification ({pendingVerifications.length})
-      </button>
-      <button
-        className={`tab-btn ${activeTab === 'earnings' ? 'active' : ''}`}
-        onClick={() => setActiveTab('earnings')}
-      >
-        💰 Earnings (₦{earnings.toLocaleString()})
-      </button>
-    </div>
-
-    {/* CONTENT AREA */}
-    <div className="manager-content">
-      
-      {/* OVERVIEW TAB */}
-      {activeTab === 'overview' && (
-        <div className="overview-container">
-          {/* QUICK STATS */}
-          <div className="overview-stats">
-            <div className="stat-card">
-              <div className="stat-icon">💬</div>
-              <div className="stat-content">
-                <h3>{assignedChats.length}</h3>
-                <p>Active Chats</p>
-              </div>
-            </div>
-            
-            <div className="stat-card">
-              <div className="stat-icon">⏳</div>
-              <div className="stat-content">
-                <h3>{pendingVerifications.length}</h3>
-                <p>Pending Verifications</p>
-              </div>
-            </div>
-            
-            <div className="stat-card">
-              <div className="stat-icon">🏠</div>
-              <div className="stat-content">
-                <h3>{verifiedProperties.length}</h3>
-                <p>Verified Properties</p>
-              </div>
-            </div>
-            
-            <div className="stat-card earnings">
-              <div className="stat-icon">💰</div>
-              <div className="stat-content">
-                <h3>₦{earnings.toLocaleString()}</h3>
-                <p>Total Earnings</p>
-              </div>
-            </div>
-          </div>
-
-          {/* QUICK ACTIONS */}
-          <ManagerQuickActions 
-            kycStatus={kycStatus}
-            onViewNotifications={() => setActiveTab('notifications')}
-            onViewChats={() => setActiveTab('chats')}
-            onViewProperties={() => setActiveTab('properties')}
-            onViewEarnings={() => setActiveTab('earnings')}
-            navigate={navigate}
-          />
-
-          {/* COMMISSION SUMMARY */}
-          <ManagerCommissionSummary earnings={earnings} />
-
-          {/* RECENT ACTIVITY */}
-          <div className="recent-activity">
-            <h3>Recent Activity</h3>
-            <div className="activity-list">
-              {pendingVerifications.slice(0, 2).map(listing => (
-                <div key={listing.id} className="activity-item">
-                  <div className="activity-icon">⏳</div>
-                  <div className="activity-details">
-                    <strong>{listing.title}</strong>
-                    <p>Pending verification</p>
-                    <small>Assigned {new Date(listing.created_at).toLocaleDateString()}</small>
-                  </div>
-                  <button 
-                    className="btn btn-sm btn-primary"
-                    onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
-                  >
-                    Verify
-                  </button>
-                </div>
-              ))}
-              
-              {assignedChats.slice(0, 2).map(chat => (
-                <div key={chat.id} className="activity-item">
-                  <div className="activity-icon">
-                    {chat.chatType === 'manager_intermediary' ? '💬' : '👁️'}
-                  </div>
-                  <div className="activity-details">
-                    <strong>{chat.listingTitle}</strong>
-                    <p>{chat.chatType === 'manager_intermediary' ? 'Intermediary Chat' : 'Monitoring Chat'}</p>
-                    <small>{chat.state.replace('_', ' ')}</small>
-                  </div>
-                  <button 
-                    className="btn btn-sm"
-                    onClick={() => navigate(`/dashboard/manager/chat/${chat.id}/monitor`)}
-                  >
-                    Open
-                  </button>
-                </div>
-              ))}
-              
-              {pendingVerifications.length === 0 && assignedChats.length === 0 && (
-                <div className="empty-activity">
-                  <p>No recent activity. Accept a listing to get started!</p>
-                  <button 
-                    className="btn btn-primary"
-                    onClick={() => setActiveTab('notifications')}
-                  >
-                    View Available Listings
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Proximity notifications panel */}
+      {proximityNotifications.length > 0 && (
+        <ManagerNotificationsPanel
+          notifications={proximityNotifications}
+          onAccept={acceptListing}
+          onDismiss={(id) => setProximityNotifications((prev) => prev.filter((n) => n.id !== id))}
+        />
       )}
 
-      {/* NOTIFICATIONS TAB */}
-      {activeTab === 'notifications' && (
-        <div className="notifications-container">
-          <div className="section-header">
-            <h2>🔔 Proximity Notifications</h2>
-            <p>New listings within 1km radius - First to accept gets 2.5% commission</p>
-          </div>
+      {/* Tabs */}
+      <div className="manager-tabs">
+        <button
+          className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
+          onClick={() => setActiveTab('overview')}
+        >
+          📊 Overview
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
+          onClick={() => setActiveTab('notifications')}
+        >
+          🔔 Notifications ({proximityNotifications.length})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'chats' ? 'active' : ''}`}
+          onClick={() => setActiveTab('chats')}
+        >
+          💬 My Chats ({assignedChats.length})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'properties' ? 'active' : ''}`}
+          onClick={() => setActiveTab('properties')}
+        >
+          🏠 Verified ({stats.verifiedProperties})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setActiveTab('pending')}
+        >
+          ⏳ Pending Verification ({stats.pendingVerifications})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'earnings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('earnings')}
+        >
+          💰 Earnings (₦{stats.totalEarnings.toLocaleString()})
+        </button>
+      </div>
 
-          {proximityNotifications.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">🔕</div>
-              <h3>No new notifications</h3>
-              <p>New listings in your area will appear here automatically</p>
+      {/* CONTENT AREA */}
+      <div className="manager-content">
+        
+        {/* OVERVIEW TAB */}
+        {activeTab === 'overview' && (
+          <div className="overview-container">
+            {/* QUICK STATS */}
+            <div className="overview-stats">
+              <div className="stat-card">
+                <div className="stat-icon">💬</div>
+                <div className="stat-content">
+                  <h3>{stats.activeChats}</h3>
+                  <p>Active Chats</p>
+                </div>
+              </div>
+              
+              <div className="stat-card">
+                <div className="stat-icon">⏳</div>
+                <div className="stat-content">
+                  <h3>{stats.pendingVerifications}</h3>
+                  <p>Pending Verifications</p>
+                </div>
+              </div>
+              
+              <div className="stat-card">
+                <div className="stat-icon">🏠</div>
+                <div className="stat-content">
+                  <h3>{stats.verifiedProperties}</h3>
+                  <p>Verified Properties</p>
+                </div>
+              </div>
+              
+              <div className="stat-card earnings">
+                <div className="stat-icon">💰</div>
+                <div className="stat-content">
+                  <h3>₦{stats.totalEarnings.toLocaleString()}</h3>
+                  <p>Total Earnings</p>
+                  {stats.pendingEarnings > 0 && (
+                    <small>+ ₦{stats.pendingEarnings.toLocaleString()} pending</small>
+                  )}
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="notifications-grid">
-              {proximityNotifications.map(notification => (
-                <div key={notification.id} className="notification-card">
-                  <div className="notification-header">
-                    <span className="notification-type">📍 Proximity Alert</span>
-                    <span className="notification-time">15 min remaining</span>
+
+            {/* QUICK ACTIONS */}
+            <ManagerQuickActions 
+              kycStatus={kycStatus}
+              onViewNotifications={() => setActiveTab('notifications')}
+              onViewChats={() => setActiveTab('chats')}
+              onViewProperties={() => setActiveTab('properties')}
+              onViewEarnings={() => setActiveTab('earnings')}
+              navigate={navigate}
+            />
+
+            {/* COMMISSION SUMMARY */}
+            <ManagerCommissionSummary 
+              earnings={stats.totalEarnings}
+              pendingEarnings={stats.pendingEarnings}
+            />
+
+            {/* RECENT ACTIVITY */}
+            <div className="recent-activity">
+              <h3>Recent Activity</h3>
+              <div className="activity-list">
+                {pendingVerifications.slice(0, 2).map(listing => (
+                  <div key={listing.id} className="activity-item">
+                    <div className="activity-icon">⏳</div>
+                    <div className="activity-details">
+                      <strong>{listing.title}</strong>
+                      <p>Pending verification</p>
+                      <small>Assigned {new Date(listing.assigned_at || listing.created_at).toLocaleDateString()}</small>
+                    </div>
+                    <button 
+                      className="btn btn-sm btn-primary"
+                      onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
+                    >
+                      Verify
+                    </button>
                   </div>
-                  
-                  <div className="notification-body">
-                    <h4>{notification.title}</h4>
-                    <div className="notification-details">
-                      <div className="detail">
-                        <span className="label">Location:</span>
-                        <span className="value">{notification.location}</span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Price:</span>
-                        <span className="value">₦{notification.price.toLocaleString()}</span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Posted by:</span>
-                        <span className="value">
-                          {notification.posterRole === 'tenant' ? '👤 Outgoing Tenant' : '🏠 Landlord'}
-                        </span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Your Commission:</span>
-                        <span className="value highlight">₦{notification.commission.toLocaleString()} (2.5%)</span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Distance:</span>
-                        <span className="value">{notification.distance}</span>
+                ))}
+                
+                {assignedChats.filter(c => c.isActive).slice(0, 2).map(chat => (
+                  <div key={chat.id} className="activity-item">
+                    <div className="activity-icon">
+                      {chat.chatType === 'monitoring' ? '👁️' : '💬'}
+                    </div>
+                    <div className="activity-details">
+                      <strong>{chat.listingTitle}</strong>
+                      <p>{chat.chatType === 'monitoring' ? 'Monitoring Chat' : 'Active Conversation'}</p>
+                      <small>Updated {new Date(chat.updated_at).toLocaleDateString()}</small>
+                    </div>
+                    <button 
+                      className="btn btn-sm"
+                      onClick={() => navigate(`/dashboard/messages/chat/${chat.id}`)}
+                    >
+                      Open
+                    </button>
+                  </div>
+                ))}
+                
+                {pendingVerifications.length === 0 && assignedChats.filter(c => c.isActive).length === 0 && (
+                  <div className="empty-activity">
+                    <p>No recent activity. Accept a listing to get started!</p>
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => setActiveTab('notifications')}
+                    >
+                      View Available Listings
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* NOTIFICATIONS TAB - same as before */}
+        {activeTab === 'notifications' && (
+          <div className="notifications-container">
+            <div className="section-header">
+              <h2>🔔 Proximity Notifications</h2>
+              <p>New listings within your radius - First to accept gets 2.5% commission</p>
+            </div>
+
+            {proximityNotifications.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">🔕</div>
+                <h3>No new notifications</h3>
+                <p>
+      {!userLocationSet ? 
+        'Please set your location in profile to receive proximity notifications.' : 
+        'New listings in your area will appear here automatically.'}
+    </p>
+              </div>
+            ) : (
+              <div className="notifications-grid">
+                {proximityNotifications.map(notification => (
+                  <div key={notification.id} className="notification-card">
+                    <div className="notification-header">
+                      <span className="notification-type">📍 Proximity Alert</span>
+                      <span className="notification-time">15 min remaining</span>
+                    </div>
+                    
+                    <div className="notification-body">
+                      <h4>{notification.title}</h4>
+                      <div className="notification-details">
+                        <div className="detail">
+                          <span className="label">Location:</span>
+                          <span className="value">{notification.location}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Price:</span>
+                          <span className="value">₦{notification.price.toLocaleString()}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Posted by:</span>
+                          <span className="value">
+                            {notification.posterRole === 'tenant' ? '👤 Outgoing Tenant' : '🏠 Landlord'}
+                          </span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Your Commission:</span>
+                          <span className="value highlight">₦{notification.commission.toLocaleString()} (2.5%)</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Distance:</span>
+                          <span className="value">{notification.distance}</span>
+                        </div>
                       </div>
                     </div>
+                    
+                    <div className="notification-actions">
+                      <button 
+                        className="btn btn-accept"
+                        onClick={() => acceptListing(notification.listingId)}
+                        disabled={kycStatus !== 'approved'}
+                      >
+                        {kycStatus === 'approved' ? 'Accept Listing' : 'Complete KYC First'}
+                      </button>
+                      <button 
+                        className="btn btn-secondary"
+                        onClick={() => navigate(`/listings/${notification.listingId}`)}
+                      >
+                        View Details
+                      </button>
+                      <button 
+                        className="btn btn-outline"
+                        onClick={() => setProximityNotifications(prev => 
+                          prev.filter(n => n.id !== notification.id)
+                        )}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   </div>
-                  
-                  <div className="notification-actions">
-                    <button 
-                      className="btn btn-accept"
-                      onClick={() => acceptListing(notification.listingId)}
-                      disabled={kycStatus !== 'approved'}
-                    >
-                      {kycStatus === 'approved' ? 'Accept Listing' : 'Complete KYC First'}
-                    </button>
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => navigate(`/listings/${notification.listingId}`)}
-                    >
-                      View Details
-                    </button>
-                    <button 
-                      className="btn btn-outline"
-                      onClick={() => setProximityNotifications(prev => 
-                        prev.filter(n => n.id !== notification.id)
-                      )}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* CHATS TAB */}
-      {activeTab === 'chats' && (
-        <div className="chats-container">
-          <div className="section-header">
-            <h2>💬 My Chats</h2>
-            <p>Manage conversations and confirm rentals</p>
+                ))}
+              </div>
+            )}
           </div>
+        )}
 
-          {assignedChats.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">💬</div>
-              <h3>No active chats</h3>
-              <p>Accept a listing from notifications to start managing chats</p>
-              <button 
-                className="btn btn-primary"
-                onClick={() => setActiveTab('notifications')}
-              >
-                View Available Listings
-              </button>
+        {/* CHATS TAB */}
+        {activeTab === 'chats' && (
+          <div className="chats-container">
+            <div className="section-header">
+              <h2>💬 My Chats</h2>
+              <p>Manage conversations and confirm rentals</p>
             </div>
-          ) : (
-            <div className="chats-grid">
-              {assignedChats.map(chat => {
-                const listing = verifiedProperties.find(l => l.id === chat.listingId) || 
-                              JSON.parse(localStorage.getItem('listings') || '[]')
-                                .find(l => l.id === chat.listingId);
-                
-                return (
+
+            {assignedChats.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">💬</div>
+                <h3>No active chats</h3>
+                <p>Accept a listing from notifications to start managing chats</p>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => setActiveTab('notifications')}
+                >
+                  View Available Listings
+                </button>
+              </div>
+            ) : (
+              <div className="chats-grid">
+                {assignedChats.map(chat => (
                   <div key={chat.id} className="chat-card">
                     <div className="chat-header">
                       <div className="chat-type-indicator">
-                        {chat.chatType === 'manager_intermediary' ? (
-                          <span className="badge intermediary">💬 Intermediary</span>
-                        ) : (
+                        {chat.chatType === 'monitoring' ? (
                           <span className="badge monitoring">👁️ Monitoring</span>
+                        ) : (
+                          <span className="badge intermediary">💬 Direct Chat</span>
                         )}
                       </div>
                       <div className="chat-status">
                         <span className={`status-badge ${chat.state}`}>
-                          {chat.state.replace('_', ' ')}
+                          {chat.state?.replace('_', ' ') || 'Active'}
                         </span>
                       </div>
                     </div>
@@ -819,7 +798,7 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
                           <span className="value">₦{chat.listingPrice?.toLocaleString()}</span>
                         </div>
                         <div className="detail">
-                          <span className="label">Commission:</span>
+                          <span className="label">Your Commission:</span>
                           <span className="value highlight">
                             ₦{(chat.listingPrice * 0.025).toLocaleString()}
                           </span>
@@ -829,314 +808,256 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
                           <span className="value">{chat.messages?.length || 0}</span>
                         </div>
                       </div>
-                      
-                      <div className="chat-participants">
-                        <div className="participant">
-                          <span className="label">Poster:</span>
-                          <span className="value">{chat.posterRole}</span>
-                        </div>
-                        <div className="participant">
-                          <span className="label">Your Role:</span>
-                          <span className="value">
-                            {chat.chatType === 'manager_intermediary' ? 'Intermediary' : 'Monitor'}
-                          </span>
-                        </div>
-                      </div>
                     </div>
                     
                     <div className="chat-actions">
                       <button 
                         className="btn btn-primary"
-                        onClick={() => navigate(`/dashboard/manager/chat/${chat.id}/monitor`)}
+                        onClick={() => navigate(`/dashboard/messages/chat/${chat.id}`)}
                       >
-                        {chat.chatType === 'manager_intermediary' ? 'Join Chat' : 'Monitor Chat'}
+                        {chat.chatType === 'monitoring' ? 'Monitor Chat' : 'Open Chat'}
                       </button>
-                      
-                      {chat.state === 'active' && !chat.rented && (
-                        <button 
-                          className="btn btn-success"
-                          onClick={() => confirmRental(chat)}
-                        >
-                          Mark as Rented
-                        </button>
-                      )}
-                      
-                      {!listing?.verified && (
-                        <button 
-                          className="btn btn-warning"
-                          onClick={() => verifyProperty(chat.listingId)}
-                        >
-                          Verify Property
-                        </button>
-                      )}
-                      
-                      {chat.rented && (
-                        <span className="badge success">✅ Rented</span>
-                      )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* PROPERTIES TAB (verified only) */}
-      {activeTab === 'properties' && (
-        <div className="properties-container">
-          <div className="section-header">
-            <h2>🏠 Verified Properties</h2>
-            <p>Properties you've successfully verified</p>
+                ))}
+              </div>
+            )}
           </div>
+        )}
 
-          {verifiedProperties.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">🏠</div>
-              <h3>No verified properties</h3>
-              <p>Complete verification for assigned listings to see them here.</p>
+        {/* PROPERTIES TAB - verified only */}
+        {activeTab === 'properties' && (
+          <div className="properties-container">
+            <div className="section-header">
+              <h2>🏠 Verified Properties</h2>
+              <p>Properties you've successfully verified</p>
             </div>
-          ) : (
-            <div className="properties-grid">
-              {verifiedProperties.map(property => (
-                <div key={property.id} className="property-card">
-                  <div className="property-header">
-                    <div className="property-badges">
-                      <span className="badge verified">✅ Verified</span>
-                      <span className="badge permanent">👨‍💼 Permanent</span>
-                    </div>
-                    <div className="property-status">
-                      {property.status === 'rented' ? (
-                        <span className="badge rented">🏠 Rented</span>
-                      ) : (
-                        <span className="badge available">🔓 Available</span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="property-body">
-                    <h4>{property.title}</h4>
-                    <div className="property-details">
-                      <div className="detail">
-                        <span className="label">Location:</span>
-                        <span className="value">{property.address}</span>
+
+            {verifiedProperties.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">🏠</div>
+                <h3>No verified properties</h3>
+                <p>Complete verification for assigned listings to see them here.</p>
+              </div>
+            ) : (
+              <div className="properties-grid">
+                {verifiedProperties.map(property => (
+                  <div key={property.id} className="property-card">
+                    <div className="property-header">
+                      <div className="property-badges">
+                        <span className="badge verified">✅ Verified</span>
                       </div>
-                      <div className="detail">
-                        <span className="label">Rent:</span>
-                        <span className="value">₦{property.price?.toLocaleString()}/year</span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Commission:</span>
-                        <span className="value highlight">
-                          ₦{(property.price * 0.025).toLocaleString()}/rental
-                        </span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Verified on:</span>
-                        <span className="value">
-                          {new Date(property.verificationDate).toLocaleDateString()}
-                        </span>
+                      <div className="property-status">
+                        {property.status === 'rented' ? (
+                          <span className="badge rented">🏠 Rented</span>
+                        ) : (
+                          <span className="badge available">🔓 Available</span>
+                        )}
                       </div>
                     </div>
-                  </div>
-                  
-                  <div className="property-actions">
-                    <button 
-                      className="btn btn-primary"
-                      onClick={() => navigate(`/listings/${property.id}`)}
-                    >
-                      View Listing
-                    </button>
                     
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        const chat = assignedChats.find(c => c.listingId === property.id);
-                        if (chat) navigate(`/dashboard/manager/chat/${chat.id}/monitor`);
-                      }}
-                    >
-                      View Chat
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* PENDING VERIFICATIONS TAB */}
-      {activeTab === 'pending' && (
-        <div className="pending-container">
-          <div className="section-header">
-            <h2>⏳ Pending Verifications</h2>
-            <p>Listings assigned to you that require on‑site verification</p>
-          </div>
-          {pendingVerifications.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">✅</div>
-              <h3>No pending verifications</h3>
-              <p>All assigned listings have been verified.</p>
-            </div>
-          ) : (
-            <div className="pending-grid">
-              {pendingVerifications.map(listing => (
-                <div key={listing.id} className="pending-card">
-                  <div className="pending-header">
-                    <span className="badge pending">Pending Verification</span>
-                    {listing.landlord_phone && (
-                      <span className="badge info">📞 Landlord phone provided</span>
-                    )}
-                  </div>
-                  <div className="pending-body">
-                    <h4>{listing.title}</h4>
-                    <div className="pending-details">
-                      <div className="detail">
-                        <span className="label">Address:</span>
-                        <span className="value">{listing.address}</span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Rent:</span>
-                        <span className="value">₦{listing.price?.toLocaleString()}/year</span>
-                      </div>
-                      <div className="detail">
-                        <span className="label">Posted by:</span>
-                        <span className="value">
-                          {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' : '🏠 Landlord'}
-                        </span>
-                      </div>
-                      {listing.landlord_phone && (
+                    <div className="property-body">
+                      <h4>{property.title}</h4>
+                      <div className="property-details">
                         <div className="detail">
-                          <span className="label">Landlord phone:</span>
-                          <span className="value">{listing.landlord_phone}</span>
+                          <span className="label">Location:</span>
+                          <span className="value">{property.address}</span>
                         </div>
-                      )}
+                        <div className="detail">
+                          <span className="label">Rent:</span>
+                          <span className="value">₦{property.price?.toLocaleString()}/year</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Your Commission:</span>
+                          <span className="value highlight">
+                            ₦{(property.price * 0.025).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="property-actions">
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => navigate(`/listings/${property.id}`)}
+                      >
+                        View Listing
+                      </button>
                     </div>
                   </div>
-                  <div className="pending-actions">
-                    <button 
-                      className="btn btn-primary"
-                      onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
-                    >
-                      Start Verification
-                    </button>
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => navigate(`/listings/${listing.id}`)}
-                    >
-                      View Listing
-                    </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PENDING VERIFICATIONS TAB */}
+        {activeTab === 'pending' && (
+          <div className="pending-container">
+            <div className="section-header">
+              <h2>⏳ Pending Verifications</h2>
+              <p>Listings assigned to you that require on-site verification</p>
+            </div>
+            {pendingVerifications.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">✅</div>
+                <h3>No pending verifications</h3>
+                <p>All assigned listings have been verified.</p>
+              </div>
+            ) : (
+              <div className="pending-grid">
+                {pendingVerifications.map(listing => (
+                  <div key={listing.id} className="pending-card">
+                    <div className="pending-header">
+                      <span className="badge pending">Pending Verification</span>
+                      {listing.landlord_phone && (
+                        <span className="badge info">📞 Landlord phone provided</span>
+                      )}
+                    </div>
+                    <div className="pending-body">
+                      <h4>{listing.title}</h4>
+                      <div className="pending-details">
+                        <div className="detail">
+                          <span className="label">Address:</span>
+                          <span className="value">{listing.address}</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Rent:</span>
+                          <span className="value">₦{listing.price?.toLocaleString()}/year</span>
+                        </div>
+                        <div className="detail">
+                          <span className="label">Posted by:</span>
+                          <span className="value">
+                            {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' : '🏠 Landlord'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pending-actions">
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
+                      >
+                        Start Verification
+                      </button>
+                      <button 
+                        className="btn btn-secondary"
+                        onClick={() => navigate(`/listings/${listing.id}`)}
+                      >
+                        View Listing
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* EARNINGS TAB */}
+        {activeTab === 'earnings' && (
+          <div className="earnings-container">
+            <div className="section-header">
+              <h2>💰 Your Earnings</h2>
+              <p>2.5% commission on successful rentals</p>
+            </div>
+
+            <div className="earnings-summary">
+              <div className="summary-card total">
+                <h4>Total Earnings</h4>
+                <h2>₦{stats.totalEarnings.toLocaleString()}</h2>
+                <p>Lifetime commission earnings</p>
+              </div>
+              
+              <div className="summary-card pending">
+                <h4>Pending Earnings</h4>
+                <h2>₦{stats.pendingEarnings.toLocaleString()}</h2>
+                <p>Awaiting payout</p>
+              </div>
+              
+              <div className="summary-card completed">
+                <h4>Completed Rentals</h4>
+                <h2>{stats.completedRentals}</h2>
+                <p>Properties rented</p>
+              </div>
+            </div>
+
+            <div className="commission-breakdown-card">
+              <h3>Commission Breakdown</h3>
+              <div className="breakdown-bars">
+                <div className="breakdown-bar manager">
+                  <div className="bar-label">
+                    <span>Manager (You)</span>
+                    <span>2.5%</span>
+                  </div>
+                  <div className="bar-fill" style={{ width: '33%' }}></div>
+                </div>
+                
+                <div className="breakdown-bar referrer">
+                  <div className="bar-label">
+                    <span>Referrer</span>
+                    <span>1.5%</span>
+                  </div>
+                  <div className="bar-fill" style={{ width: '20%' }}></div>
+                </div>
+                
+                <div className="breakdown-bar renteasy">
+                  <div className="bar-label">
+                    <span>RentEasy Platform</span>
+                    <span>3.5%</span>
+                  </div>
+                  <div className="bar-fill" style={{ width: '47%' }}></div>
+                </div>
+                
+                <div className="breakdown-bar total">
+                  <div className="bar-label">
+                    <span>Total Commission</span>
+                    <span>7.5%</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* EARNINGS TAB */}
-      {activeTab === 'earnings' && (
-        <div className="earnings-container">
-          <div className="section-header">
-            <h2>💰 Your Earnings</h2>
-            <p>2.5% commission on successful rentals</p>
-          </div>
-
-          <div className="earnings-summary">
-            <div className="summary-card total">
-              <h4>Total Earnings</h4>
-              <h2>₦{earnings.toLocaleString()}</h2>
-              <p>Lifetime commission earnings</p>
-            </div>
-            
-            <div className="summary-card pending">
-              <h4>Pending Withdrawal</h4>
-              <h2>₦{(earnings * 0.8).toLocaleString()}</h2>
-              <p>Available for withdrawal</p>
-            </div>
-            
-            <div className="summary-card month">
-              <h4>This Month</h4>
-              <h2>₦{(earnings * 0.1).toLocaleString()}</h2>
-              <p>Commission earned this month</p>
-            </div>
-          </div>
-
-          <div className="commission-breakdown-card">
-            <h3>Commission Breakdown</h3>
-            <div className="breakdown-bars">
-              <div className="breakdown-bar manager">
-                <div className="bar-label">
-                  <span>Manager (You)</span>
-                  <span>2.5%</span>
-                </div>
-                <div className="bar-fill" style={{ width: '33%' }}></div>
               </div>
-              
-              <div className="breakdown-bar referrer">
-                <div className="bar-label">
-                  <span>Referrer</span>
-                  <span>1.5%</span>
+            </div>
+
+            <div className="withdrawal-section">
+              <h3>Withdraw Earnings</h3>
+              <div className="withdrawal-card">
+                <div className="withdrawal-info">
+                  <div className="info-item">
+                    <span className="label">Available Balance:</span>
+                    <span className="value">₦{stats.totalEarnings.toLocaleString()}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="label">Minimum Withdrawal:</span>
+                    <span className="value">₦5,000</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="label">Processing Time:</span>
+                    <span className="value">24-48 hours</span>
+                  </div>
                 </div>
-                <div className="bar-fill" style={{ width: '13%' }}></div>
-              </div>
-              
-              <div className="breakdown-bar renteasy">
-                <div className="bar-label">
-                  <span>RentEasy Platform</span>
-                  <span>3.5%</span>
-                </div>
-                <div className="bar-fill" style={{ width: '54%' }}></div>
-              </div>
-              
-              <div className="breakdown-bar total">
-                <div className="bar-label">
-                  <span>Total Commission</span>
-                  <span>7.5%</span>
+                
+                <div className="withdrawal-actions">
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => navigate('/dashboard/manager/withdraw')}
+                    disabled={stats.totalEarnings < 5000}
+                  >
+                    Request Withdrawal
+                  </button>
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={() => navigate('/dashboard/manager/payments')}
+                  >
+                    View Payment History
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-
-          <div className="withdrawal-section">
-            <h3>Withdraw Earnings</h3>
-            <div className="withdrawal-card">
-              <div className="withdrawal-info">
-                <div className="info-item">
-                  <span className="label">Available Balance:</span>
-                  <span className="value">₦{earnings.toLocaleString()}</span>
-                </div>
-                <div className="info-item">
-                  <span className="label">Minimum Withdrawal:</span>
-                  <span className="value">₦5,000</span>
-                </div>
-                <div className="info-item">
-                  <span className="label">Processing Time:</span>
-                  <span className="value">24-48 hours</span>
-                </div>
-              </div>
-              
-              <div className="withdrawal-actions">
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => alert('Withdrawal feature coming soon!')}
-                >
-                  Request Withdrawal
-                </button>
-                <button 
-                  className="btn btn-secondary"
-                  onClick={() => navigate('/dashboard/manager/payments')}
-                >
-                  View Payment History
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
 };
 
 export default ManagerDashboard;

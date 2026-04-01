@@ -1,3 +1,4 @@
+// src/modules/dashboard/pages/landlord/Analytics.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../shared/context/AuthContext';
@@ -5,7 +6,8 @@ import { supabase } from '../../../../shared/lib/supabaseClient';
 import {
   TrendingUp, DollarSign, Home, BarChart3,
   ArrowLeft, Download, MapPin, Zap,
-  Users, Calendar, Clock, CheckCircle, XCircle
+  Users, Calendar, Clock, CheckCircle, XCircle,
+  HelpCircle, FileText
 } from 'lucide-react';
 import './Analytics.css';
 
@@ -24,33 +26,28 @@ const Analytics = () => {
     try {
       setIsLoading(true);
 
-      // 1. Get all properties (listings) owned by this landlord
+      // 1. Get all listings (properties) owned by this landlord
       const { data: listings, error: listError } = await supabase
         .from('listings')
-        .select(`
-          id,
-          title,
-          address,
-          city,
-          state,
-          price,
-          property_type,
-          created_at,
-          units (
-            id,
-            unit_number,
-            tenant_id,
-            rent_amount,
-            rent_frequency
-          )
-        `)
-        .eq('landlord_id', user.id)  // landlord_id in listings (from your schema)
+        .select('*')
+        .eq('landlord_id', user.id)
         .order('created_at', { ascending: false });
 
       if (listError) throw listError;
 
-      // 2. Collect all unit IDs
-      const unitIds = (listings || []).flatMap(p => (p.units || []).map(u => u.id));
+      const listingIds = (listings || []).map(l => l.id);
+
+      // 2. Get all units linked to these listings (by listing_id)
+      let units = [];
+      if (listingIds.length > 0) {
+        const { data: unitsData, error: unitsError } = await supabase
+          .from('units')
+          .select('*')
+          .in('listing_id', listingIds);
+        if (!unitsError) units = unitsData || [];
+      }
+
+      const unitIds = units.map(u => u.id);
 
       // 3. Fetch rent payments for these units
       let payments = [];
@@ -59,11 +56,8 @@ const Analytics = () => {
           .from('rent_payments')
           .select(`
             *,
-            unit:unit_id (
-              unit_number,
-              property:property_id (id, title)
-            ),
-            tenant:tenant_id (id, name, email, phone)
+            unit:unit_id (*),
+            tenant:tenant_id (id, full_name, email, phone)
           `)
           .in('unit_id', unitIds)
           .order('due_date', { ascending: false });
@@ -73,21 +67,17 @@ const Analytics = () => {
 
       // 4. Fetch commissions (if any – adjust table name if needed)
       const { data: commissions, error: commError } = await supabase
-        .from('tenant_commissions')   // adjust if different table
+        .from('commissions')
         .select('*')
         .eq('landlord_id', user.id)
         .eq('status', 'paid');
-
-      if (commError && commError.code !== 'PGRST116') throw commError; // ignore if table missing
+      if (commError && commError.code !== 'PGRST116') throw commError;
 
       // 5. Process data
       const totalProperties = listings?.length || 0;
-      const totalUnits = unitIds.length;
-      const occupiedUnits = (listings || []).reduce(
-        (sum, p) => sum + (p.units || []).filter(u => u.tenant_id).length, 0
-      );
+      const totalUnits = units.length;
+      const occupiedUnits = units.filter(u => u.tenant_id).length;
 
-      // Rent stats
       const totalRentDue = payments.reduce((sum, p) => sum + (p.amount_due || 0), 0);
       const totalRentCollected = payments
         .filter(p => p.status === 'confirmed')
@@ -99,7 +89,7 @@ const Analytics = () => {
         p.status !== 'confirmed' && new Date(p.due_date) < new Date()
       ).length;
 
-      // Group payments by month for chart
+      // Monthly chart data
       const monthlyData = {};
       payments.forEach(p => {
         if (p.status === 'confirmed') {
@@ -130,8 +120,16 @@ const Analytics = () => {
         .sort((a, b) => b.totalRent - a.totalRent)
         .slice(0, 5);
 
-      // Commission total
       const totalCommission = commissions?.reduce((sum, c) => sum + Number(c.amount || c.commission_amount), 0) || 0;
+
+      // Prepare properties with units (for table)
+      const propertiesWithUnits = (listings || []).map(property => {
+        const propertyUnits = units.filter(u => u.listing_id === property.id);
+        return {
+          ...property,
+          units: propertyUnits
+        };
+      });
 
       setAnalyticsData({
         totalProperties,
@@ -150,7 +148,8 @@ const Analytics = () => {
           const [y, mo] = m.split('-');
           return `${mo}/${y.slice(2)}`;
         }),
-        properties: listings || []
+        properties: propertiesWithUnits,
+        payments
       });
 
     } catch (error) {
@@ -176,9 +175,17 @@ const Analytics = () => {
           <h1>Rental Performance Analytics</h1>
           <p>Real-time insights for your portfolio</p>
         </div>
-        <button className="export-btn" onClick={() => alert('Export to CSV')}>
-          <Download size={18} /> Export
-        </button>
+        <div className="header-actions">
+          <button className="support-btn" onClick={() => navigate('/dashboard/landlord/support')}>
+            <HelpCircle size={18} /> Support
+          </button>
+          <button className="report-btn" onClick={() => navigate('/dashboard/landlord/reports')}>
+            <FileText size={18} /> Reports
+          </button>
+          <button className="export-btn" onClick={() => alert('Export to CSV')}>
+            <Download size={18} /> Export
+          </button>
+        </div>
       </header>
 
       {/* Key Stats Row */}
@@ -276,7 +283,10 @@ const Analytics = () => {
             {analyticsData.chartData.length > 0 ? (
               analyticsData.chartData.map((value, i) => (
                 <div key={i} className="bar-wrapper">
-                  <div className="bar" style={{ height: `${(value / Math.max(...analyticsData.chartData)) * 100}%` }}></div>
+                  <div
+                    className="bar"
+                    style={{ height: `${(value / Math.max(...analyticsData.chartData)) * 100}%` }}
+                  ></div>
                   <span>{analyticsData.chartMonths[i]}</span>
                 </div>
               ))
@@ -294,8 +304,8 @@ const Analytics = () => {
               <div className="top-prop-item" key={item.tenant.id}>
                 <div className="rank">{idx + 1}</div>
                 <div className="prop-info">
-                  <h4>{item.tenant.name}</h4>
-                  <p><Calendar size={12}/> Last: {new Date(item.lastPayment).toLocaleDateString()}</p>
+                  <h4>{item.tenant.full_name || item.tenant.name}</h4>
+                  <p><Calendar size={12} /> Last: {new Date(item.lastPayment).toLocaleDateString()}</p>
                 </div>
                 <div className="prop-val">
                   {formatCurrency(item.totalRent)}
@@ -326,8 +336,7 @@ const Analytics = () => {
               {analyticsData.properties.map(prop => {
                 const units = prop.units || [];
                 const occupied = units.filter(u => u.tenant_id).length;
-                // For simplicity, we'll sum rent payments for this property
-                const propPayments = payments?.filter(p => p.unit?.property?.id === prop.id) || [];
+                const propPayments = analyticsData.payments.filter(p => p.unit?.listing_id === prop.id);
                 const collected = propPayments
                   .filter(p => p.status === 'confirmed')
                   .reduce((sum, p) => sum + p.amount_due, 0);
@@ -350,9 +359,9 @@ const Analytics = () => {
         </div>
       </section>
 
-      {/* Smart Recommendations (unchanged) */}
+      {/* Smart Recommendations */}
       <section className="recommend-section">
-        <h3><Zap size={18} color="#f59e0b" fill="#f59e0b"/> RentEasy AI Tips</h3>
+        <h3><Zap size={18} color="#f59e0b" fill="#f59e0b" /> RentEasy AI Tips</h3>
         <div className="tips-scroll">
           <div className="tip-card">
             <h4>Maximize Profit</h4>

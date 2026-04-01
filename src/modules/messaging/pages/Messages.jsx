@@ -3,10 +3,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import { messagesService } from '../../../shared/services/messagesService';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
-import { 
-  Home, Shield
-} from 'lucide-react';
+import { Home, Shield, Paperclip, X, Image, Video, File } from 'lucide-react';
 import './Messages.css';
 
 const Messages = () => {
@@ -24,22 +23,25 @@ const Messages = () => {
   const [userRole, setUserRole] = useState(null);
   const [isStaff, setIsStaff] = useState(false);
   const [staffRole, setStaffRole] = useState(null);
-
-  // New state for rental flow
-  const [viewings, setViewings] = useState([]);
   const [rentalConfirmation, setRentalConfirmation] = useState(null);
-  const [paymentProofs, setPaymentProofs] = useState([]);
+  const [showDispute, setShowDispute] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  
+  // File upload states
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [showFilePreview, setShowFilePreview] = useState(false);
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const subscriptionRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
   // Get user role on mount
   useEffect(() => {
     const getUserRole = async () => {
       if (!user) return;
       try {
-        // Check if user is estate-firm staff
         const { data: roleData } = await supabase
           .from('estate_firm_profiles')
           .select('staff_role, is_staff_account')
@@ -61,8 +63,33 @@ const Messages = () => {
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   }, [messages]);
+
+  // Detect keyboard on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.visualViewport) {
+        const viewportHeight = window.visualViewport.height;
+        const windowHeight = window.innerHeight;
+        const isKeyboardOpen = viewportHeight < windowHeight - 100;
+        
+        if (isKeyboardOpen) {
+          document.body.classList.add('keyboard-visible');
+          setTimeout(() => scrollToBottom(), 100);
+        } else {
+          document.body.classList.remove('keyboard-visible');
+        }
+      }
+    };
+
+    window.visualViewport?.addEventListener('resize', handleResize);
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, []);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   // Cleanup subscription
   useEffect(() => {
@@ -95,10 +122,17 @@ const Messages = () => {
     }
   }, [chat?.id]);
 
-  // Helper to format time
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const isValidUUID = (uuid) => {
@@ -106,7 +140,6 @@ const Messages = () => {
     return uuid && typeof uuid === 'string' && uuidRegex.test(uuid);
   };
 
-  // Fetch listing by ID
   const fetchListing = async (id) => {
     const { data, error } = await supabase
       .from('listings')
@@ -117,41 +150,6 @@ const Messages = () => {
     return data;
   };
 
-  // Fetch viewings for this chat
-  const fetchViewings = async (chatId) => {
-    const { data, error } = await supabase
-      .from('viewings')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    setViewings(data || []);
-  };
-
-  // Fetch rental confirmation for this chat/listing
-  const fetchRentalConfirmation = async (listingId, chatId) => {
-    const { data, error } = await supabase
-      .from('rental_confirmations')
-      .select('*')
-      .eq('listing_id', listingId)
-      .eq('chat_id', chatId)
-      .maybeSingle();
-    if (error) throw error;
-    setRentalConfirmation(data || null);
-  };
-
-  // Fetch payment proofs for this chat
-  const fetchPaymentProofs = async (chatId) => {
-    const { data, error } = await supabase
-      .from('payment_proofs')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    setPaymentProofs(data || []);
-  };
-
-  // Load existing chat by ID
   const loadExistingChat = async (id) => {
     try {
       setLoading(true);
@@ -168,8 +166,7 @@ const Messages = () => {
       }
 
       if (!isValidUUID(chatData.listing_id)) {
-        console.error('Invalid listing_id in chat:', chatData.listing_id);
-        alert('This chat has an invalid reference to a listing. Please contact support.');
+        alert('This chat has an invalid reference to a listing.');
         navigate('/listings');
         return;
       }
@@ -186,35 +183,58 @@ const Messages = () => {
 
       await fetchParticipantProfiles(chatData);
       await fetchMessages(id);
-      await fetchViewings(id);
-      await fetchRentalConfirmation(listingData.id, id);
-      await fetchPaymentProofs(id);
+      await loadRentalConfirmation(listingData.id, id);
     } catch (error) {
       console.error('Error loading chat:', error);
+      alert('Failed to load chat');
     } finally {
       setLoading(false);
     }
   };
 
-  // Check if current user has access to chat (business rules with role-based access)
+  const loadOrCreateChat = async (id) => {
+    try {
+      setLoading(true);
+      
+      if (!isValidUUID(id)) {
+        alert('Invalid listing ID');
+        navigate('/listings');
+        return;
+      }
+
+      const listingData = await fetchListing(id);
+      setListing(listingData);
+      
+      const result = await messagesService.initiateContact(id, user.id, user.role);
+      
+      if (result.existing) {
+        navigate(`/dashboard/messages/chat/${result.chatId}`);
+      } else {
+        navigate(`/dashboard/messages/chat/${result.chatId}`);
+      }
+      
+    } catch (error) {
+      console.error('Error creating chat:', error);
+      alert(error.message);
+      navigate('/listings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const hasChatAccess = (chat) => {
     if (!user) return false;
     if (user.role === 'admin' || user.role === 'super-admin') return true;
     
-    // Estate firm staff access control
     if (user.role === 'estate-firm') {
       if (isStaff) {
-        // For associates: only see chats related to their listings
         if (staffRole === 'associate') {
-          // Check if this chat is related to a listing created by this associate
           return chat.created_by_staff_id === user.id;
         }
-        // For executives: can see all chats of the firm
         if (staffRole === 'executive') {
           return true;
         }
       }
-      // Principal (non-staff) can see all
       return true;
     }
     
@@ -225,7 +245,6 @@ const Messages = () => {
     );
   };
 
-  // Fetch profiles for all participants
   const fetchParticipantProfiles = async (chat) => {
     const ids = [
       chat.participant1_id,
@@ -239,17 +258,13 @@ const Messages = () => {
       .select('id, full_name, role, avatar_url')
       .in('id', ids);
 
-    if (error) {
-      console.error('Error fetching participant profiles:', error);
-      return;
+    if (!error && data) {
+      const profileMap = {};
+      data.forEach(p => { profileMap[p.id] = p; });
+      setParticipantProfiles(profileMap);
     }
-
-    const profileMap = {};
-    data.forEach(p => { profileMap[p.id] = p; });
-    setParticipantProfiles(profileMap);
   };
 
-  // Fetch messages for a chat
   const fetchMessages = async (id) => {
     const { data, error } = await supabase
       .from('messages')
@@ -269,7 +284,17 @@ const Messages = () => {
     }
   };
 
-  // Subscribe to new messages in real-time
+  const loadRentalConfirmation = async (listingId, chatId) => {
+    const { data } = await supabase
+      .from('rental_confirmations')
+      .select('*')
+      .eq('listing_id', listingId)
+      .eq('chat_id', chatId)
+      .maybeSingle();
+    
+    setRentalConfirmation(data);
+  };
+
   const subscribeToMessages = (chatId) => {
     if (subscriptionRef.current) {
       supabase.removeChannel(subscriptionRef.current);
@@ -297,949 +322,546 @@ const Messages = () => {
     subscriptionRef.current = channel;
   };
 
-  // Get user-specific message text for system messages
-  const getUserSpecificMessage = (msg) => {
-    if (!msg.is_system_message) return msg.content;
-    
-    const content = msg.content;
-    const listingTitle = listing?.title || 'the property';
-    const posterId = listing?.poster_id || listing?.user_id;
-    
-    // Tenant contacting estate firm
-    if (content.includes('You\'ve contacted the estate firm')) {
-      if (user.id === posterId) {
-        return `👋 A tenant has contacted you about "${listingTitle}". Please respond to their inquiry.`;
+  // File upload handling
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    const validFiles = files.filter(file => {
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size > maxSize) {
+        alert(`${file.name} is too large. Max size 50MB`);
+        return false;
       }
-      return content;
-    }
+      return true;
+    });
     
-    // Tenant contacting landlord
-    if (content.includes('You\'ve contacted the landlord')) {
-      if (user.id === posterId) {
-        return `👋 A tenant has contacted you about "${listingTitle}". Please respond to their inquiry.`;
-      }
-      return content;
-    }
-    
-    // Tenant contacting outgoing tenant
-    if (content.includes('You\'ve contacted the outgoing tenant')) {
-      if (user.id === posterId) {
-        return `👋 A tenant has contacted you about "${listingTitle}". Please respond to their inquiry.`;
-      }
-      return content;
-    }
-    
-    // Manager assigned message
-    if (content.includes('manager has accepted')) {
-      return content;
-    }
-    
-    return content;
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+    setShowFilePreview(true);
+    e.target.value = '';
   };
 
-  // Load or create a chat for a listing (add created_by_staff_id for estate firm staff)
-  const loadOrCreateChat = async (listingId) => {
-    try {
-      setLoading(true);
-
-      if (!isValidUUID(listingId)) {
-        alert('Invalid listing ID');
-        navigate('/listings');
-        return;
-      }
-
-      const listingData = await fetchListing(listingId);
-      setListing(listingData);
-
-      const { data: existingChats, error: fetchError } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('listing_id', listingId);
-
-      if (fetchError) throw fetchError;
-
-      let existingChat = existingChats?.find(c =>
-        c.participant1_id === user.id ||
-        c.participant2_id === user.id ||
-        c.monitoring_manager_id === user.id
-      );
-
-      if (existingChat) {
-        if (!hasChatAccess(existingChat)) {
-          alert('Access denied');
-          navigate('/listings');
-          return;
-        }
-        setChat(existingChat);
-        await fetchParticipantProfiles(existingChat);
-        await fetchMessages(existingChat.id);
-        await fetchViewings(existingChat.id);
-        await fetchRentalConfirmation(listingData.id, existingChat.id);
-        await fetchPaymentProofs(existingChat.id);
-        setLoading(false);
-        return;
-      }
-
-      // Determine participants based on listing poster and current user role
-      const posterId = listingData.user_id;
-      const posterRole = listingData.poster_role;
-      const currentUserRole = user.role;
-      
-      let participant1_id = null;
-      let participant2_id = user.id;
-      let monitoring_manager_id = null;
-      let commission_applied = false;
-      let estate_firm_listing = false;
-      let state = 'active';
-      let chatType = 'direct';
-      let needsManager = false;
-      let created_by_staff_id = null;
-
-      // Add staff tracking for estate firm staff
-      if (currentUserRole === 'estate-firm' && isStaff) {
-        created_by_staff_id = user.id;
-      }
-
-      // BUSINESS RULES IMPLEMENTATION (same as before)
-      if (currentUserRole === 'tenant') {
-        if (posterRole === 'estate-firm') {
-          participant1_id = posterId;
-          commission_applied = false;
-          state = 'active';
-          chatType = 'tenant_estate_firm';
-          needsManager = false;
-        } else if (posterRole === 'landlord') {
-          participant1_id = posterId;
-          commission_applied = true;
-          state = 'active';
-          chatType = 'tenant_landlord';
-          needsManager = true;
-          monitoring_manager_id = null;
-        } else if (posterRole === 'tenant') {
-          participant1_id = posterId;
-          commission_applied = true;
-          state = 'pending_manager';
-          chatType = 'tenant_tenant';
-          needsManager = true;
-          monitoring_manager_id = null;
-        }
-      } else if (currentUserRole === 'estate-firm') {
-        if (posterRole === 'tenant') {
-          participant1_id = posterId;
-          commission_applied = true;
-          state = 'pending_manager';
-          chatType = 'tenant_tenant';
-          needsManager = true;
-          monitoring_manager_id = null;
-        } else if (posterRole === 'landlord') {
-          participant1_id = posterId;
-          commission_applied = true;
-          state = 'active';
-          chatType = 'tenant_landlord';
-          needsManager = true;
-          monitoring_manager_id = null;
-        } else if (posterRole === 'estate-firm') {
-          participant1_id = posterId;
-          estate_firm_listing = true;
-          commission_applied = false;
-          state = 'active';
-          chatType = 'direct';
-          needsManager = false;
-        }
-      } else if (currentUserRole === 'landlord') {
-        if (posterRole === 'estate-firm') {
-          participant1_id = posterId;
-          commission_applied = false;
-          state = 'active';
-          chatType = 'tenant_estate_firm';
-          needsManager = false;
-        } else if (posterRole === 'landlord') {
-          participant1_id = posterId;
-          commission_applied = true;
-          state = 'active';
-          chatType = 'direct';
-          needsManager = false;
-        } else if (posterRole === 'tenant') {
-          throw new Error('Landlords cannot directly contact tenants. Please use the proper channels.');
-        }
-      } else if (currentUserRole === 'manager') {
-        participant1_id = posterId;
-        monitoring_manager_id = user.id;
-        commission_applied = true;
-        state = 'active';
-        chatType = 'direct';
-        needsManager = false;
-      }
-
-      if (user.id === participant1_id) {
-        throw new Error('You cannot contact yourself for your own listing');
-      }
-
-      const { data: newChat, error: createError } = await supabase
-        .from('chats')
-        .insert([{
-          listing_id: listingId,
-          participant1_id,
-          participant2_id,
-          monitoring_manager_id,
-          state,
-          chat_type: chatType,
-          commission_applied,
-          estate_firm_listing: posterRole === 'estate-firm',
-          manager_assigned: !!monitoring_manager_id,
-          needs_manager: needsManager,
-          created_by_staff_id: created_by_staff_id, // Add staff tracking
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          unread_count: 1
-        }])
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('Chat creation error:', createError);
-        throw createError;
-      }
-
-      setChat(newChat);
-      await fetchParticipantProfiles(newChat);
-
-      // Add appropriate system message
-      let systemMessage = '';
-      
-      if (currentUserRole === 'tenant') {
-        if (posterRole === 'estate-firm') {
-          systemMessage = `👋 Hello! You've contacted the estate firm for "${listingData.title}". They will respond to your inquiry shortly.`;
-        } else if (posterRole === 'landlord') {
-          systemMessage = `👋 Hello! You've contacted the landlord for "${listingData.title}". A RentEasy manager will monitor this conversation to ensure a smooth process.`;
-        } else if (posterRole === 'tenant') {
-          systemMessage = `👋 Hello! You've contacted the outgoing tenant for "${listingData.title}". A RentEasy manager will be assigned to assist you shortly.`;
-        }
-      } else if (currentUserRole === 'estate-firm') {
-        if (posterRole === 'tenant') {
-          systemMessage = `👋 Hello! You've contacted a tenant about their outgoing property "${listingData.title}". A RentEasy manager will be assigned to facilitate.`;
-        } else if (posterRole === 'landlord') {
-          systemMessage = `👋 Hello! You've contacted the landlord for "${listingData.title}". A RentEasy manager will monitor this conversation.`;
-        } else if (posterRole === 'estate-firm') {
-          systemMessage = `👋 Hello! You've contacted another estate firm about "${listingData.title}".`;
-        }
-      } else if (currentUserRole === 'landlord') {
-        if (posterRole === 'estate-firm') {
-          systemMessage = `👋 Hello! You've contacted the estate firm for "${listingData.title}". They will respond shortly.`;
-        } else {
-          systemMessage = `Chat started for "${listingData.title}"`;
-        }
-      } else if (currentUserRole === 'manager') {
-        systemMessage = `👨‍💼 Manager ${user.email} has joined the conversation for "${listingData.title}".`;
-      }
-
-      await supabase.from('messages').insert([{
-        chat_id: newChat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        content: systemMessage,
-        is_system_message: true,
-        created_at: new Date().toISOString()
-      }]);
-
-      if (participant1_id && participant1_id !== user.id) {
-        await supabase.from('notifications').insert([{
-          user_id: participant1_id,
-          title: 'New Message',
-          message: `You have a new message about "${listingData.title}" from a ${currentUserRole}`,
-          type: 'chat',
-          link: `/dashboard/messages/chat/${newChat.id}`,
-          created_at: new Date().toISOString()
-        }]);
-      }
-
-      if (state === 'pending_manager') {
-        await notifyAvailableManagers(listingData, newChat.id);
-      }
-      
-      if (needsManager && state === 'active') {
-        await notifyManagersForMonitoring(listingData, newChat.id);
-      }
-
-      setMessages([]);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error creating chat:', error);
-      alert(`Could not start conversation: ${error.message}`);
-      setLoading(false);
+  const removeFile = (index) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    if (selectedFiles.length === 1) {
+      setShowFilePreview(false);
     }
   };
 
-  // Notify managers for monitoring (not assignment)
-  const notifyManagersForMonitoring = async (listing, chatId) => {
-    try {
-      const { data: managers } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .eq('role', 'manager')
-        .eq('verified', true)
-        .eq('state', listing.state)
-        .limit(10);
-
-      if (managers && managers.length > 0) {
-        const notifications = managers.map(manager => ({
-          user_id: manager.id,
-          title: 'Chat Monitoring Opportunity',
-          message: `A conversation has started about a property in ${listing.city || listing.state}. You can monitor this chat.`,
-          type: 'chat_monitoring',
-          data: { listingId: listing.id, chatId, action: 'monitor' },
-          created_at: new Date().toISOString()
-        }));
-
-        await supabase.from('notifications').insert(notifications);
-      }
-    } catch (error) {
-      console.error('Error notifying managers for monitoring:', error);
-    }
+  const getFileIcon = (file) => {
+    if (file.type.startsWith('image/')) return <Image size={20} />;
+    if (file.type.startsWith('video/')) return <Video size={20} />;
+    return <File size={20} />;
   };
 
-  // Accept as manager (when manager receives proximity notification)
-  const acceptAsManager = async () => {
-    if (user.role !== 'manager') return;
+  const uploadFile = async (file, chatId) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${chatId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `chat-attachments/${fileName}`;
 
-    try {
-      const { error } = await supabase
-        .from('chats')
-        .update({
-          monitoring_manager_id: user.id,
-          manager_assigned: true,
-          state: 'active',
-        })
-        .eq('id', chat.id);
-
-      if (error) throw error;
-
-      await supabase
-        .from('listings')
-        .update({
-          assigned_manager_id: user.id,
-          verification_status: 'pending_verification'
-        })
-        .eq('id', listing.id);
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `👨‍💼 Manager ${participantProfiles[user.id]?.full_name || user.email} has accepted this listing.`,
-        is_system_message: true,
-      }]);
-
-      const { data: updatedChat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chat.id)
-        .single();
-      setChat(updatedChat);
-      await fetchParticipantProfiles(updatedChat);
-    } catch (error) {
-      console.error('Error accepting as manager:', error);
-      alert('Failed to accept as manager');
-    }
-  };
-
-  // Respond to availability prompt (landlord/estate firm)
-  const respondAvailability = async (isAvailable) => {
-    if (chat.state !== 'pending_availability') return;
-
-    try {
-      const updates = {
-        availability_confirmed: isAvailable,
-        state: isAvailable ? 'active' : 'locked',
-      };
-
-      const { error } = await supabase
-        .from('chats')
-        .update(updates)
-        .eq('id', chat.id);
-
-      if (error) throw error;
-
-      const role = listing.poster_role === 'landlord' ? 'Landlord' : 'Estate Firm';
-      const content = isAvailable
-        ? `✅ ${role} confirmed property is available. Chat is now active.`
-        : `❌ ${role} indicated property is not available. Chat locked.`;
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content,
-        is_system_message: true,
-      }]);
-
-      const { data: updatedChat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chat.id)
-        .single();
-      setChat(updatedChat);
-    } catch (error) {
-      console.error('Error responding availability:', error);
-    }
-  };
-
-  const [markingAsRented, setMarkingAsRented] = useState(false);
-
-  const markAsRentedFromChat = async () => {
-    let canMark = false;
-    let roleDescription = '';
-    
-    if (listing.poster_role === 'tenant') {
-      const isIncomingTenant = user.id === chat.participant2_id;
-      const isManager = user.role === 'manager' && chat.monitoring_manager_id === user.id;
-      
-      if (isIncomingTenant) {
-        canMark = true;
-        roleDescription = 'incoming tenant';
-      } else if (isManager) {
-        canMark = true;
-        roleDescription = 'manager';
-      } else {
-        alert('Only the incoming tenant or the assigned manager can mark this property as rented.');
-        return;
-      }
-    } 
-    else if (listing.poster_role === 'landlord') {
-      const isIncomingTenant = user.id === chat.participant2_id;
-      const isLandlord = user.id === listing.user_id;
-      const isManager = user.role === 'manager';
-      
-      if (isIncomingTenant) {
-        canMark = true;
-        roleDescription = 'incoming tenant';
-      } else if (isLandlord) {
-        canMark = true;
-        roleDescription = 'landlord';
-      } else if (isManager) {
-        canMark = true;
-        roleDescription = 'manager';
-      } else {
-        alert('Only the incoming tenant, landlord, or a manager can mark this property as rented.');
-        return;
-      }
-    } 
-    else if (listing.poster_role === 'estate-firm') {
-      if (user.role === 'estate-firm') {
-        canMark = true;
-        roleDescription = 'estate firm';
-      } else {
-        alert('Only the estate firm can mark this property as rented.');
-        return;
-      }
-    }
-    
-    if (!canMark) return;
-    
-    if (!window.confirm(`Mark this property as rented? This will remove the listing from the marketplace.`)) return;
-    
-    setMarkingAsRented(true);
-    try {
-      const { error: listingError } = await supabase
-        .from('listings')
-        .update({
-          status: 'rented',
-          rented_at: new Date().toISOString(),
-          rented_by: user.id,
-          marked_by_role: roleDescription
-        })
-        .eq('id', listing.id);
-      
-      if (listingError) throw listingError;
-
-      const notifications = [];
-      
-      if (chat.participant2_id !== user.id) {
-        notifications.push({
-          user_id: chat.participant2_id,
-          type: 'listing_rented',
-          title: 'Property Rented!',
-          message: `The property "${listing.title}" has been rented. You will receive lease details shortly.`,
-          link: '/dashboard/tenant/leases',
-          created_at: new Date().toISOString()
-        });
-      }
-      
-      if (listing.user_id !== user.id) {
-        let posterMessage = '';
-        if (listing.poster_role === 'tenant') {
-          posterMessage = `Your property "${listing.title}" has been rented.`;
-        } else if (listing.poster_role === 'landlord') {
-          posterMessage = `Your property "${listing.title}" has been rented.`;
-        } else {
-          posterMessage = `Your listing "${listing.title}" has been rented.`;
-        }
-        
-        notifications.push({
-          user_id: listing.user_id,
-          type: 'listing_rented',
-          title: 'Your Listing Has Been Rented',
-          message: posterMessage,
-          link: '/dashboard/my-listings',
-          created_at: new Date().toISOString()
-        });
-      }
-      
-      if (chat.monitoring_manager_id && chat.monitoring_manager_id !== user.id) {
-        notifications.push({
-          user_id: chat.monitoring_manager_id,
-          type: 'listing_rented',
-          title: 'Property Rented',
-          message: `The property "${listing.title}" has been rented.`,
-          link: '/dashboard/manager/properties',
-          created_at: new Date().toISOString()
-        });
-      }
-      
-      if (notifications.length > 0) {
-        await supabase.from('notifications').insert(notifications);
-      }
-
-      let systemMessage = '';
-      if (listing.poster_role === 'tenant') {
-        systemMessage = `🏠 Property has been marked as RENTED by ${roleDescription === 'manager' ? 'Manager' : 'Incoming Tenant'}! The listing will be removed from the marketplace.`;
-      } else if (listing.poster_role === 'landlord') {
-        systemMessage = `🏠 Property has been marked as RENTED by ${roleDescription === 'manager' ? 'Manager' : roleDescription === 'landlord' ? 'Landlord' : 'Incoming Tenant'}! The listing will be removed from the marketplace.`;
-      } else {
-        systemMessage = `🏠 Property has been marked as RENTED by the Estate Firm! The listing will be removed from the marketplace.`;
-      }
-      
-      await supabase.from('messages').insert({
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        content: systemMessage,
-        is_system_message: true,
-        created_at: new Date().toISOString()
+    const { error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
       });
 
-      setListing({ ...listing, status: 'rented' });
-      alert('Property marked as rented successfully! The listing will now appear in "My Listings" for conversion.');
-      await fetchMessages(chat.id);
-      
-    } catch (error) {
-      console.error('Error marking as rented:', error);
-      alert('Failed to mark as rented. Please try again.');
-    } finally {
-      setMarkingAsRented(false);
-    }
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(filePath);
+
+    return {
+      url: urlData.publicUrl,
+      name: file.name,
+      type: file.type,
+      size: file.size
+    };
   };
 
-  // Record viewing outcome (manager only)
-  const recordViewingOutcome = async (outcome, notes = '') => {
-    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
-      alert('Only the assigned manager can record viewing outcomes');
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('viewings')
-        .insert([{
-          chat_id: chat.id,
-          listing_id: listing.id,
-          manager_id: user.id,
-          tenant_id: chat.participant2_id,
-          outcome,
-          notes,
-        }]);
-      if (error) throw error;
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `👁️ Viewing outcome: ${outcome} ${notes ? `– ${notes}` : ''}`,
-        is_system_message: true,
-      }]);
-
-      await fetchViewings(chat.id);
-    } catch (error) {
-      console.error('Error recording viewing outcome:', error);
-      alert('Failed to record outcome');
-    }
-  };
-
-  // Mark listing as taken (manager only)
-  const markAsTaken = async () => {
-    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
-      alert('Only assigned manager can mark as taken');
-      return;
-    }
-
-    const acceptedViewing = viewings.find(v => v.outcome === 'accepted');
-    if (!acceptedViewing) {
-      alert('Tenant must accept the house before marking as taken');
-      return;
-    }
-
-    try {
-      await supabase
-        .from('listings')
-        .update({ status: 'taken', taken_at: new Date().toISOString() })
-        .eq('id', listing.id);
-
-      const { error: rcError } = await supabase
-        .from('rental_confirmations')
-        .insert([{
-          listing_id: listing.id,
-          chat_id: chat.id,
-          landlord_confirmed: false,
-          tenant_confirmed: false,
-          admin_confirmed: false,
-        }]);
-      if (rcError) throw rcError;
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `🏠 Property marked as TAKEN. Awaiting landlord and tenant confirmation.`,
-        is_system_message: true,
-      }]);
-
-      await fetchRentalConfirmation(listing.id, chat.id);
-    } catch (error) {
-      console.error('Error marking as taken:', error);
-      alert('Failed to mark as taken');
-    }
-  };
-
-  // Mark as rented (manager only)
-  const markAsRented = async () => {
-    if (user.role !== 'manager' || chat.monitoring_manager_id !== user.id) {
-      alert('Only the assigned manager can mark as rented');
-      return;
-    }
-
-    if (!window.confirm('Confirm this property is rented? This will trigger commission distribution.')) return;
-
-    try {
-      await supabase
-        .from('chats')
-        .update({
-          state: 'rented',
-          rented: true,
-          rented_at: new Date().toISOString(),
-          rented_by: user.id
-        })
-        .eq('id', chat.id);
-
-      await supabase
-        .from('listings')
-        .update({
-          status: 'rented',
-          rented_at: new Date().toISOString()
-        })
-        .eq('id', listing.id);
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `✅ Property marked as RENTED! Commission will be distributed to manager and referrer.`,
-        is_system_message: true,
-      }]);
-
-      const { data: updatedChat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chat.id)
-        .single();
-      setChat(updatedChat);
-    } catch (error) {
-      console.error('Error marking as rented:', error);
-      alert('Failed to mark as rented');
-    }
-  };
-
-  // Tenant confirm rental
-  const tenantConfirmRental = async (confirm) => {
-    if (user.role !== 'tenant' || user.id !== chat.participant2_id) return;
-
-    try {
-      const updates = {
-        tenant_confirmed: confirm,
-        tenant_confirmed_at: new Date().toISOString(),
-      };
-      await supabase
-        .from('rental_confirmations')
-        .update(updates)
-        .eq('listing_id', listing.id)
-        .eq('chat_id', chat.id);
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: confirm ? `✅ Tenant confirmed rental.` : `❌ Tenant denied rental.`,
-        is_system_message: true,
-      }]);
-
-      await fetchRentalConfirmation(listing.id, chat.id);
-    } catch (error) {
-      console.error('Error confirming rental:', error);
-    }
-  };
-
-  // Upload payment proof (tenant)
-  const uploadPaymentProof = async (file, proofType) => {
-    if (!file || !chat) return;
-
-    try {
-      setUploading(true);
-      const fileExt = file.name.split('.').pop();
-      const fileName = `payment_proofs/${chat.id}/${Date.now()}.${fileExt}`;
-      const filePath = fileName;
-
-      const { error: uploadError } = await supabase.storage
-        .from('payment-proofs')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('payment-proofs')
-        .getPublicUrl(filePath);
-
-      const { error: insertError } = await supabase
-        .from('payment_proofs')
-        .insert([{
-          chat_id: chat.id,
-          listing_id: listing.id,
-          tenant_id: user.id,
-          proof_type: proofType,
-          file_url: urlData.publicUrl,
-          description: `Payment proof uploaded by tenant`,
-        }]);
-
-      if (insertError) throw insertError;
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `💰 Tenant uploaded payment proof (${proofType}). Pending verification.`,
-        is_system_message: true,
-      }]);
-
-      await fetchPaymentProofs(chat.id);
-    } catch (error) {
-      console.error('Error uploading payment proof:', error);
-      alert('Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Admin verify payment proof
-  const verifyPaymentProof = async (proofId) => {
-    if (!(user.role === 'admin' || user.role === 'super-admin')) return;
-
-    try {
-      await supabase
-        .from('payment_proofs')
-        .update({
-          verified: true,
-          verified_by: user.id,
-          verified_at: new Date().toISOString(),
-        })
-        .eq('id', proofId);
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `✅ Admin verified payment proof.`,
-        is_system_message: true,
-      }]);
-
-      await fetchPaymentProofs(chat.id);
-    } catch (error) {
-      console.error('Error verifying payment proof:', error);
-    }
-  };
-
-  // Send a message
-  const sendMessage = async () => {
-    if (!messageText.trim() || !chat) return;
+  const sendMessageWithFiles = async () => {
+    if ((!messageText.trim() && selectedFiles.length === 0) || !chat) return;
 
     if (chat.state !== 'active' || chat.admin_locked) {
       alert('This chat is locked. You cannot send messages.');
       return;
     }
 
-    const newMsg = {
-      chat_id: chat.id,
-      sender_id: user.id,
-      content: messageText,
-      is_system_message: false,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
-    setMessageText('');
-
-    const { error } = await supabase.from('messages').insert([newMsg]);
-    if (error) {
-      console.error('Error sending message:', error);
-      alert('Failed to send message');
-      setMessages((prev) => prev.filter(m => m.created_at !== newMsg.created_at));
-    }
-  };
-
-  // Handle file upload (attachments)
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !chat) return;
-
+    setUploading(true);
+    
     try {
-      setUploading(true);
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${chat.id}/${Date.now()}.${fileExt}`;
-      const filePath = `chat-attachments/${fileName}`;
+      // Upload all files first
+      const uploadedFiles = [];
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        try {
+          const uploaded = await uploadFile(file, chat.id);
+          uploadedFiles.push(uploaded);
+          setUploadProgress(prev => ({ ...prev, [i]: 100 }));
+        } catch (error) {
+          console.error(`Error uploading ${file.name}:`, error);
+          alert(`Failed to upload ${file.name}. Please try again.`);
+          setUploading(false);
+          return;
+        }
+      }
 
-      const { error: uploadError } = await supabase.storage
-        .from('chat-attachments')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('chat-attachments')
-        .getPublicUrl(filePath);
-
-      const attachmentMsg = {
+      // Create message with attachments
+      const newMsg = {
         chat_id: chat.id,
         sender_id: user.id,
-        content: `📎 ${file.name}`,
-        attachments: [{ url: urlData.publicUrl, name: file.name, type: file.type }],
+        content: messageText.trim() || (uploadedFiles.length > 0 ? '📎 File attached' : ''),
+        attachments: uploadedFiles,
         is_system_message: false,
         created_at: new Date().toISOString(),
       };
 
-      setMessages((prev) => [...prev, attachmentMsg]);
+      // Add to UI immediately
+      setMessages((prev) => [...prev, newMsg]);
+      setMessageText('');
+      setSelectedFiles([]);
+      setShowFilePreview(false);
+      setUploadProgress({});
 
-      const { error: insertError } = await supabase.from('messages').insert([attachmentMsg]);
-      if (insertError) throw insertError;
+      // Save to database
+      const { error } = await supabase.from('messages').insert([newMsg]);
+      if (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message');
+        setMessages((prev) => prev.filter(m => m.created_at !== newMsg.created_at));
+      }
     } catch (error) {
-      console.error('Error uploading file:', error);
-      alert('File upload failed');
+      console.error('Error sending message with files:', error);
+      alert('Failed to send message');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
 
-  // Raise dispute
-  const raiseDispute = async () => {
-    const reason = window.prompt('Please describe the dispute:');
-    if (!reason) return;
+  const sendMessage = async () => {
+    if (!messageText.trim() && selectedFiles.length === 0) return;
+    await sendMessageWithFiles();
+  };
 
-    const disputeData = {
-      reason,
-      raisedBy: user.id,
-      raisedAt: new Date().toISOString(),
-      status: 'pending',
-    };
+  // Render attachment preview
+  const renderAttachment = (attachment, idx) => {
+    if (attachment.type?.startsWith('image/')) {
+      return (
+        <a href={attachment.url} target="_blank" rel="noopener noreferrer" key={idx} className="message-attachment image">
+          <img src={attachment.url} alt={attachment.name} />
+        </a>
+      );
+    } else if (attachment.type?.startsWith('video/')) {
+      return (
+        <video key={idx} controls className="message-attachment video">
+          <source src={attachment.url} type={attachment.type} />
+          Your browser does not support the video tag.
+        </video>
+      );
+    } else {
+      return (
+        <a href={attachment.url} target="_blank" rel="noopener noreferrer" key={idx} className="message-attachment document">
+          <File size={20} />
+          <span>{attachment.name}</span>
+          <small>({formatFileSize(attachment.size)})</small>
+        </a>
+      );
+    }
+  };
 
+  // Rest of the rental confirmation functions (same as before)
+  const handleConfirmRental = async (role) => {
+    if (!chat || !listing) return;
+    
+    const progress = getConfirmationProgress();
+    const roleConfig = progress.roles?.[role];
+    
+    if (roleConfig?.requiresPrevious) {
+      const previousRole = roleConfig.previousRole;
+      const previousConfirmed = progress.roles?.[previousRole]?.confirmed;
+      
+      if (!previousConfirmed) {
+        alert(`Please wait for ${previousRole} to confirm first.`);
+        return;
+      }
+    }
+    
+    setUploading(true);
     try {
-      await supabase
-        .from('chats')
-        .update({ state: 'dispute', dispute: disputeData })
-        .eq('id', chat.id);
-
-      await supabase.from('messages').insert([{
+      const updateData = {};
+      
+      if (role === 'tenant') {
+        updateData.tenant_confirmed = true;
+        updateData.tenant_confirmed_by = user.id;
+        updateData.tenant_confirmed_at = new Date().toISOString();
+      } else if (role === 'manager') {
+        updateData.manager_confirmed = true;
+        updateData.manager_confirmed_by = user.id;
+        updateData.manager_confirmed_at = new Date().toISOString();
+      } else if (role === 'landlord') {
+        updateData.landlord_confirmed = true;
+        updateData.landlord_confirmed_by = user.id;
+        updateData.landlord_confirmed_at = new Date().toISOString();
+      } else if (role === 'estateFirm') {
+        updateData.estate_firm_confirmed = true;
+        updateData.estate_firm_confirmed_by = user.id;
+        updateData.estate_firm_confirmed_at = new Date().toISOString();
+      }
+      
+      if (rentalConfirmation?.id) {
+        await supabase
+          .from('rental_confirmations')
+          .update(updateData)
+          .eq('id', rentalConfirmation.id);
+      } else {
+        await supabase
+          .from('rental_confirmations')
+          .insert({
+            listing_id: listing.id,
+            chat_id: chat.id,
+            ...updateData,
+            current_stage: 'pending'
+          });
+      }
+      
+      await supabase.from('messages').insert({
         chat_id: chat.id,
         sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: `⚖️ Dispute raised by ${user.role}: ${reason}`,
+        content: `✅ ${role.toUpperCase()} has confirmed that this property has been rented.`,
         is_system_message: true,
-      }]);
+        created_at: new Date().toISOString()
+      });
+      
+      await loadRentalConfirmation(listing.id, chat.id);
+      alert(`${role} confirmation recorded!`);
+    } catch (error) {
+      console.error('Error confirming rental:', error);
+      alert('Failed to confirm. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
-      const { data: updatedChat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chat.id)
-        .single();
-      setChat(updatedChat);
+  const handleAdminFinalize = async () => {
+    const progress = getConfirmationProgress();
+    
+    let allConfirmed = true;
+    let missingRole = '';
+    
+    if (listing.poster_role === 'estate-firm') {
+      if (!progress.roles?.tenant?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Tenant';
+      }
+      if (!progress.roles?.estateFirm?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Estate Firm';
+      }
+    } else if (listing.poster_role === 'tenant') {
+      if (!progress.roles?.tenant?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Incoming Tenant';
+      }
+      if (!progress.roles?.manager?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Manager';
+      }
+    } else if (listing.poster_role === 'landlord') {
+      if (!progress.roles?.tenant?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Tenant';
+      }
+      if (!progress.roles?.landlord?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Landlord';
+      }
+      if (!progress.roles?.manager?.confirmed) {
+        allConfirmed = false;
+        missingRole = 'Manager';
+      }
+    }
+    
+    if (!allConfirmed) {
+      alert(`Cannot finalize yet. Waiting for ${missingRole} confirmation.`);
+      return;
+    }
+    
+    if (!window.confirm('All parties have confirmed. Finalize rental?')) return;
+    
+    setUploading(true);
+    try {
+      const rentalAmount = listing.price || 0;
+      
+      await supabase
+        .from('rental_confirmations')
+        .update({
+          admin_confirmed: true,
+          admin_confirmed_by: user.id,
+          admin_confirmed_at: new Date().toISOString(),
+          current_stage: 'completed',
+          commission_distributed: listing.poster_role !== 'estate-firm'
+        })
+        .eq('id', rentalConfirmation.id);
+      
+      if (listing.poster_role !== 'estate-firm') {
+        const managerShare = rentalAmount * 0.025;
+        const referrerShare = rentalAmount * 0.015;
+        
+        await supabase.from('commissions').insert({
+          listing_id: listing.id,
+          manager_id: chat.monitoring_manager_id,
+          referrer_id: listing.user_id,
+          rental_amount: rentalAmount,
+          manager_share: managerShare,
+          referrer_share: referrerShare,
+          platform_share: rentalAmount * 0.035,
+          status: 'pending_distribution'
+        });
+      }
+      
+      await supabase
+        .from('listings')
+        .update({
+          status: 'rented',
+          rented_at: new Date().toISOString(),
+          rented_by: user.id
+        })
+        .eq('id', listing.id);
+      
+      const commissionText = listing.poster_role !== 'estate-firm' 
+        ? `Commission: Manager ₦${(rentalAmount * 0.025).toLocaleString()}, Referrer ₦${(rentalAmount * 0.015).toLocaleString()}`
+        : `No commission (Estate Firm Listing)`;
+      
+      await supabase.from('messages').insert({
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        content: `🏠 RENTAL FINALIZED: Property marked as rented. ${commissionText}`,
+        is_system_message: true,
+        created_at: new Date().toISOString()
+      });
+      
+      alert('Rental finalized successfully!');
+      window.location.reload();
+    } catch (error) {
+      console.error('Error finalizing rental:', error);
+      alert('Failed to finalize rental.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleAdminOverride = async () => {
+    const reason = prompt('Reason for override (required):');
+    if (!reason) return;
+    
+    setUploading(true);
+    try {
+      await supabase
+        .from('rental_confirmations')
+        .update({
+          admin_confirmed: true,
+          admin_confirmed_by: user.id,
+          admin_confirmed_at: new Date().toISOString(),
+          admin_override: true,
+          override_reason: reason,
+          current_stage: 'completed',
+          commission_distributed: listing.poster_role !== 'estate-firm'
+        })
+        .eq('id', rentalConfirmation.id);
+      
+      await supabase.from('messages').insert({
+        chat_id: chat.id,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        content: `👑 ADMIN OVERRIDE: Rental confirmed by admin. Reason: ${reason}`,
+        is_system_message: true,
+        created_at: new Date().toISOString()
+      });
+      
+      alert('Override successful!');
+      window.location.reload();
+    } catch (error) {
+      console.error('Error overriding:', error);
+      alert('Failed to override.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRaiseDispute = async () => {
+    if (!disputeReason) return;
+    
+    setUploading(true);
+    try {
+      await supabase
+        .from('rental_confirmations')
+        .update({
+          disputed: true,
+          dispute_reason: disputeReason,
+          current_stage: 'disputed'
+        })
+        .eq('id', rentalConfirmation.id);
+      
+      await supabase.from('messages').insert({
+        chat_id: chat.id,
+        sender_id: user.id,
+        content: `⚖️ DISPUTE RAISED: ${disputeReason}. Admin will review.`,
+        is_system_message: true,
+        created_at: new Date().toISOString()
+      });
+      
+      alert('Dispute raised. Admin will investigate.');
+      setShowDispute(false);
+      setDisputeReason('');
     } catch (error) {
       console.error('Error raising dispute:', error);
+    } finally {
+      setUploading(false);
     }
   };
 
-  // Admin override
-  const adminOverride = async (action) => {
-    if (!(user.role === 'admin' || user.role === 'super-admin')) return;
-
-    let updates = {};
-    let messageContent = '';
-
-    switch (action) {
-      case 'active':
-        updates = { state: 'active', admin_locked: false };
-        messageContent = '👑 Admin override: Chat set to active.';
-        break;
-      case 'locked':
-        updates = { state: 'locked', admin_locked: true };
-        messageContent = '👑 Admin override: Chat locked.';
-        break;
-      case 'rented':
-        updates = { state: 'rented', rented: true, rented_at: new Date().toISOString(), rented_by: user.id };
-        messageContent = '👑 Admin override: Marked as rented.';
-        break;
-      default:
-        return;
+  const getConfirmationProgress = () => {
+    if (!rentalConfirmation) return { progress: 0, text: 'No confirmation started', roles: null };
+    
+    if (listing.poster_role === 'estate-firm') {
+      const tenantConfirmed = rentalConfirmation.tenant_confirmed;
+      const estateFirmConfirmed = rentalConfirmation.estate_firm_confirmed;
+      const adminConfirmed = rentalConfirmation.admin_confirmed;
+      
+      let confirmedCount = 0;
+      if (tenantConfirmed) confirmedCount++;
+      if (estateFirmConfirmed) confirmedCount++;
+      if (adminConfirmed) confirmedCount++;
+      
+      const isEstateFirm = user.role === 'estate-firm' && user.id === listing.user_id;
+      
+      return {
+        progress: (confirmedCount / 3) * 100,
+        text: `${confirmedCount}/3 confirmations received`,
+        roles: {
+          tenant: { 
+            confirmed: tenantConfirmed, 
+            canConfirm: user.role === 'tenant' && user.id === chat?.participant2_id, 
+            label: 'Tenant',
+            order: 1
+          },
+          estateFirm: { 
+            confirmed: estateFirmConfirmed, 
+            canConfirm: isEstateFirm && tenantConfirmed,
+            label: 'Estate Firm',
+            order: 2,
+            requiresPrevious: true,
+            previousRole: 'tenant'
+          },
+          admin: { 
+            confirmed: adminConfirmed, 
+            canConfirm: (user.role === 'admin' || user.role === 'super-admin') && estateFirmConfirmed,
+            label: 'Admin',
+            order: 3,
+            requiresPrevious: true,
+            previousRole: 'estateFirm'
+          }
+        }
+      };
+    } else if (listing.poster_role === 'tenant') {
+      const tenantConfirmed = rentalConfirmation.tenant_confirmed;
+      const managerConfirmed = rentalConfirmation.manager_confirmed;
+      const adminConfirmed = rentalConfirmation.admin_confirmed;
+      
+      let confirmedCount = 0;
+      if (tenantConfirmed) confirmedCount++;
+      if (managerConfirmed) confirmedCount++;
+      if (adminConfirmed) confirmedCount++;
+      
+      return {
+        progress: (confirmedCount / 3) * 100,
+        text: `${confirmedCount}/3 confirmations received`,
+        roles: {
+          tenant: { 
+            confirmed: tenantConfirmed, 
+            canConfirm: user.role === 'tenant' && user.id === chat?.participant2_id, 
+            label: 'Incoming Tenant',
+            order: 1
+          },
+          manager: { 
+            confirmed: managerConfirmed, 
+            canConfirm: user.role === 'manager' && chat?.monitoring_manager_id === user.id && tenantConfirmed,
+            label: 'Manager',
+            order: 2,
+            requiresPrevious: true,
+            previousRole: 'tenant'
+          },
+          admin: { 
+            confirmed: adminConfirmed, 
+            canConfirm: (user.role === 'admin' || user.role === 'super-admin') && managerConfirmed,
+            label: 'Admin',
+            order: 3,
+            requiresPrevious: true,
+            previousRole: 'manager'
+          }
+        }
+      };
+    } else if (listing.poster_role === 'landlord') {
+      const tenantConfirmed = rentalConfirmation.tenant_confirmed;
+      const landlordConfirmed = rentalConfirmation.landlord_confirmed;
+      const managerConfirmed = rentalConfirmation.manager_confirmed;
+      const adminConfirmed = rentalConfirmation.admin_confirmed;
+      
+      let confirmedCount = 0;
+      if (tenantConfirmed) confirmedCount++;
+      if (landlordConfirmed) confirmedCount++;
+      if (managerConfirmed) confirmedCount++;
+      if (adminConfirmed) confirmedCount++;
+      
+      return {
+        progress: (confirmedCount / 4) * 100,
+        text: `${confirmedCount}/4 confirmations received`,
+        roles: {
+          tenant: { 
+            confirmed: tenantConfirmed, 
+            canConfirm: user.role === 'tenant' && user.id === chat?.participant2_id, 
+            label: 'Tenant',
+            order: 1
+          },
+          landlord: { 
+            confirmed: landlordConfirmed, 
+            canConfirm: user.role === 'landlord' && user.id === listing.user_id && tenantConfirmed,
+            label: 'Landlord',
+            order: 2,
+            requiresPrevious: true,
+            previousRole: 'tenant'
+          },
+          manager: { 
+            confirmed: managerConfirmed, 
+            canConfirm: user.role === 'manager' && chat?.monitoring_manager_id === user.id && landlordConfirmed,
+            label: 'Manager',
+            order: 3,
+            requiresPrevious: true,
+            previousRole: 'landlord'
+          },
+          admin: { 
+            confirmed: adminConfirmed, 
+            canConfirm: (user.role === 'admin' || user.role === 'super-admin') && managerConfirmed,
+            label: 'Admin',
+            order: 4,
+            requiresPrevious: true,
+            previousRole: 'manager'
+          }
+        }
+      };
     }
-
-    try {
-      await supabase
-        .from('chats')
-        .update(updates)
-        .eq('id', chat.id);
-
-      await supabase.from('messages').insert([{
-        chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_role: 'system',
-        content: messageContent,
-        is_system_message: true,
-      }]);
-
-      const { data: updatedChat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chat.id)
-        .single();
-      setChat(updatedChat);
-    } catch (error) {
-      console.error('Admin override failed:', error);
-    }
+    
+    return { progress: 0, text: '', roles: null };
   };
 
-  // Copy referral link
-  const copyReferralLink = () => {
-    const referralLink = `${window.location.origin}/signup?ref=${user.id}`;
-    navigator.clipboard.writeText(referralLink);
-    alert('Referral link copied!');
+  const getUserSpecificMessage = (msg) => {
+    if (!msg.is_system_message) return msg.content;
+    return msg.content;
   };
 
-  // Determine verification status display
-  const getVerificationStatusDisplay = () => {
-    if (!listing) return null;
-    switch (listing.verification_status) {
-      case 'pending_verification':
-        return { text: '⏳ Pending verification by manager', class: 'pending' };
-      case 'pending_admin':
-        return { text: '⏳ Pending admin verification', class: 'pending' };
-      case 'verified':
-        return { text: '✅ Verified', class: 'verified' };
-      default:
-        return null;
-    }
+  const canSendMessage = () => {
+    if (listing?.status === 'rented') return false;
+    if (chat?.state !== 'active') return false;
+    if (chat?.admin_locked) return false;
+    return true;
   };
 
   if (loading) {
@@ -1257,426 +879,286 @@ const Messages = () => {
     );
   }
 
-  // Role Banner for Estate Firm Staff
-  const showRoleBanner = () => {
-    if (user.role === 'estate-firm' && isStaff) {
-      if (staffRole === 'associate') {
-        return (
+  const progress = getConfirmationProgress();
+  const showRentalFlow = listing.status !== 'rented';
+
+  return (
+    <div className="messages-page">
+      <div className="messages-container">
+        {/* Role Banner for Staff */}
+        {user.role === 'estate-firm' && isStaff && staffRole === 'associate' && (
           <div className="role-banner">
             <Shield size={16} />
             <span>Associate View - You can only reply to messages from your listings</span>
           </div>
-        );
-      }
-      if (staffRole === 'executive') {
-        return (
-          <div className="role-banner executive">
-            <Shield size={16} />
-            <span>Executive View - You can view and reply to all chats</span>
-          </div>
-        );
-      }
-    }
-    return null;
-  };
+        )}
 
-  // Block incoming tenant if manager not assigned for outgoing tenant listing
-  if (
-    listing.poster_role === 'tenant' &&
-    !chat.manager_assigned &&
-    user.role === 'tenant' &&
-    user.id !== chat.participant1_id &&
-    !(user.role === 'admin' || user.role === 'super-admin')
-  ) {
-    return (
-      <div className="messages-locked">
-        <h3>⏳ Waiting for RentEasy Manager Assignment</h3>
-        <p>For listings posted by outgoing tenants, incoming tenants must communicate through an assigned RentEasy manager.</p>
-        <p>A manager will be assigned via proximity notification shortly.</p>
-        <div className="commission-notice">
-          <strong>Commission breakdown:</strong>
-          <ul>
-            <li>Manager: 2.5%</li>
-            <li>Referrer (outgoing tenant): 1.5%</li>
-            <li>RentEasy: 3.5%</li>
-          </ul>
-        </div>
-      </div>
-    );
-  }
-
-  const showCommissionInfo = chat.commission_applied && !chat.estate_firm_listing;
-  const verificationStatus = getVerificationStatusDisplay();
-  const canSendMessage = chat.state === 'active' && !chat.admin_locked;
-  const isEstateFirmUser = user.role === 'estate-firm';
-  const isPoster = user.id === (listing.poster_id || listing.user_id);
-
-  // Check if associate can send message (only if they created the listing)
-  const canAssociateSendMessage = () => {
-    if (user.role === 'estate-firm' && isStaff && staffRole === 'associate') {
-      return chat.created_by_staff_id === user.id;
-    }
-    return true;
-  };
-
-  const finalCanSendMessage = canSendMessage && canAssociateSendMessage();
-
-  return (
-    <div className="messages-page">
-      {showRoleBanner()}
-      
-      <header className="messages-header">
-        <div className="header-top">
-          <h2>{listing.title}</h2>
-          <div className="listing-tags">
-            <span className={`tag tag-${listing.poster_role}`}>
-              {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' :
-               listing.poster_role === 'landlord' ? '🏠 Landlord' : '🏢 Estate Firm'}
-            </span>
-            {showCommissionInfo && <span className="tag tag-commission">💰 7.5% Commission</span>}
-            {chat.estate_firm_listing && <span className="tag tag-estate">🏢 No Commission</span>}
-          </div>
-        </div>
-        <div className="header-status">
-          <span className={`status-badge status-${chat.state}`}>
-            Status: {chat.state?.replace('_', ' ').toUpperCase()}
-          </span>
-          {verificationStatus && (
-            <span className={`status-badge ${verificationStatus.class}`}>
-              {verificationStatus.text}
-            </span>
-          )}
-          {chat.monitoring_manager_id && <span className="manager-badge">👨‍💼 Manager Assigned</span>}
-        </div>
-      </header>
-
-      {/* Manager Accept Box */}
-      {user.role === 'manager' && !chat.manager_assigned && chat.state === 'pending_manager' && (
-        <div className="manager-accept-box">
-          <h4>📱 Proximity Notification Received</h4>
-          <p>You are the first manager to receive notification for this listing.</p>
-          <button onClick={acceptAsManager} className="btn primary">
-            ✅ Accept Listing as Manager
-          </button>
-          <small>First to accept gets 2.5% commission when rented.</small>
-        </div>
-      )}
-
-      {/* Availability Prompt */}
-      {chat.state === 'pending_availability' && (user.role === 'landlord' || user.role === 'estate-firm') && (
-        <div className="availability-box">
-          <h4>❓ Is this property still available?</h4>
-          <p>Please confirm availability to unlock chat.</p>
-          <div className="availability-buttons">
-            <button onClick={() => respondAvailability(true)} className="btn success">
-              ✅ Yes, Available
-            </button>
-            <button onClick={() => respondAvailability(false)} className="btn danger">
-              ❌ No, Not Available
-            </button>
-          </div>
-          <small>
-            {user.role === 'landlord'
-              ? 'Chat will include RentEasy manager for commission monitoring.'
-              : 'Estate firm listings have no commission or manager involvement.'}
-          </small>
-        </div>
-      )}
-
-      {/* Verification prompt for manager */}
-      {user.role === 'manager' && listing.verification_status === 'pending_verification' && (
-        <div className="verification-box">
-          <h4>🔍 Property Verification Required</h4>
-          <p>Visit the property, confirm details, and upload photos.</p>
-          <button
-            className="btn primary"
-            onClick={() => navigate(`/dashboard/manager/verify/${listing.id}`)}
-          >
-            Start Verification
-          </button>
-        </div>
-      )}
-
-      {/* After manager submits verification */}
-      {listing.verification_status === 'pending_admin' && (
-        <div className="verification-box pending">
-          <h4>⏳ Verification Submitted</h4>
-          <p>Admin is contacting landlord to confirm. You'll be notified once verified.</p>
-        </div>
-      )}
-
-      {/* Manager viewing outcome */}
-      {user.role === 'manager' && listing.verification_status === 'verified' && chat.state === 'active' && (
-        <div className="viewing-box">
-          <h4>👁️ Record Viewing Outcome</h4>
-          <div className="viewing-buttons">
-            <button className="btn success" onClick={() => recordViewingOutcome('accepted')}>
-              ✅ Tenant Accepted
-            </button>
-            <button className="btn warning" onClick={() => recordViewingOutcome('declined')}>
-              ❌ Tenant Declined
-            </button>
-            <button className="btn secondary" onClick={() => recordViewingOutcome('no_show')}>
-              🚫 Tenant No-Show
-            </button>
-          </div>
-          <small>After acceptance, you can mark the property as taken.</small>
-        </div>
-      )}
-
-      {/* Mark as Rented Button - Show based on permissions */}
-      {(() => {
-        if (listing.status === 'rented') return null;
-        
-        let canShowButton = false;
-        let buttonHint = '';
-        
-        if (listing.poster_role === 'tenant') {
-          const isIncomingTenant = user.id === chat.participant2_id;
-          const isManager = user.role === 'manager' && chat.monitoring_manager_id === user.id;
-          
-          if (isIncomingTenant) {
-            canShowButton = true;
-            buttonHint = 'As the incoming tenant, you can mark this property as rented.';
-          } else if (isManager) {
-            canShowButton = true;
-            buttonHint = 'As the assigned manager, you can mark this property as rented.';
-          }
-        } 
-        else if (listing.poster_role === 'landlord') {
-          const isIncomingTenant = user.id === chat.participant2_id;
-          const isLandlord = user.id === listing.user_id;
-          const isManager = user.role === 'manager';
-          
-          if (isIncomingTenant) {
-            canShowButton = true;
-            buttonHint = 'As the incoming tenant, you can mark this property as rented.';
-          } else if (isLandlord) {
-            canShowButton = true;
-            buttonHint = 'As the landlord, you can mark this property as rented.';
-          } else if (isManager) {
-            canShowButton = true;
-            buttonHint = 'As a manager, you can mark this property as rented.';
-          }
-        } 
-        else if (listing.poster_role === 'estate-firm') {
-          if (user.role === 'estate-firm') {
-            canShowButton = true;
-            buttonHint = 'As the estate firm, you can mark this property as rented.';
-          }
-        }
-        
-        if (canShowButton) {
-          return (
-            <div className="rented-action-box">
-              <button 
-                className="btn-rented" 
-                onClick={markAsRentedFromChat}
-                disabled={markingAsRented}
-              >
-                <Home size={18} /> Mark as Rented
-              </button>
-              <p className="rented-hint">{buttonHint}</p>
+        {/* Header */}
+        <header className="messages-header">
+          <div className="header-top">
+            <h2>{listing.title}</h2>
+            <div className="listing-tags">
+              <span className={`tag tag-${listing.poster_role}`}>
+                {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' :
+                 listing.poster_role === 'landlord' ? '🏠 Landlord' : '🏢 Estate Firm'}
+              </span>
+              {listing.poster_role !== 'estate-firm' && <span className="tag tag-commission">💰 7.5% Commission</span>}
+              {listing.poster_role === 'estate-firm' && <span className="tag tag-estate">🏢 No Commission</span>}
             </div>
-          );
-        }
-        return null;
-      })()}
-      
-      {/* Payment proof upload (tenant) */}
-      {user.role === 'tenant' && rentalConfirmation?.tenant_confirmed && (
-        <div className="payment-proof-box">
-          <h4>Upload Payment Proof (Optional)</h4>
-          <p>Upload screenshot, receipt photo, or record an audio message confirming payment.</p>
-          <div className="proof-upload-buttons">
-            <input
-              type="file"
-              id="payment-proof-file"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                if (e.target.files[0]) {
-                  const proofType = e.target.files[0].type.startsWith('image/') ? 'screenshot' : 'receipt_photo';
-                  uploadPaymentProof(e.target.files[0], proofType);
-                }
-              }}
-              accept="image/*,.pdf,.mp3,.m4a"
-            />
-            <button
-              className="btn secondary"
-              onClick={() => document.getElementById('payment-proof-file').click()}
-              disabled={uploading}
-            >
-              {uploading ? 'Uploading...' : '📎 Upload Proof'}
-            </button>
           </div>
-          {paymentProofs.length > 0 && (
-            <div className="proof-list">
-              <h5>Uploaded Proofs:</h5>
-              {paymentProofs.map(proof => (
-                <div key={proof.id} className="proof-item">
-                  <a href={proof.file_url} target="_blank" rel="noopener noreferrer">
-                    {proof.proof_type} – {new Date(proof.created_at).toLocaleString()}
-                  </a>
-                  {proof.verified ? (
-                    <span className="verified-badge">✅ Verified</span>
-                  ) : (
-                    <span className="pending-badge">⏳ Pending</span>
-                  )}
-                  {(user.role === 'admin' || user.role === 'super-admin') && !proof.verified && (
-                    <button className="btn small" onClick={() => verifyPaymentProof(proof.id)}>
-                      Verify
+          <div className="header-status">
+            <span className={`status-badge status-${listing.status === 'rented' ? 'rented' : chat.state}`}>
+              Status: {listing.status === 'rented' ? 'RENTED' : (chat.state?.replace('_', ' ').toUpperCase() || 'ACTIVE')}
+            </span>
+            {chat.monitoring_manager_id && <span className="manager-badge">👨‍💼 Manager Assigned</span>}
+          </div>
+        </header>
+
+        {/* Scrollable Area */}
+        <div className="messages-scroll-area" ref={messagesContainerRef}>
+          {/* Rental Confirmation Flow */}
+          {showRentalFlow && progress.roles && (
+            <div className="rental-confirmation-flow">
+              <div className="confirmation-header">
+                <h3>🏠 Rental Confirmation Process</h3>
+                <p>All parties must confirm before commission is released</p>
+              </div>
+
+              <div className="progress-section">
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${progress.progress}%` }}></div>
+                </div>
+                <div className="progress-text">{progress.text}</div>
+              </div>
+
+              <div className="confirmation-steps">
+                {Object.entries(progress.roles).map(([key, role]) => (
+                  <div key={key} className={`step ${role.confirmed ? 'completed' : 'pending'} ${role.requiresPrevious && !role.confirmed ? 'disabled' : ''}`}>
+                    <div className="step-icon">{role.confirmed ? '✓' : '○'}</div>
+                    <div className="step-content">
+                      <div className="step-title">{role.label}</div>
+                      <div className="step-status">
+                        {role.confirmed ? 'Confirmed ✓' : 'Waiting for confirmation...'}
+                      </div>
+                      {role.canConfirm && !role.confirmed && !rentalConfirmation?.admin_confirmed && (
+                        <button 
+                          className="btn-confirm"
+                          onClick={() => handleConfirmRental(key)}
+                          disabled={uploading}
+                        >
+                          Confirm Rental
+                        </button>
+                      )}
+                    </div>
+                    <div className="step-order">Step {role.order}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Admin Actions */}
+              {(user.role === 'admin' || user.role === 'super-admin') && rentalConfirmation && !rentalConfirmation.admin_confirmed && (
+                <div className="admin-actions">
+                  {(() => {
+                    let allConfirmed = true;
+                    if (listing.poster_role === 'estate-firm') {
+                      allConfirmed = rentalConfirmation.tenant_confirmed && rentalConfirmation.estate_firm_confirmed;
+                    } else if (listing.poster_role === 'tenant') {
+                      allConfirmed = rentalConfirmation.tenant_confirmed && rentalConfirmation.manager_confirmed;
+                    } else if (listing.poster_role === 'landlord') {
+                      allConfirmed = rentalConfirmation.tenant_confirmed && rentalConfirmation.landlord_confirmed && rentalConfirmation.manager_confirmed;
+                    }
+                    
+                    if (allConfirmed) {
+                      return (
+                        <button className="btn-finalize" onClick={handleAdminFinalize} disabled={uploading}>
+                          ✅ Finalize Rental & Release {listing.poster_role !== 'estate-firm' ? 'Commission' : 'Rental'}
+                        </button>
+                      );
+                    } else {
+                      return (
+                        <button className="btn-override" onClick={handleAdminOverride} disabled={uploading}>
+                          ⚠️ Override & Force Complete
+                        </button>
+                      );
+                    }
+                  })()}
+                </div>
+              )}
+
+              {/* Dispute Section */}
+              {!rentalConfirmation?.admin_confirmed && !rentalConfirmation?.disputed && (
+                <div className="dispute-section">
+                  {!showDispute ? (
+                    <button className="btn-dispute" onClick={() => setShowDispute(true)}>
+                      ⚖️ Raise Dispute
                     </button>
+                  ) : (
+                    <div className="dispute-form">
+                      <textarea
+                        placeholder="Describe why you're disputing this rental confirmation..."
+                        value={disputeReason}
+                        onChange={(e) => setDisputeReason(e.target.value)}
+                        rows="3"
+                      />
+                      <div className="dispute-actions">
+                        <button onClick={handleRaiseDispute} disabled={!disputeReason || uploading}>
+                          Submit Dispute
+                        </button>
+                        <button onClick={() => setShowDispute(false)}>Cancel</button>
+                      </div>
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+              )}
 
-      {/* Commission Display */}
-      {showCommissionInfo && (
-        <div className="commission-display">
-          <h4>💰 Commission Breakdown</h4>
-          <div className="commission-breakdown">
-            <div className="commission-item">
-              <span className="label">Total Commission:</span>
-              <span className="value">7.5%</span>
-            </div>
-            <div className="commission-item">
-              <span className="label">Manager:</span>
-              <span className="value">2.5%</span>
-            </div>
-            <div className="commission-item">
-              <span className="label">Referrer (Outgoing Tenant):</span>
-              <span className="value">1.5%</span>
-            </div>
-            <div className="commission-item">
-              <span className="label">RentEasy Platform:</span>
-              <span className="value">3.5%</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Messages Thread */}
-      <div className="messages-thread">
-        {messages.map((msg, idx) => {
-          const isOwn = msg.sender_id === user.id;
-          const senderRole = msg.sender_role || (msg.sender_id === '00000000-0000-0000-0000-000000000000' ? 'system' : '');
-          const senderName = participantProfiles[msg.sender_id]?.full_name || 
-                            (msg.sender_id === '00000000-0000-0000-0000-000000000000' ? 'System' : 
-                            msg.sender_id?.slice(0, 8) || 'User');
-          
-          const displayContent = getUserSpecificMessage(msg);
-          
-          return (
-            <div key={idx} className={`msg ${isOwn ? 'own' : ''} ${msg.is_system_message ? 'system' : ''}`}>
-              <div className="msg-header">
-                <small className="msg-sender">
-                  {msg.is_system_message ? '⚙️ SYSTEM' : senderRole.toUpperCase() + ' ' + senderName}
-                </small>
-                <small className="msg-time">{formatTime(msg.created_at)}</small>
-              </div>
-              <p className="msg-text">{displayContent}</p>
-              {msg.attachments && msg.attachments.length > 0 && (
-                <div className="msg-attachments">
-                  {msg.attachments.map((att, i) => (
-                    <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
-                      📎 {att.name}
-                    </a>
-                  ))}
+              {/* Dispute Display */}
+              {rentalConfirmation?.disputed && (
+                <div className="dispute-active">
+                  <div className="dispute-icon">⚖️</div>
+                  <div>
+                    <strong>Dispute Active</strong>
+                    <p>{rentalConfirmation.dispute_reason}</p>
+                    <small>Admin will review and resolve this dispute.</small>
+                  </div>
                 </div>
               )}
             </div>
-          );
-        })}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Message Input */}
-      {finalCanSendMessage && (
-        <div className="message-input">
-          <input
-            type="text"
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            placeholder={
-              listing.poster_role === 'tenant' && user.role === 'tenant' && user.id !== chat.participant1_id
-                ? 'Message will be sent to RentEasy manager...'
-                : staffRole === 'associate' && !canAssociateSendMessage()
-                ? 'You can only reply to messages from your own listings'
-                : 'Type message…'
-            }
-            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            disabled={staffRole === 'associate' && !canAssociateSendMessage()}
-          />
-          <button onClick={sendMessage} disabled={!messageText.trim() || (staffRole === 'associate' && !canAssociateSendMessage())}>
-            Send
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            onChange={handleFileUpload}
-            accept="image/*,.pdf,.doc,.docx"
-          />
-          <button onClick={() => fileInputRef.current.click()} disabled={uploading || (staffRole === 'associate' && !canAssociateSendMessage())}>
-            {uploading ? 'Uploading...' : '📎'}
-          </button>
-        </div>
-      )}
-
-      {/* Locked chat message */}
-      {!canSendMessage && chat.state !== 'active' && (
-        <div className="chat-locked-message">
-          <p>🔒 This chat is {chat.state}. You cannot send messages.</p>
-          {chat.state === 'pending_manager' && (
-            <p>A manager will be assigned shortly to assist with your inquiry.</p>
           )}
-          {chat.state === 'pending_availability' && (
-            <p>The property owner needs to confirm availability before messaging can begin.</p>
+
+          {/* Completed State */}
+          {listing.status === 'rented' && (
+            <div className="rental-confirmation-completed">
+              <div className="completed-icon">✅</div>
+              <h4>Property Successfully Rented</h4>
+              <p>This property has been rented and {listing.poster_role !== 'estate-firm' ? 'commission has been distributed.' : 'the transaction is complete.'}</p>
+            </div>
           )}
-        </div>
-      )}
 
-      {/* Message for associates who can't send */}
-      {canSendMessage && !canAssociateSendMessage() && staffRole === 'associate' && (
-        <div className="chat-restricted-message">
-          <Shield size={16} />
-          <p>You can only reply to messages from listings you created.</p>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="chat-actions">
-        {chat.state !== 'rented' && chat.state !== 'locked' && chat.state !== 'dispute' && (
-          <button onClick={raiseDispute} className="btn warning">
-            ⚖️ Raise Dispute
-          </button>
-        )}
-        {chat.state === 'rented' && (
-          <div className="rented-info">
-            <h4>✅ Property Rented</h4>
-            <p>Commission has been distributed.</p>
-          </div>
-        )}
-        <button onClick={copyReferralLink} className="btn secondary">
-          🔗 Copy Referral Link
-        </button>
-      </div>
-
-      {/* Admin Override Panel */}
-      {(user.role === 'admin' || user.role === 'super-admin') && (
-        <div className="admin-panel">
-          <h4>👑 Admin Override Panel</h4>
-          <div className="admin-actions">
-            <button onClick={() => adminOverride('active')}>Force Chat Active</button>
-            <button onClick={() => adminOverride('locked')}>Lock Chat</button>
-            <button onClick={() => adminOverride('rented')}>Force Mark as Rented</button>
+          {/* Messages Thread */}
+          <div className="messages-thread">
+            {messages.map((msg, idx) => {
+              const isOwn = msg.sender_id === user.id;
+              const senderRole = msg.sender_role || (msg.sender_id === '00000000-0000-0000-0000-000000000000' ? 'system' : '');
+              const senderName = participantProfiles[msg.sender_id]?.full_name || 
+                                (msg.sender_id === '00000000-0000-0000-0000-000000000000' ? 'System' : 
+                                msg.sender_id?.slice(0, 8) || 'User');
+              
+              const displayContent = getUserSpecificMessage(msg);
+              
+              return (
+                <div key={idx} className={`msg ${isOwn ? 'own' : ''} ${msg.is_system_message ? 'system' : ''}`}>
+                  <div className="msg-header">
+                    <small className="msg-sender">
+                      {msg.is_system_message ? '⚙️ SYSTEM' : senderRole.toUpperCase() + ' ' + senderName}
+                    </small>
+                    <small className="msg-time">{formatTime(msg.created_at)}</small>
+                  </div>
+                  {displayContent && <p className="msg-text">{displayContent}</p>}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="msg-attachments">
+                      {msg.attachments.map((attachment, i) => renderAttachment(attachment, i))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div ref={messagesEndRef} />
           </div>
         </div>
-      )}
+
+        {/* Message Input with File Upload */}
+        {canSendMessage() && (
+          <div className="message-input">
+            {/* File Preview Modal */}
+            {showFilePreview && selectedFiles.length > 0 && (
+              <div className="file-preview-modal">
+                <div className="file-preview-header">
+                  <h4>Attachments ({selectedFiles.length})</h4>
+                  <button onClick={() => {
+                    setSelectedFiles([]);
+                    setShowFilePreview(false);
+                  }} className="close-preview">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="file-preview-list">
+                  {selectedFiles.map((file, idx) => (
+                    <div key={idx} className="file-preview-item">
+                      <div className="file-info">
+                        {getFileIcon(file)}
+                        <div className="file-details">
+                          <span className="file-name">{file.name}</span>
+                          <span className="file-size">{formatFileSize(file.size)}</span>
+                        </div>
+                      </div>
+                      {uploadProgress[idx] !== undefined && (
+                        <div className="upload-progress">
+                          <div className="progress-bar" style={{ width: `${uploadProgress[idx]}%` }}></div>
+                        </div>
+                      )}
+                      <button onClick={() => removeFile(idx)} className="remove-file">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="input-wrapper">
+              <button 
+                className="file-upload-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                title="Attach file"
+              >
+                <Paperclip size={20} />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                />
+              </button>
+              
+              <input
+                type="text"
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                placeholder={selectedFiles.length > 0 ? "Add a caption..." : "Type message or attach files..."}
+                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                disabled={uploading}
+              />
+              
+              <button 
+                onClick={sendMessage} 
+                disabled={(!messageText.trim() && selectedFiles.length === 0) || uploading}
+              >
+                {uploading ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+            
+            {selectedFiles.length > 0 && !showFilePreview && (
+              <div className="files-indicator" onClick={() => setShowFilePreview(true)}>
+                <Paperclip size={14} />
+                <span>{selectedFiles.length} file(s) ready</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Locked chat message */}
+        {!canSendMessage() && listing.status !== 'rented' && (
+          <div className="chat-locked-message">
+            <p>🔒 This chat is {chat.state}. You cannot send messages.</p>
+            {chat.state === 'pending_manager' && (
+              <p>A manager will be assigned shortly to assist with your inquiry.</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

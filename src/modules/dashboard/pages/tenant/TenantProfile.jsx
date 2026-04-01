@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import VerifiedBadge from '../../../../shared/components/VerifiedBadge';
 import RentEasyLoader from '../../../../shared/components/RentEasyLoader';
+import { Eye, EyeOff, CreditCard, Building, User, Mail, Phone, MapPin } from 'lucide-react';
 import './TenantProfile.css';
 
 const TenantProfile = () => {
   const { user, updateUser } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState({
     full_name: '',
     email: '',
@@ -16,6 +19,9 @@ const TenantProfile = () => {
     date_of_birth: '',
     gender: '',
     address: '',
+    bank_name: '',
+    account_number: '',
+    account_name: '',
     emergency_contact: {
       name: '',
       phone: '',
@@ -34,6 +40,8 @@ const TenantProfile = () => {
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
+  const [showAccountNumber, setShowAccountNumber] = useState(false);
+  const [savingBank, setSavingBank] = useState(false);
   const [stats, setStats] = useState({
     active_listings: 0,
     applications: 0,
@@ -69,6 +77,9 @@ const TenantProfile = () => {
           date_of_birth: data.date_of_birth || '',
           gender: data.gender || '',
           address: data.address || '',
+          bank_name: data.bank_name || '',
+          account_number: data.account_number || '',
+          account_name: data.account_name || '',
           emergency_contact: data.emergency_contact || { name: '', phone: '', relationship: '' },
           preferences: data.preferences || { notification: true, email_updates: true, sms_alerts: false, newsletter: true }
         });
@@ -84,19 +95,16 @@ const TenantProfile = () => {
 
   const fetchStats = async () => {
     try {
-      // Fetch user's listings count
       const { count: listingsCount } = await supabase
         .from('listings')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
 
-      // Fetch applications count (from saved properties or applications table)
       const { count: savedCount } = await supabase
         .from('saved_properties')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
 
-      // Get member since date
       const { data: profileData } = await supabase
         .from('profiles')
         .select('created_at')
@@ -145,6 +153,9 @@ const TenantProfile = () => {
         date_of_birth: profile.date_of_birth,
         gender: profile.gender,
         address: profile.address,
+        bank_name: profile.bank_name,
+        account_number: profile.account_number,
+        account_name: profile.account_name,
         emergency_contact: profile.emergency_contact,
         preferences: profile.preferences,
         avatar_url: profilePic,
@@ -207,9 +218,16 @@ const TenantProfile = () => {
     else setCoverPhoto(null);
   };
 
+  const formatAccountNumber = (number) => {
+    if (!number) return 'Not provided';
+    if (showAccountNumber) return number;
+    return '••••' + number.slice(-4);
+  };
+
   const tabs = [
     { id: 'personal', label: 'Personal', icon: '👤' },
     { id: 'contact', label: 'Contact', icon: '📱' },
+    { id: 'bank', label: 'Bank Account', icon: '🏦' },
     { id: 'preferences', label: 'Preferences', icon: '⚙️' },
     { id: 'security', label: 'Security', icon: '🔒' },
   ];
@@ -221,9 +239,9 @@ const TenantProfile = () => {
     { label: 'Member Since', value: stats.member_since, icon: '📅' },
   ];
 
-   if (loading) {
-  return <RentEasyLoader message="Loading your Profile..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading your Profile..." fullScreen />;
+  }
 
   return (
     <div className="tenant-profile-modern">
@@ -442,6 +460,109 @@ const TenantProfile = () => {
                     </select>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'bank' && (
+            <div className="tab-content">
+              <div className="tab-header">
+                <h3>Bank Account Details</h3>
+                <p>Your bank details are required to receive referral commissions</p>
+              </div>
+              
+              <div className="bank-info-notice">
+                <Building size={16} />
+                <small>Provide your bank account details to receive commission payouts (1.5% referral commission)</small>
+              </div>
+              
+              <div className="section-card">
+                <div className="form-grid-modern">
+                  <div className="form-group-modern">
+                    <label>Bank Name</label>
+                    <select 
+                      name="bank_name" 
+                      value={profile.bank_name} 
+                      onChange={handleInputChange} 
+                      disabled={!editMode} 
+                      className="form-input"
+                    >
+                      <option value="">Select Bank</option>
+                      <option value="Access Bank">Access Bank</option>
+                      <option value="First Bank">First Bank</option>
+                      <option value="GTBank">GTBank</option>
+                      <option value="UBA">UBA</option>
+                      <option value="Zenith Bank">Zenith Bank</option>
+                      <option value="Moniepoint">Moniepoint</option>
+                      <option value="Opay">Opay</option>
+                      <option value="Palmpay">Palmpay</option>
+                      <option value="Kuda Bank">Kuda Bank</option>
+                    </select>
+                  </div>
+                  
+                  <div className="form-group-modern">
+                    <label>Account Number</label>
+                    <div className="input-with-icon">
+                      <input 
+                        type={showAccountNumber ? "text" : "password"} 
+                        name="account_number" 
+                        value={profile.account_number} 
+                        onChange={handleInputChange} 
+                        disabled={!editMode} 
+                        className="form-input" 
+                        maxLength="10"
+                        placeholder="10-digit account number"
+                      />
+                      <button 
+                        type="button" 
+                        className="toggle-visibility"
+                        onClick={() => setShowAccountNumber(!showAccountNumber)}
+                      >
+                        {showAccountNumber ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="form-group-modern">
+                    <label>Account Name</label>
+                    <input 
+                      type="text" 
+                      name="account_name" 
+                      value={profile.account_name} 
+                      onChange={handleInputChange} 
+                      disabled={!editMode} 
+                      className="form-input" 
+                      placeholder="Account holder name"
+                    />
+                  </div>
+                </div>
+                
+                {!editMode && profile.bank_name && (
+                  <div className="bank-details-preview">
+                    <div className="preview-row">
+                      <span className="preview-label">Bank:</span>
+                      <span className="preview-value">{profile.bank_name}</span>
+                    </div>
+                    <div className="preview-row">
+                      <span className="preview-label">Account Number:</span>
+                      <span className="preview-value">{formatAccountNumber(profile.account_number)}</span>
+                    </div>
+                    <div className="preview-row">
+                      <span className="preview-label">Account Name:</span>
+                      <span className="preview-value">{profile.account_name || 'Not provided'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="commission-info-card">
+                <h4>💰 Commission Information</h4>
+                <p>As a tenant, you can earn <strong>1.5% referral commission</strong> when:</p>
+                <ul>
+                  <li>Someone signs up using your referral link and rents a property</li>
+                  <li>You post a property that gets rented (outgoing tenant)</li>
+                </ul>
+                <small>Bank details are required to receive these payments</small>
               </div>
             </div>
           )}

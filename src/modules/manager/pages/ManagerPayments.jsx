@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import { paymentService } from '../../../shared/lib/paymentService';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import { Eye, EyeOff, Upload, FileText, CheckCircle, XCircle, Clock, Download, CreditCard, Banknote, TrendingUp, Home } from 'lucide-react';
 import './ManagerPayments.css';
 
 const ManagerPayments = () => {
@@ -10,61 +13,87 @@ const ManagerPayments = () => {
   const navigate = useNavigate();
 
   const [commissions, setCommissions] = useState([]);
-  const [filter, setFilter] = useState('all'); // all, pending, proof_submitted, paid
+  const [managedProperties, setManagedProperties] = useState([]);
+  const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadingForId, setUploadingForId] = useState(null);
   const [stats, setStats] = useState({
     totalEarned: 0,
     available: 0,
     withdrawn: 0,
     pending: 0,
-    awaitingAdmin: 0
+    awaitingAdmin: 0,
+    potentialEarnings: 0
   });
 
-  // Bank details for user (for withdrawal)
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [accountName, setAccountName] = useState('');
+  // Bank details for user
+  const [bankDetails, setBankDetails] = useState({
+    bank_name: '',
+    account_number: '',
+    account_name: ''
+  });
+  const [showAccountNumber, setShowAccountNumber] = useState(false);
 
   useEffect(() => {
     if (user?.id) {
-      loadCommissions();
+      loadData();
       loadBankDetails();
     }
   }, [user]);
 
-  const loadCommissions = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+
+      // 1. Load commissions (payment records)
+      const { data: commissionsData, error: commissionsError } = await supabase
         .from('commissions')
         .select(`
           *,
-          listing:listings(id, title, address, price)
+          listing:listings(id, title, address, price, city, state)
         `)
         .eq('manager_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (commissionsError) throw commissionsError;
 
-      setCommissions(data || []);
+      setCommissions(commissionsData || []);
+
+      // 2. Load managed properties (listings where manager is assigned and not rented)
+      const { data: propertiesData, error: propertiesError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('assigned_manager_id', user.id)
+        .neq('status', 'rented')
+        .order('assigned_at', { ascending: false });
+
+      if (propertiesError) throw propertiesError;
+
+      setManagedProperties(propertiesData || []);
 
       // Calculate stats
-      const totalEarned = data.reduce((sum, c) => sum + (c.manager_share || 0), 0);
-      const paid = data.filter(c => c.paid_to_manager).reduce((sum, c) => sum + c.manager_share, 0);
-      const awaitingAdmin = data.filter(c => c.status === 'proof_submitted' && !c.paid_to_manager)
-        .reduce((sum, c) => sum + c.manager_share, 0);
-      const pending = data.filter(c => c.status === 'pending' && !c.paid_to_manager)
-        .reduce((sum, c) => sum + c.manager_share, 0);
+      const totalEarned = commissionsData.reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      const paid = commissionsData.filter(c => c.status === 'paid' || c.paid_to_manager)
+        .reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      const awaitingAdmin = commissionsData.filter(c => c.status === 'proof_submitted' && !c.paid_to_manager)
+        .reduce((sum, c) => sum + (c.manager_share || 0), 0);
+      const pending = commissionsData.filter(c => c.status === 'pending' && !c.paid_to_manager)
+        .reduce((sum, c) => sum + (c.manager_share || 0), 0);
+
+      // Potential earnings from managed properties (2.5% of rent)
+      const potential = propertiesData.reduce((sum, p) => sum + ((p.price || 0) * 0.025), 0);
 
       setStats({
         totalEarned,
         available: totalEarned - paid,
         withdrawn: paid,
         pending,
-        awaitingAdmin
+        awaitingAdmin,
+        potentialEarnings: potential
       });
     } catch (error) {
-      console.error('Error loading commissions:', error);
+      console.error('Error loading data:', error);
     } finally {
       setLoading(false);
     }
@@ -77,9 +106,11 @@ const ManagerPayments = () => {
       .eq('id', user.id)
       .single();
     if (!error && data) {
-      setBankName(data.bank_name || '');
-      setAccountNumber(data.account_number || '');
-      setAccountName(data.account_name || '');
+      setBankDetails({
+        bank_name: data.bank_name || '',
+        account_number: data.account_number || '',
+        account_name: data.account_name || ''
+      });
     }
   };
 
@@ -90,14 +121,14 @@ const ManagerPayments = () => {
       case 'proof_submitted':
         return commissions.filter(c => c.status === 'proof_submitted' && !c.paid_to_manager);
       case 'paid':
-        return commissions.filter(c => c.paid_to_manager);
+        return commissions.filter(c => c.status === 'paid' || c.paid_to_manager);
       default:
         return commissions;
     }
   };
 
-  // Upload proof of payment for a commission
-  const handleUploadProof = async (commissionId) => {
+  // Upload proof (same as before)
+  const handleUploadProof = async (commission) => {
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/*,.pdf';
@@ -105,39 +136,51 @@ const ManagerPayments = () => {
       const file = e.target.files[0];
       if (!file) return;
 
-      setLoading(true);
+      setUploading(true);
+      setUploadingForId(commission.id);
+      
       try {
-        // Upload file to Supabase Storage
-        const fileExt = file.name.split('.').pop();
-        const fileName = `commission-proofs/${commissionId}_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from('payment-proofs') // reuse bucket from subscription payments
-          .upload(fileName, file);
-        if (uploadError) throw uploadError;
+        const reference = paymentService.generateReference('COMM');
+        
+        const payment = await paymentService.createPayment({
+          userId: user.id,
+          amount: commission.manager_share,
+          type: 'commission_proof',
+          reference,
+          metadata: {
+            commission_id: commission.id,
+            listing_id: commission.listing_id,
+            rental_amount: commission.rental_amount,
+            property_title: commission.listing?.title
+          }
+        });
 
-        const { data: urlData } = supabase.storage
-          .from('payment-proofs')
-          .getPublicUrl(fileName);
-        const proofUrl = urlData.publicUrl;
+        const proofUrl = await paymentService.uploadProof({
+          paymentId: payment.id,
+          userId: user.id,
+          file
+        });
 
-        // Update commission record
         const { error: updateError } = await supabase
           .from('commissions')
           .update({
             status: 'proof_submitted',
             proof_url: proofUrl,
+            payment_id: payment.id,
             updated_at: new Date().toISOString()
           })
-          .eq('id', commissionId);
+          .eq('id', commission.id);
+        
         if (updateError) throw updateError;
 
-        alert('Proof uploaded. Admin will verify shortly.');
-        loadCommissions();
+        alert('✅ Proof uploaded successfully! Admin will verify shortly.');
+        loadData();
       } catch (error) {
         console.error('Error uploading proof:', error);
-        alert('Failed to upload proof. Try again.');
+        alert('❌ Failed to upload proof. Please try again.');
       } finally {
-        setLoading(false);
+        setUploading(false);
+        setUploadingForId(null);
       }
     };
     fileInput.click();
@@ -151,22 +194,30 @@ const ManagerPayments = () => {
     }).format(amount || 0);
   };
 
+  const formatAccountNumber = (number) => {
+    if (!number) return 'Not provided';
+    if (showAccountNumber) return number;
+    return '••••' + number.slice(-4);
+  };
+
   const getPaymentStatus = (commission) => {
-    if (commission.paid_to_manager) {
+    if (commission.paid_to_manager || commission.status === 'paid') {
       return { label: 'Paid to Bank', color: '#155724', bgColor: '#d4edda', icon: '✅' };
     }
     if (commission.status === 'proof_submitted') {
       return { label: 'Awaiting Admin', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
     }
     if (commission.status === 'pending') {
-      return { label: 'Pending', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
+      return { label: 'Upload Proof', color: '#0c5460', bgColor: '#d1ecf1', icon: '📤' };
     }
     return { label: 'Unknown', color: '#6c757d', bgColor: '#f8f9fa', icon: '❓' };
   };
 
   if (loading) {
-    return <div className="loading">Loading payments...</div>;
+    return <RentEasyLoader message="Loading payment history..." fullScreen />;
   }
+
+  const filteredCommissions = getFilteredCommissions();
 
   return (
     <div className="manager-payments">
@@ -177,7 +228,7 @@ const ManagerPayments = () => {
           <p>Track your earnings and upload payment proofs</p>
         </div>
         <button className="btn btn-primary" onClick={() => navigate('/dashboard/manager')}>
-          Back to Dashboard
+          ← Back to Dashboard
         </button>
       </div>
 
@@ -204,7 +255,7 @@ const ManagerPayments = () => {
             onClick={() => navigate('/dashboard/manager/withdraw')}
             disabled={stats.available < 5000}
           >
-            Withdraw
+            Withdraw (Min ₦5,000)
           </button>
         </div>
 
@@ -227,6 +278,55 @@ const ManagerPayments = () => {
         </div>
       </div>
 
+      {/* Potential Earnings from Managed Properties */}
+      {managedProperties.length > 0 && (
+        <div className="potential-earnings-card">
+          <div className="potential-header">
+            <Home size={20} />
+            <h3>🏠 Managed Properties</h3>
+            <span className="potential-badge">Potential Commission: {formatCurrency(stats.potentialEarnings)}</span>
+          </div>
+          <div className="managed-properties-list">
+            {managedProperties.map(property => (
+              <div key={property.id} className="managed-property-item">
+                <div className="property-info">
+                  <strong>{property.title}</strong>
+                  <p>{property.address}, {property.city}, {property.state}</p>
+                </div>
+                <div className="property-potential">
+                  <span className="label">Potential Commission (2.5%):</span>
+                  <span className="value">{formatCurrency(property.price * 0.025)}</span>
+                </div>
+                <button 
+                  className="btn-view-property"
+                  onClick={() => navigate(`/listings/${property.id}`)}
+                >
+                  View Property
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="potential-note">These properties are assigned to you but not yet rented. Commission will appear here after rental confirmation.</p>
+        </div>
+      )}
+
+      {/* BANK DETAILS SECTION - Show warning if missing */}
+      {(!bankDetails.bank_name || !bankDetails.account_number) && (
+        <div className="bank-details-warning">
+          <div className="warning-icon">⚠️</div>
+          <div className="warning-content">
+            <strong>Bank Details Missing</strong>
+            <p>Please add your bank details to receive payouts.</p>
+            <button 
+              className="btn btn-primary"
+              onClick={() => navigate('/dashboard/manager/profile')}
+            >
+              Add Bank Details
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* RENTEASY BANK DETAILS */}
       <div className="renteasy-bank-notice">
         <div className="notice-icon">🏦</div>
@@ -237,9 +337,9 @@ const ManagerPayments = () => {
             Once confirmed, your 2.5% share will be sent to your registered bank account.
           </p>
           <div className="bank-details-box">
-            <p><strong>Bank:</strong> Zenith Bank</p>
-            <p><strong>Account Name:</strong> RentEasy Real Estate Ltd</p>
-            <p><strong>Account Number:</strong> 1234567890</p>
+            <p><strong>Bank:</strong> Monie Point</p>
+            <p><strong>Account Name:</strong> Stable Pilla Resources</p>
+            <p><strong>Account Number:</strong> 8149113218</p>
           </div>
           <small>*Use the Property Title as your transfer narration.</small>
         </div>
@@ -251,7 +351,7 @@ const ManagerPayments = () => {
           className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
           onClick={() => setFilter('all')}
         >
-          All Payments
+          All Payments ({commissions.length})
         </button>
         <button
           className={`filter-btn ${filter === 'pending' ? 'active' : ''}`}
@@ -269,23 +369,23 @@ const ManagerPayments = () => {
           className={`filter-btn ${filter === 'paid' ? 'active' : ''}`}
           onClick={() => setFilter('paid')}
         >
-          Paid ({commissions.filter(c => c.paid_to_manager).length})
+          Paid ({commissions.filter(c => c.status === 'paid' || c.paid_to_manager).length})
         </button>
       </div>
 
       {/* PAYMENTS TABLE */}
       <div className="payments-table-container">
-        {getFilteredCommissions().length === 0 ? (
+        {filteredCommissions.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">💰</div>
             <h3>No {filter} payments found</h3>
             <p>
               {filter === 'all'
-                ? 'No commission payments yet.'
+                ? 'You haven\'t earned any commission yet. Complete rentals to start earning!'
                 : filter === 'pending'
-                ? 'All pending payments have been processed.'
+                ? 'Upload proof for pending commissions to get verified.'
                 : filter === 'proof_submitted'
-                ? 'No payments awaiting admin verification.'
+                ? 'Your proofs are being reviewed by admin.'
                 : 'No paid payments yet.'}
             </p>
             {filter !== 'all' && (
@@ -295,99 +395,130 @@ const ManagerPayments = () => {
             )}
           </div>
         ) : (
-          <table className="payments-table">
-            <thead>
-              <tr>
-                <th>Property</th>
-                <th>Date</th>
-                <th>Rental Amount</th>
-                <th>Your Share (2.5%)</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {getFilteredCommissions().map((commission) => {
-                const status = getPaymentStatus(commission);
-                const listing = commission.listing || {};
-
-                return (
-                  <tr key={commission.id}>
-                    <td>
-                      <div className="property-info">
-                        <strong>{listing.title || 'Unknown'}</strong>
-                        <small>{listing.address || ''}</small>
-                      </div>
-                    </td>
-                    <td>{new Date(commission.created_at).toLocaleDateString()}</td>
-                    <td>
-                      <div className="amount-cell">
-                        <strong>{formatCurrency(commission.rental_amount)}</strong>
-                        <small>Rental</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="commission-cell">
-                        <strong className="highlight">
-                          {formatCurrency(commission.manager_share)}
-                        </strong>
-                      </div>
-                    </td>
-                    <td>
-                      <span
-                        className="status-badge"
-                        style={{ backgroundColor: status.bgColor, color: status.color }}
-                      >
-                        {status.icon} {status.label}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="payment-actions">
-                        {commission.status === 'pending' && !commission.paid_to_manager && (
-                          <button
-                            className="btn-upload-proof"
-                            onClick={() => handleUploadProof(commission.id)}
-                          >
-                            Upload Proof
-                          </button>
-                        )}
-                        {commission.status === 'proof_submitted' && !commission.paid_to_manager && (
-                          <span className="status-waiting">Verification Pending...</span>
-                        )}
-                        {commission.paid_to_manager && (
-                          <span className="status-paid">Paid</span>
-                        )}
-                        {commission.proof_url && (
-                          <a
-                            href={commission.proof_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-view-proof"
-                          >
-                            View Proof
-                          </a>
-                        )}
-                        <button
-                          className="btn-details"
-                          onClick={() => {
-                            alert(
-                              `Commission Breakdown for ₦${commission.rental_amount?.toLocaleString()}:\n\n` +
-                              `Total Commission (7.5%): ₦${(commission.manager_share + commission.referrer_share + commission.platform_share).toLocaleString()}\n` +
-                              `• Manager (You): ₦${commission.manager_share?.toLocaleString()} (2.5%)\n` +
-                              `• Referrer: ₦${commission.referrer_share?.toLocaleString()} (1.5%)\n` +
-                              `• RentEasy: ₦${commission.platform_share?.toLocaleString()} (3.5%)`
-                            );
-                          }}
+          <div className="payments-table-responsive">
+            <table className="payments-table">
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th>Date</th>
+                  <th>Rental Amount</th>
+                  <th>Your Share (2.5%)</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCommissions.map((commission) => {
+                  const status = getPaymentStatus(commission);
+                  const listing = commission.listing || {};
+                  const isPending = commission.status === 'pending' && !commission.paid_to_manager;
+                  const isProofSubmitted = commission.status === 'proof_submitted' && !commission.paid_to_manager;
+                  
+                  return (
+                    <tr key={commission.id}>
+                      <td>
+                        <div className="property-info">
+                          <strong>{listing.title || 'Unknown Property'}</strong>
+                          <small>{listing.address || `${listing.city || ''} ${listing.state || ''}`}</small>
+                        </div>
+                      </td>
+                      <td>{new Date(commission.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <div className="amount-cell">
+                          <strong>{formatCurrency(commission.rental_amount)}</strong>
+                          <small>Annual Rent</small>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="commission-cell">
+                          <strong className="highlight">
+                            {formatCurrency(commission.manager_share)}
+                          </strong>
+                          <small>(2.5%)</small>
+                        </div>
+                      </td>
+                      <td>
+                        <span
+                          className="status-badge"
+                          style={{ backgroundColor: status.bgColor, color: status.color }}
                         >
-                          Details
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          {status.icon} {status.label}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="payment-actions">
+                          {isPending && (
+                            <div className="upload-proof-area">
+                              <button
+                                className="btn-upload-proof-large"
+                                onClick={() => handleUploadProof(commission)}
+                                disabled={uploading && uploadingForId === commission.id}
+                              >
+                                {uploading && uploadingForId === commission.id ? (
+                                  <><div className="spinner-small"></div> Uploading...</>
+                                ) : (
+                                  <><Upload size={16} /> Upload Payment Proof</>
+                                )}
+                              </button>
+                              <small>Upload bank transfer receipt or screenshot</small>
+                            </div>
+                          )}
+                          
+                          {isProofSubmitted && (
+                            <div className="proof-submitted-area">
+                              <span className="status-waiting">
+                                <Clock size={14} /> Verification Pending
+                              </span>
+                              {commission.proof_url && (
+                                <a
+                                  href={commission.proof_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn-view-proof"
+                                >
+                                  <Eye size={14} /> View Proof
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          
+                          {commission.paid_to_manager && (
+                            <div className="paid-area">
+                              <span className="status-paid">
+                                <CheckCircle size={14} /> Paid
+                              </span>
+                              {commission.paid_at && (
+                                <small>Paid on: {new Date(commission.paid_at).toLocaleDateString()}</small>
+                              )}
+                            </div>
+                          )}
+                          
+                          <button
+                            className="btn-details"
+                            onClick={() => {
+                              const totalCommission = (commission.manager_share || 0) + (commission.referrer_share || 0) + (commission.platform_share || 0);
+                              alert(
+                                `📊 Commission Breakdown\n\n` +
+                                `Property: ${listing.title || 'Unknown'}\n` +
+                                `Rental Amount: ${formatCurrency(commission.rental_amount)}\n\n` +
+                                `Total Commission (7.5%): ${formatCurrency(totalCommission)}\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                `👨‍💼 Manager (You): ${formatCurrency(commission.manager_share)} (2.5%)\n` +
+                                `👥 Referrer: ${formatCurrency(commission.referrer_share)} (1.5%)\n` +
+                                `🏢 RentEasy: ${formatCurrency(commission.platform_share)} (3.5%)`
+                              );
+                            }}
+                          >
+                            <FileText size={14} /> Details
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -412,7 +543,7 @@ const ManagerPayments = () => {
             </div>
             <div className="breakdown-percentage">1.5%</div>
             <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned * 0.6)} {/* approximate */}
+              {formatCurrency(stats.totalEarned * 0.6)}
             </div>
             <div className="breakdown-label">Total Referral</div>
           </div>
@@ -424,7 +555,7 @@ const ManagerPayments = () => {
             </div>
             <div className="breakdown-percentage">3.5%</div>
             <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned * 1.4)} {/* approximate */}
+              {formatCurrency(stats.totalEarned * 1.4)}
             </div>
             <div className="breakdown-label">Platform Fee</div>
           </div>
@@ -436,7 +567,7 @@ const ManagerPayments = () => {
             </div>
             <div className="breakdown-percentage">7.5%</div>
             <div className="breakdown-amount">
-              {formatCurrency(stats.totalEarned * 3)} {/* approximate */}
+              {formatCurrency(stats.totalEarned * 3)}
             </div>
             <div className="breakdown-label">Per Rental</div>
           </div>

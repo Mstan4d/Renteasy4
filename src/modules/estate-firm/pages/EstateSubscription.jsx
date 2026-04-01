@@ -206,7 +206,7 @@ const EstateSubscription = () => {
             </div>
             <div className="detail-row">
               <span>Free posts remaining:</span>
-              <span>{subscription?.free_posts_remaining ?? 25}</span>
+              <span>{subscription?.free_posts_remaining ?? 15}</span>
             </div>
             <div className="benefits-list">
               <h4>Premium Benefits (upon subscription):</h4>

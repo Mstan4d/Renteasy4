@@ -1,71 +1,117 @@
+/* src/modules/dashboard/components/landlord/LandlordRentTracking.css */
+
 .landlord-rent-tracking {
-  padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
-  background: #f8f9fa;
+  padding: 24px;
+  background: #f8fafc;
   min-height: 100vh;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+/* Header */
 .page-header {
-  margin-bottom: 2rem;
-  position: relative;
+  margin-bottom: 32px;
 }
 
-.page-header .back-btn {
-  background: none;
-  border: 1px solid #ddd;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  cursor: pointer;
+.back-btn {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 40px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 16px;
+}
+
+.back-btn:hover {
+  background: #f1f5f9;
+  transform: translateX(-2px);
 }
 
 .page-header h1 {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  color: #0f172a;
+  margin: 0 0 4px;
 }
 
 .page-header p {
-  color: #666;
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
 }
 
-/* Stats cards */
+/* Stats Grid – fully responsive */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
 }
 
 .stat-card {
   background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 16px;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .stat-icon {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  background: #f1f5f9;
+  color: #475569;
 }
 
-.stat-icon.properties { background: #6610f2; }
-.stat-icon.total { background: #007bff; }
-.stat-icon.paid { background: #28a745; }
-.stat-icon.pending { background: #ffc107; }
-.stat-icon.overdue { background: #dc3545; }
+.stat-icon.properties {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.stat-icon.units {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.stat-icon.total {
+  background: #d1fae5;
+  color: #10b981;
+}
+
+.stat-icon.paid {
+  background: #d1fae5;
+  color: #10b981;
+}
+
+.stat-icon.pending {
+  background: #fef3c7;
+  color: #f59e0b;
+}
+
+.stat-icon.overdue {
+  background: #fee2e2;
+  color: #ef4444;
+}
 
 .stat-info {
   flex: 1;
@@ -73,113 +119,160 @@
 
 .stat-value {
   display: block;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
 }
 
 .stat-label {
-  color: #666;
-  font-size: 0.9rem;
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-/* Filters bar */
+/* Filters Bar – responsive wrapping */
 .filters-bar {
   background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
+  border-radius: 20px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
-  align-items: flex-end;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  align-items: center;
+  gap: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .filter-group {
   display: flex;
-  flex-direction: column;
-  min-width: 150px;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  padding: 4px 12px;
+  border-radius: 40px;
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
 .filter-group label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-  color: #666;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #475569;
 }
 
 .filter-group select,
 .filter-group input {
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  background: transparent;
+  border: none;
+  padding: 6px 0;
+  font-size: 0.85rem;
+  color: #0f172a;
+  outline: none;
+}
+
+.filter-group span {
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
 .search-group {
   flex: 1;
   display: flex;
   align-items: center;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 0 0.5rem;
-  background: white;
+  gap: 8px;
+  background: #f8fafc;
+  padding: 4px 12px;
+  border-radius: 40px;
+  border: 1px solid #e2e8f0;
+  min-width: 200px;
+}
+
+.search-group svg {
+  color: #94a3b8;
 }
 
 .search-group input {
-  border: none;
-  padding: 0.5rem;
   flex: 1;
+  background: transparent;
+  border: none;
+  padding: 6px 0;
+  font-size: 0.85rem;
   outline: none;
 }
 
 .btn-export {
-  background: #6c757d;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  display: flex;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 40px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 6px;
   cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
 }
 
-/* Table */
+.btn-export:hover {
+  background: #e2e8f0;
+}
+
+/* Table Container */
 .payments-table-container {
   background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
   overflow-x: auto;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .payments-table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 800px;
 }
 
 .payments-table th {
   text-align: left;
-  padding: 1rem 0.5rem;
-  border-bottom: 2px solid #eee;
-  color: #666;
+  padding: 16px;
+  background: #f8fafc;
   font-weight: 600;
+  color: #1e293b;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.85rem;
 }
 
 .payments-table td {
-  padding: 1rem 0.5rem;
-  border-bottom: 1px solid #eee;
+  padding: 16px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
 }
 
+.payments-table tr:hover {
+  background: #f8fafc;
+}
+
+/* Property & Tenant Info */
 .property-info {
   display: flex;
   flex-direction: column;
 }
 
+.property-info strong {
+  font-size: 0.9rem;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
 .unit-number {
-  font-size: 0.8rem;
-  color: #666;
+  font-size: 0.7rem;
+  color: #64748b;
 }
 
 .tenant-info {
@@ -189,90 +282,481 @@
 
 .tenant-name {
   font-weight: 500;
+  color: #0f172a;
+  margin-bottom: 2px;
 }
 
+.tenant-info small {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+/* Amount Column */
 .amount {
   font-weight: 600;
-  color: #007bff;
+  color: #0f172a;
 }
 
+/* Status Badge */
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
+  gap: 4px;
+  padding: 4px 10px;
   border-radius: 20px;
-  font-size: 0.8rem;
-  background: #f8f9fa;
+  font-size: 0.7rem;
+  font-weight: 500;
+  width: fit-content;
 }
 
-.badge-warning { background: #ffc107; color: #000; }
-.badge-info { background: #17a2b8; color: white; }
-.badge-success { background: #28a745; color: white; }
-.badge-danger { background: #dc3545; color: white; }
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
 
+.badge-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Proof Button */
 .btn-proof {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  background: none;
-  border: 1px solid #ddd;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
   text-decoration: none;
-  color: inherit;
-  font-size: 0.8rem;
+  color: #2563eb;
+  transition: all 0.2s;
 }
 
+.btn-proof:hover {
+  background: #e2e8f0;
+}
+
+.no-proof {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+/* Action Buttons */
 .action-buttons {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-confirm, .btn-reject {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .btn-confirm {
-  background: #28a745;
+  background: #10b981;
   color: white;
-  border: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  cursor: pointer;
+}
+
+.btn-confirm:hover {
+  background: #059669;
 }
 
 .btn-reject {
-  background: #dc3545;
+  background: #ef4444;
+  color: white;
+}
+
+.btn-reject:hover {
+  background: #dc2626;
+}
+
+.action-completed {
+  font-size: 0.7rem;
+  color: #10b981;
+}
+
+/* Empty State */
+.empty-table {
+  text-align: center;
+  padding: 60px 20px !important;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #64748b;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.empty-state svg {
+  color: #94a3b8;
+}
+
+.empty-state h4 {
+  font-size: 1rem;
+  color: #1e293b;
+  margin: 0;
+}
+
+.empty-state p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.empty-state-list {
+  text-align: left;
+  margin: 16px 0;
+  padding-left: 20px;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.empty-state-list li {
+  margin-bottom: 4px;
+}
+
+.btn-primary {
+  background: #3b82f6;
   color: white;
   border: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+}
+
+/* Error State */
+.error-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+}
+
+.error-state svg {
+  color: #ef4444;
+  margin-bottom: 16px;
+}
+
+.error-state h3 {
+  font-size: 1.2rem;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.error-state p {
+  color: #64748b;
+  margin-bottom: 20px;
+}
+
+.error-state button {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
-.action-pending {
-  color: #666;
-  font-size: 0.9rem;
+/* Responsive */
+@media (max-width: 1200px) {
+  .stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
-.empty-table {
-  text-align: center;
-  padding: 3rem;
-  color: #999;
+@media (max-width: 768px) {
+  .landlord-rent-tracking {
+    padding: 16px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .stat-value {
+    font-size: 1rem;
+  }
+
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .filter-group,
+  .search-group {
+    width: 100%;
+  }
+
+  .btn-export {
+    justify-content: center;
+  }
+
+  .payments-table th,
+  .payments-table td {
+    padding: 12px;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .btn-confirm, .btn-reject {
+    justify-content: center;
+  }
+
+  .back-btn {
+    font-size: 0.75rem;
+    padding: 6px 12px;
+  }
+
+  .page-header h1 {
+    font-size: 1.4rem;
+  }
 }
 
-.loading-spinner {
-  text-align: center;
-  padding: 4rem;
-  font-size: 1.2rem;
-  color: #666;
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payments-table {
+    min-width: 100%;
+  }
+
+  .payments-table th,
+  .payments-table td {
+    font-size: 0.75rem;
+    padding: 8px;
+  }
+
+  .property-info strong {
+    font-size: 0.8rem;
+  }
+
+  .tenant-name {
+    font-size: 0.8rem;
+  }
+
+  .status-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+  }
 }
 
-.error-state {
-  text-align: center;
-  padding: 4rem;
-  color: #dc3545;
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  .landlord-rent-tracking {
+    background: #0f172a;
+  }
+
+  .stat-card,
+  .filters-bar,
+  .payments-table-container,
+  .error-state {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  .page-header h1,
+  .stat-value,
+  .property-info strong,
+  .tenant-name,
+  .amount,
+  .empty-state h4 {
+    color: #f1f5f9;
+  }
+
+  .page-header p,
+  .stat-label,
+  .filter-group label,
+  .filter-group span,
+  .tenant-info small,
+  .empty-state p,
+  .empty-state-list,
+  .error-state p {
+    color: #94a3b8;
+  }
+
+  .back-btn,
+  .btn-export,
+  .btn-proof {
+    background: #334155;
+    border-color: #475569;
+    color: #e2e8f0;
+  }
+
+  .back-btn:hover,
+  .btn-export:hover,
+  .btn-proof:hover {
+    background: #475569;
+  }
+
+  .filter-group,
+  .search-group {
+    background: #334155;
+    border-color: #475569;
+  }
+
+  .filter-group select,
+  .filter-group input,
+  .search-group input {
+    color: #f1f5f9;
+  }
+
+  .payments-table th {
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  .payments-table td {
+    border-bottom-color: #334155;
+  }
+
+  .payments-table tr:hover {
+    background: #334155;
+  }
+
+  .badge-warning {
+    background: #422006;
+    color: #fbbf24;
+  }
+
+  .badge-info {
+    background: #172554;
+    color: #60a5fa;
+  }
+
+  .badge-success {
+    background: #064e3b;
+    color: #34d399;
+  }
+
+  .badge-danger {
+    background: #7f1a1a;
+    color: #f87171;
+  }
+
+  .no-proof {
+    color: #6b7280;
+  }
+
+  .action-completed {
+    color: #34d399;
+  }
+
+  .error-state svg {
+    color: #f87171;
+  }
+}
+
+/* Prevent movement – disable hover transforms that cause shifting */
+.stat-card,
+.payments-table tr {
+  transform: none !important;
+  transition: background-color 0.2s, box-shadow 0.2s !important;
+}
+
+.stat-card:hover {
+  transform: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.payments-table tr:hover {
+  background: #f8fafc;
+}
+
+/* Stabilize table layout */
+.payments-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* Define column widths (adjust as needed) */
+.payments-table th:nth-child(1) { width: 22%; }  /* Property / Unit */
+.payments-table th:nth-child(2) { width: 18%; }  /* Tenant */
+.payments-table th:nth-child(3) { width: 12%; }  /* Due Date */
+.payments-table th:nth-child(4) { width: 12%; }  /* Amount */
+.payments-table th:nth-child(5) { width: 14%; }  /* Status */
+.payments-table th:nth-child(6) { width: 12%; }  /* Proof */
+.payments-table th:nth-child(7) { width: 10%; }  /* Actions */
+
+/* Ensure table cells wrap text properly */
+.payments-table td {
+  word-break: break-word;
+}
+
+/* Give table container a minimum height to avoid collapsing */
+.payments-table-container {
+  min-height: 300px;
+  transition: none;
+}
+
+/* Filters bar – keep consistent height */
+.filters-bar {
+  min-height: 76px;
+}
+
+/* Remove any animations that could cause movement */
+.btn-export,
+.btn-confirm,
+.btn-reject,
+.btn-proof {
+  transition: background-color 0.2s, box-shadow 0.2s;
+  transform: none;
+}
+
+/* On mobile, ensure no hover transforms */
+@media (max-width: 768px) {
+  .stat-card:hover,
+  .payments-table tr:hover {
+    transform: none;
+  }
+  .btn-confirm:hover,
+  .btn-reject:hover {
+    transform: none;
+  }
 }

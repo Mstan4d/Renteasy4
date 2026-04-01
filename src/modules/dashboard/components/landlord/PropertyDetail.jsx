@@ -40,43 +40,54 @@ const PropertyDetail = () => {
   };
 
   const handleMarkAsRented = async () => {
-    const confirmRent = window.confirm(
-      "Confirming this property as RENTED will notify the admin to verify the transaction for your 1.5% commission. Proceed?"
-    );
+  const confirmRent = window.confirm(
+    "Confirming this property as RENTED will notify the admin to verify the transaction for your 1.5% commission. Proceed?"
+  );
+  if (!confirmRent) return;
 
-    if (!confirmRent) return;
+  try {
+    // 1. Update Property Status
+    const { error: updateError } = await supabase
+      .from('listings')
+      .update({ status: 'rented', updated_at: new Date().toISOString() })
+      .eq('id', propertyId);
 
-    try {
-      // 1. Update Property Status
-      const { error: updateError } = await supabase
-        .from('listings')
-        .update({ status: 'rented', updated_at: new Date() })
-        .eq('id', propertyId);
+    if (updateError) throw updateError;
 
-      if (updateError) throw updateError;
+    // 2. Calculate commission shares
+    const rentalAmount = property.price;
+    const managerShare = rentalAmount * 0.025;
+    const referrerShare = rentalAmount * 0.015; // Landlord's share
+    const platformShare = rentalAmount * 0.035;
 
-      // 2. Insert into Commissions Table for Admin Review
-      // Calculation: Price * 0.015 (1.5%)
-      const commissionAmount = property.price * 0.015;
-      
-      const { error: commissionError } = await supabase
-        .from('tenant_commissions')
-        .insert([{
-          property_id: propertyId,
-          tenant_id: user.id, // Landlord as the poster
-          commission_amount: commissionAmount,
-          status: 'calculated', // Matches your manual payout logic
-          property_title: property.title
-        }]);
+    // 3. Insert into commissions table for admin review
+    const { error: commissionError } = await supabase
+      .from('commissions')
+      .insert([{
+        listing_id: propertyId,
+        amount: rentalAmount,                    // Required NOT NULL
+        commission_type: 'poster',               // Required NOT NULL (landlord as poster)
+        recipient_id: user.id,                   // Required? Actually not NOT NULL, but good to set
+        recipient_type: 'landlord',              // Required NOT NULL
+        referrer_id: user.id,                    // For tracking
+        rental_amount: rentalAmount,
+        referrer_share: referrerShare,
+        manager_share: managerShare,
+        platform_share: platformShare,
+        status: 'pending',                       // Optional but recommended
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
 
-      if (commissionError) throw commissionError;
+    if (commissionError) throw commissionError;
 
-      alert('✅ Property marked as rented! Commission is now pending admin payout.');
-      fetchPropertyDetails(); // Refresh view
-    } catch (error) {
-      alert('Error updating status: ' + error.message);
-    }
-  };
+    alert('✅ Property marked as rented! Your 1.5% commission is now pending admin payout.');
+    fetchPropertyDetails(); // Refresh the page
+  } catch (error) {
+    console.error('Error marking as rented:', error);
+    alert('Error updating status: ' + error.message);
+  }
+};
 
   if (isLoading) return <div className="loading-screen">Verifying Property Records...</div>;
   if (!property) return <div className="error-screen">Property Not Found.</div>;
@@ -101,7 +112,7 @@ const PropertyDetail = () => {
             <p><MapPin size={16} /> {property.address}</p>
           </div>
           <div className="price-tag">
-            <span>Monthly Rent</span>
+            <span>Annual Rent</span>
             <h2>₦{Number(property.price).toLocaleString()}</h2>
           </div>
         </div>

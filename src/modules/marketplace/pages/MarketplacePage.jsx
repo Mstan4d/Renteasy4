@@ -52,14 +52,31 @@ const MarketplacePage = () => {
     detectLocation();
   }, []);
 
-  // Main data fetching - wrapped in useCallback to prevent infinite loops
   const loadMarketplaceData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      console.log('Loading marketplace data...');
-      
-      // 1. FETCH ESTATE FIRMS - Only using columns that exist
+  setIsLoading(true);
+  setError(null);
+  try {
+    console.log('Loading marketplace data...');
+
+    // ========== 1. Get active subscription user IDs ==========
+    const now = new Date().toISOString().split('T')[0]; // YYYY-MM-DD for date column
+    const { data: activeSubs, error: subError } = await supabase
+      .from('subscriptions')
+      .select('user_id')
+      .eq('status', 'active')
+      .gte('expires_at', now);
+
+    if (subError) throw subError;
+
+    const activeUserIds = activeSubs?.map(s => s.user_id) || [];
+    console.log('Active subscription users:', activeUserIds.length);
+
+    // ========== 2. Estate firms (only those with active subscription) ==========
+    let transformedEstateFirms = [];
+    let transformedEstateServices = [];
+
+    if (activeUserIds.length > 0) {
+      // Fetch estate firm profiles for those users
       const { data: estateFirmProfiles, error: estateFirmError } = await supabase
         .from('estate_firm_profiles')
         .select(`
@@ -77,15 +94,12 @@ const MarketplacePage = () => {
           contact_phone,
           contact_email
         `)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .in('user_id', activeUserIds);
 
-      if (estateFirmError) {
-        console.error('Error fetching estate firms:', estateFirmError);
-      }
+      if (estateFirmError) console.error('Error fetching estate firms:', estateFirmError);
 
-      console.log('Estate firms found:', estateFirmProfiles?.length || 0);
-
-      // Get user profiles for these estate firms
+      // Get user profiles for these firms (optional)
       const userIds = estateFirmProfiles?.map(p => p.user_id).filter(Boolean) || [];
       let userProfilesMap = {};
       if (userIds.length > 0) {
@@ -93,21 +107,17 @@ const MarketplacePage = () => {
           .from('profiles')
           .select('id, full_name, email, phone, location, state, lga, rating, reviews_count')
           .in('id', userIds);
-        
-        profiles?.forEach(p => {
-          userProfilesMap[p.id] = p;
-        });
+        profiles?.forEach(p => { userProfilesMap[p.id] = p; });
       }
 
-      // Check active boosts
-      const now = new Date().toISOString();
-      const transformedEstateFirms = (estateFirmProfiles || []).map(firm => {
+      // Transform estate firms
+      estateFirmProfiles?.forEach(firm => {
         const userProfile = userProfilesMap[firm.user_id];
-        const isBoosted = firm.boost_status === 'boosted' && firm.boost_expiry > now;
+        const isBoosted = firm.boost_status === 'boosted' && firm.boost_expiry > new Date().toISOString();
         const rating = Number(firm.rating) || Number(userProfile?.rating) || 0;
         const reviews = Number(userProfile?.reviews_count) || 0;
-        
-        return {
+
+        transformedEstateFirms.push({
           id: firm.id,
           type: 'estate-firm',
           name: firm.firm_name,
@@ -115,10 +125,9 @@ const MarketplacePage = () => {
           coverImage: firm.cover_image_url || null,
           logo: firm.logo_url || null,
           location: firm.address || userProfile?.location || `${userProfile?.state || ''} ${userProfile?.lga || ''}`.trim() || 'Nigeria',
-          rating: rating,
-          reviews: reviews,
-          verificationState: firm.verification_status === 'verified' ? 'verified' : 
-                            firm.verification_status === 'pending' ? 'pending' : 'unverified',
+          rating,
+          reviews,
+          verificationState: firm.verification_status === 'verified' ? 'verified' : 'unverified',
           boostState: isBoosted ? 'boosted' : 'not-boosted',
           responseTime: '2-4 hours',
           contact: {
@@ -126,261 +135,271 @@ const MarketplacePage = () => {
             email: firm.contact_email || userProfile?.email
           },
           createdAt: new Date().toISOString()
-        };
+        });
       });
 
-      // 2. FETCH ESTATE SERVICES
-      const { data: estateServicesData, error: estateServicesError } = await supabase
-        .from('estate_services')
-        .select('*')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false });
-
-      if (estateServicesError) {
-        console.error('Error fetching estate services:', estateServicesError);
-      }
-
-      console.log('Estate services found:', estateServicesData?.length || 0);
-
-      // Get estate firm details for each service
-      const estateFirmIds = estateServicesData?.map(s => s.estate_firm_id).filter(Boolean) || [];
-      let estateFirmMap = {};
+      // ========== 3. Estate services (only those belonging to these firms) ==========
+      const estateFirmIds = estateFirmProfiles?.map(f => f.id) || [];
       if (estateFirmIds.length > 0) {
-        const { data: firms } = await supabase
-          .from('estate_firm_profiles')
-          .select('id, firm_name, logo_url, verification_status, boost_status, boost_expiry')
-          .in('id', estateFirmIds);
-        
-        firms?.forEach(firm => {
-          estateFirmMap[firm.id] = firm;
+        const { data: services, error: estateServicesError } = await supabase
+          .from('estate_services')
+          .select('*')
+          .eq('status', 'active')
+          .in('estate_firm_id', estateFirmIds)
+          .order('created_at', { ascending: false });
+
+        if (estateServicesError) console.error('Error fetching estate services:', estateServicesError);
+
+        // Build a map of firm details for quick lookup
+        let firmMap = {};
+        estateFirmProfiles?.forEach(f => { firmMap[f.id] = f; });
+
+        services?.forEach(service => {
+          const estateFirm = firmMap[service.estate_firm_id];
+          const isBoosted = estateFirm?.boost_status === 'boosted' && estateFirm?.boost_expiry > new Date().toISOString();
+
+          let priceDisplay = '';
+          if (service.price_model === 'fixed' && service.price) {
+            priceDisplay = `₦${Number(service.price).toLocaleString()}`;
+          } else if (service.price_model === 'hourly' && service.hourly_rate) {
+            priceDisplay = `₦${Number(service.hourly_rate).toLocaleString()}/hr`;
+          } else if (service.price_model === 'percentage' && service.percentage) {
+            priceDisplay = `${service.percentage}%`;
+          } else {
+            priceDisplay = 'Contact for pricing';
+          }
+
+          transformedEstateServices.push({
+            id: service.id,
+            type: 'estate-service',
+            name: service.title,
+            description: service.description,
+            coverImage: service.images?.[0] || null,
+            providerId: service.estate_firm_id,
+            providerName: estateFirm?.firm_name || 'Estate Firm',
+            providerLogo: estateFirm?.logo_url,
+            location: service.location || 'Nigeria',
+            priceModel: service.price_model,
+            priceDisplay,
+            rating: Number(service.rating) || 0,
+            reviews: Number(service.reviews) || 0,
+            verificationState: estateFirm?.verification_status === 'verified' ? 'verified' : 'unverified',
+            boostState: isBoosted ? 'boosted' : 'not-boosted',
+            responseTime: '2-4 hours',
+            createdAt: service.created_at
+          });
         });
       }
-
-      const transformedEstateServices = (estateServicesData || []).map(service => {
-        const estateFirm = estateFirmMap[service.estate_firm_id];
-        const isBoosted = estateFirm?.boost_status === 'boosted' && estateFirm?.boost_expiry > new Date().toISOString();
-        
-        let priceDisplay = '';
-        if (service.price_model === 'fixed' && service.price) {
-          priceDisplay = `₦${Number(service.price).toLocaleString()}`;
-        } else if (service.price_model === 'hourly' && service.hourly_rate) {
-          priceDisplay = `₦${Number(service.hourly_rate).toLocaleString()}/hr`;
-        } else if (service.price_model === 'percentage' && service.percentage) {
-          priceDisplay = `${service.percentage}%`;
-        } else {
-          priceDisplay = 'Contact for pricing';
-        }
-        
-        return {
-          id: service.id,
-          type: 'estate-service',
-          name: service.title,
-          description: service.description,
-          coverImage: service.images?.[0] || null,
-          providerId: service.estate_firm_id,
-          providerName: estateFirm?.firm_name || 'Estate Firm',
-          providerLogo: estateFirm?.logo_url,
-          location: service.location || 'Nigeria',
-          priceModel: service.price_model,
-          priceDisplay: priceDisplay,
-          rating: Number(service.rating) || 0,
-          reviews: Number(service.reviews) || 0,
-          verificationState: estateFirm?.verification_status === 'verified' ? 'verified' : 'unverified',
-          boostState: isBoosted ? 'boosted' : 'not-boosted',
-          responseTime: '2-4 hours',
-          createdAt: service.created_at
-        };
-      });
-
-      // 3. FETCH SERVICE PROVIDERS
-      const { data: serviceProvidersData, error: serviceProvidersError } = await supabase
-        .from('service_providers')
-        .select(`
-          id,
-          business_name,
-          title,
-          description,
-          avatar_url,
-          location,
-          state,
-          lga,
-          services,
-          price_range_low,
-          price_range_high,
-          response_time,
-          years_experience,
-          success_rate,
-          verification_status,
-          user_id
-        `)
-        .eq('status', 'active');
-
-      if (serviceProvidersError) {
-        console.error('Error fetching service providers:', serviceProvidersError);
-      }
-
-      console.log('Service providers found:', serviceProvidersData?.length || 0);
-
-      // Get user profiles for service providers
-      const providerUserIds = serviceProvidersData?.map(p => p.user_id).filter(Boolean) || [];
-      let providerProfilesMap = {};
-      if (providerUserIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, phone, rating, reviews_count, is_kyc_verified')
-          .in('id', providerUserIds);
-        
-        profiles?.forEach(p => {
-          providerProfilesMap[p.id] = p;
-        });
-      }
-
-      const transformedServiceProviders = (serviceProvidersData || []).map(provider => {
-        const profile = providerProfilesMap[provider.user_id];
-        const isVerified = profile?.is_kyc_verified === true || provider.verification_status === 'verified';
-        const priceLow = Number(provider.price_range_low) || 0;
-        const priceHigh = Number(provider.price_range_high) || 0;
-        const priceRange = priceLow && priceHigh 
-          ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
-          : 'Contact for pricing';
-        
-        return {
-          id: provider.id,
-          userId: provider.user_id,
-          type: 'service-provider',
-          name: provider.business_name || profile?.full_name || 'Service Provider',
-          title: provider.title || '',
-          description: provider.description || 'Experienced professional',
-          coverImage: provider.avatar_url || null,
-          profileImage: provider.avatar_url,
-          location: provider.location || `${provider.state || ''} ${provider.lga || ''}`.trim() || 'Nigeria',
-          rating: Number(profile?.rating) || 0,
-          reviews: Number(profile?.reviews_count) || 0,
-          services: provider.services || [],
-          priceRange,
-          verificationState: isVerified ? 'verified' : 'unverified',
-          boostState: 'not-boosted',
-          responseTime: provider.response_time || 'Within 2-4 hours',
-          yearsExperience: provider.years_experience || 0,
-          successRate: provider.success_rate || 95,
-          createdAt: provider.created_at
-        };
-      });
-
-      console.log('Transformed data:', {
-        estateFirms: transformedEstateFirms.length,
-        estateServices: transformedEstateServices.length,
-        serviceProviders: transformedServiceProviders.length
-      });
-
-      // Combine all items based on active tab
-      let allItems = [];
-      
-      if (activeTab === 'all') {
-        allItems = [...transformedEstateFirms, ...transformedEstateServices, ...transformedServiceProviders];
-      } else if (activeTab === 'estate-firms') {
-        allItems = [...transformedEstateFirms, ...transformedEstateServices];
-      } else if (activeTab === 'services') {
-        allItems = transformedServiceProviders;
-      }
-
-      // Apply search filter
-      if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        allItems = allItems.filter(item => {
-          const searchable = [
-            item.name,
-            item.title || '',
-            item.description,
-            ...(item.services || []),
-            item.location
-          ].join(' ').toLowerCase();
-          return searchable.includes(term);
-        });
-      }
-
-      // Apply location filter
-      if (userLocation?.state && !filters.state) {
-        allItems = allItems.filter(item => 
-          item.location?.toLowerCase().includes(userLocation.state.toLowerCase())
-        );
-      }
-
-      // Apply verification filter
-      if (filters.verifiedOnly) {
-        allItems = allItems.filter(item => item.verificationState === 'verified');
-      }
-
-      // Apply boost filter
-      if (filters.boostOnly) {
-        allItems = allItems.filter(item => item.boostState === 'boosted');
-      }
-
-      // Apply rating filter
-      if (filters.minRating > 0) {
-        allItems = allItems.filter(item => item.rating >= filters.minRating);
-      }
-
-      // Sort items
-      allItems.sort((a, b) => {
-        switch (filters.sortBy) {
-          case 'rating':
-            return b.rating - a.rating;
-          case 'boosted':
-            if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
-            if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-            return b.rating - a.rating;
-          case 'newest':
-            return new Date(b.createdAt) - new Date(a.createdAt);
-          default:
-            if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
-            if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
-            return b.rating - a.rating;
-        }
-      });
-
-      setMarketplaceData({
-        estateFirms: transformedEstateFirms,
-        estateServices: transformedEstateServices,
-        serviceProviders: transformedServiceProviders,
-        allItems
-      });
-
-      console.log('Total items loaded:', allItems.length);
-
-    } catch (err) {
-      console.error('Error fetching marketplace data:', err);
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+    } else {
+      console.log('No active subscriptions – estate firms and services will be hidden.');
     }
-  }, [activeTab, searchTerm, filters, userLocation]);
+
+    // ========== 4. Service providers (always visible) ==========
+    const { data: serviceProvidersData, error: serviceProvidersError } = await supabase
+      .from('service_providers')
+      .select(`
+        id,
+        business_name,
+        title,
+        description,
+        avatar_url,
+        location,
+        state,
+        lga,
+        services,
+        price_range_low,
+        price_range_high,
+        response_time,
+        years_experience,
+        success_rate,
+        verification_status,
+        user_id
+      `)
+      .eq('status', 'active');
+
+    if (serviceProvidersError) console.error('Error fetching service providers:', serviceProvidersError);
+
+    // Get user profiles for service providers
+    const providerUserIds = serviceProvidersData?.map(p => p.user_id).filter(Boolean) || [];
+    let providerProfilesMap = {};
+    if (providerUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, phone, rating, reviews_count, is_kyc_verified')
+        .in('id', providerUserIds);
+      profiles?.forEach(p => { providerProfilesMap[p.id] = p; });
+    }
+
+    const transformedServiceProviders = (serviceProvidersData || []).map(provider => {
+      const profile = providerProfilesMap[provider.user_id];
+      const isVerified = profile?.is_kyc_verified === true || provider.verification_status === 'verified';
+      const priceLow = Number(provider.price_range_low) || 0;
+      const priceHigh = Number(provider.price_range_high) || 0;
+      const priceRange = priceLow && priceHigh 
+        ? `₦${priceLow.toLocaleString()} - ₦${priceHigh.toLocaleString()}`
+        : 'Contact for pricing';
+
+      return {
+        id: provider.id,
+        userId: provider.user_id,
+        type: 'service-provider',
+        name: provider.business_name || profile?.full_name || 'Service Provider',
+        title: provider.title || '',
+        description: provider.description || 'Experienced professional',
+        coverImage: provider.avatar_url || null,
+        profileImage: provider.avatar_url,
+        location: provider.location || `${provider.state || ''} ${provider.lga || ''}`.trim() || 'Nigeria',
+        rating: Number(profile?.rating) || 0,
+        reviews: Number(profile?.reviews_count) || 0,
+        services: provider.services || [],
+        priceRange,
+        verificationState: isVerified ? 'verified' : 'unverified',
+        boostState: 'not-boosted',
+        responseTime: provider.response_time || 'Within 2-4 hours',
+        yearsExperience: provider.years_experience || 0,
+        successRate: provider.success_rate || 95,
+        createdAt: provider.created_at
+      };
+    });
+
+    // ========== 5. Combine items based on active tab ==========
+    let allItems = [];
+    if (activeTab === 'all') {
+      allItems = [...transformedEstateFirms, ...transformedEstateServices, ...transformedServiceProviders];
+    } else if (activeTab === 'estate-firms') {
+      allItems = [...transformedEstateFirms, ...transformedEstateServices];
+    } else if (activeTab === 'services') {
+      allItems = transformedServiceProviders;
+    }
+
+    // ========== 6. Apply search filter ==========
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      allItems = allItems.filter(item => {
+        const searchable = [
+          item.name,
+          item.title || '',
+          item.description,
+          ...(item.services || []),
+          item.location
+        ].join(' ').toLowerCase();
+        return searchable.includes(term);
+      });
+    }
+
+    // ========== 7. Apply explicit location filter (if user selected a state) ==========
+    if (filters.state) {
+      allItems = allItems.filter(item => 
+        item.location?.toLowerCase().includes(filters.state.toLowerCase())
+      );
+    }
+
+    // ========== 8. Apply verification and boost filters ==========
+    if (filters.verifiedOnly) {
+      allItems = allItems.filter(item => item.verificationState === 'verified');
+    }
+    if (filters.boostOnly) {
+      allItems = allItems.filter(item => item.boostState === 'boosted');
+    }
+    if (filters.minRating > 0) {
+      allItems = allItems.filter(item => item.rating >= filters.minRating);
+    }
+
+    // ========== 9. Sort items ==========
+    allItems.sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'rating':
+          return b.rating - a.rating;
+        case 'boosted':
+          if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+          if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+          return b.rating - a.rating;
+        case 'newest':
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        default:
+          if (a.boostState === 'boosted' && b.boostState !== 'boosted') return -1;
+          if (a.boostState !== 'boosted' && b.boostState === 'boosted') return 1;
+          return b.rating - a.rating;
+      }
+    });
+
+    setMarketplaceData({
+      estateFirms: transformedEstateFirms,
+      estateServices: transformedEstateServices,
+      serviceProviders: transformedServiceProviders,
+      allItems
+    });
+
+    console.log('Total items loaded:', allItems.length);
+
+  } catch (err) {
+    console.error('Error fetching marketplace data:', err);
+    setError(err.message);
+  } finally {
+    setIsLoading(false);
+    setIsRefreshing(false);
+  }
+}, [activeTab, searchTerm, filters, userLocation]);
 
   // Load data when dependencies change
   useEffect(() => {
     loadMarketplaceData();
   }, [loadMarketplaceData]);
 
-  const handleContactServiceProvider = async (provider) => {
-    if (!user) {
-      navigate('/login');
+  const handleContactServiceProvider = async (item) => {
+  if (!user) {
+    navigate('/login');
+    return;
+  }
+
+  let providerUserId = null;
+
+  // For service providers, we already have userId from the item
+  if (item.type === 'service-provider') {
+    providerUserId = item.userId;
+  } 
+  // For estate firms or estate services, we need to fetch the user_id from the estate_firm_profiles table
+  else if (item.type === 'estate-firm' || item.type === 'estate-service') {
+    try {
+      // Fetch the estate firm profile to get user_id
+      const { data, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('user_id')
+        .eq('id', item.id)
+        .single();
+
+      if (error) throw error;
+      providerUserId = data.user_id;
+    } catch (err) {
+      console.error('Error fetching firm user ID:', err);
+      alert('Could not find provider details. Please try again.');
       return;
     }
-    
-    try {
-      const providerUserId = provider.userId || provider.providerId;
-      const result = await messagesService.initiateProviderChat(providerUserId, user.id, user.role);
-      if (result?.chatId) {
-        navigate(`/dashboard/messages/chat/${result.chatId}`);
-      } else {
-        alert('Failed to start chat. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error starting chat:', error);
-      alert(error.message || 'Failed to start chat');
+  }
+
+  if (!providerUserId) {
+    alert('Provider not found');
+    return;
+  }
+
+  // Check if the user is trying to contact themselves
+  if (providerUserId === user.id) {
+    alert('You cannot contact yourself.');
+    return;
+  }
+
+  try {
+    const result = await messagesService.initiateProviderChat(providerUserId, user.id, user.role);
+    if (result?.chatId) {
+      navigate(`/dashboard/messages/chat/${result.chatId}`);
+    } else {
+      alert('Failed to start chat. Please try again.');
     }
-  };
+  } catch (error) {
+    console.error('Error starting chat:', error);
+    alert(error.message || 'Failed to start chat');
+  }
+};
 
   const handleContactEstateFirm = (item) => {
     if (item.verificationState !== 'verified') {
@@ -667,7 +686,7 @@ const MarketplacePage = () => {
                     </button>
                     <button 
                       className="btn btn-outline"
-                      onClick={() => navigate(`/service/${item.id}`)}
+                      onClick={() => navigate(`/services/${item.id}`)}
                     >
                       <Eye size={16} />
                       <span>View Details</span>

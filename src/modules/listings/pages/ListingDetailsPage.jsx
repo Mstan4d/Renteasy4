@@ -17,7 +17,7 @@ const ListingDetailsPage = () => {
   const { canManagerVerify, canManagerAccept, getNearbyManagers } = useManager();
   
   const [listing, setListing] = useState(null);
-  const [isLoading, setisLoading] = useState(true);
+  const [IsLoading, setIsLoading] = useState(true);
   const [isNearby, setIsNearby] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
 
@@ -264,7 +264,7 @@ const ListingDetailsPage = () => {
   };
 
 
-if (isLoading) {
+if (IsLoading) {
   return <RentEasyLoader message="Loading Listings..." fullScreen />;
 }
 
