@@ -1,9 +1,12 @@
+// src/modules/estate-firm/pages/EstateSettings.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   Settings, Save, Bell, Shield, 
   Globe, User, CreditCard, Lock,
   Mail, Smartphone, Home, Building,
-  Users, Key, Eye, EyeOff
+  Users, Key, Eye, EyeOff, Receipt,
+  AlertCircle, CheckCircle, XCircle,
+  ArrowLeft, Plus, Trash2, DollarSign
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
@@ -15,26 +18,34 @@ const EstateSettings = () => {
   const [activeTab, setActiveTab] = useState('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showBankDetailsMissingAlert, setShowBankDetailsMissingAlert] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [userRole, setUserRole] = useState('principal');
+  const [canEdit, setCanEdit] = useState(true);
   const [settings, setSettings] = useState({
+    // General
     firmName: '',
     businessEmail: '',
     businessPhone: '',
     businessAddress: '',
     website: '',
+    // Notifications
     emailNotifications: true,
     smsNotifications: true,
     newListingAlerts: true,
     rentDueAlerts: true,
     maintenanceAlerts: true,
     marketingEmails: false,
+    // Security
     twoFactorAuth: false,
-    sessionTimeout: 30,
     loginAlerts: true,
-    suspiciousActivity: true,
+    sessionTimeout: 30,
+    // Payment
     paymentMethod: 'bank-transfer',
     bankName: '',
     accountNumber: '',
     accountName: '',
+    // Display
     theme: 'light',
     language: 'en',
     dateFormat: 'DD/MM/YYYY',
@@ -53,21 +64,70 @@ const EstateSettings = () => {
     confirm: false
   });
 
+  // Get user role
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!error && roleData) {
+          const role = roleData.staff_role || 'principal';
+          setUserRole(role);
+          // Only Principal can edit firm settings
+          setCanEdit(role === 'principal');
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+        setCanEdit(true);
+      }
+    };
+    getUserRole();
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       loadSettings();
+      checkBankDetailsStatus();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (showSuccessMessage) {
+      const timer = setTimeout(() => setShowSuccessMessage(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSuccessMessage]);
 
   const loadSettings = async () => {
     try {
       setLoading(true);
       
+      // Get effective firm ID (parent for staff)
+      let effectiveUserId = user.id;
+      
+      const { data: roleData } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role, parent_estate_firm_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      // If staff, use parent firm ID
+      if (roleData?.staff_role === 'associate' || roleData?.staff_role === 'executive') {
+        if (roleData.parent_estate_firm_id) {
+          effectiveUserId = roleData.parent_estate_firm_id;
+        }
+      }
+      
       // Load estate firm profile
       const { data: profile, error } = await supabase
         .from('estate_firm_profiles')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('id', effectiveUserId)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -80,7 +140,11 @@ const EstateSettings = () => {
           businessPhone: profile.business_phone || '',
           businessAddress: profile.address || '',
           website: profile.website || '',
-          ...profile.settings
+          bankName: profile.bank_details?.bank_name || '',
+          accountNumber: profile.bank_details?.account_number || '',
+          accountName: profile.bank_details?.account_name || '',
+          paymentMethod: profile.payment_method || 'bank-transfer',
+          ...(profile.settings || {})
         }));
       }
     } catch (error) {
@@ -90,7 +154,41 @@ const EstateSettings = () => {
     }
   };
 
+  const checkBankDetailsStatus = async () => {
+    try {
+      // Get effective firm ID
+      let effectiveUserId = user.id;
+      
+      const { data: roleData } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role, parent_estate_firm_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (roleData?.staff_role === 'associate' || roleData?.staff_role === 'executive') {
+        if (roleData.parent_estate_firm_id) {
+          effectiveUserId = roleData.parent_estate_firm_id;
+        }
+      }
+      
+      const { data: profile } = await supabase
+        .from('estate_firm_profiles')
+        .select('bank_details')
+        .eq('id', effectiveUserId)
+        .single();
+
+      const hasBankDetails = profile?.bank_details?.bank_name && 
+                             profile?.bank_details?.account_number && 
+                             profile?.bank_details?.account_name;
+      
+      setShowBankDetailsMissingAlert(!hasBankDetails);
+    } catch (error) {
+      console.error('Error checking bank details:', error);
+    }
+  };
+
   const handleInputChange = (field, value) => {
+    if (!canEdit) return;
     setSettings(prev => ({
       ...prev,
       [field]: value
@@ -98,6 +196,7 @@ const EstateSettings = () => {
   };
 
   const handleToggle = (field) => {
+    if (!canEdit) return;
     setSettings(prev => ({
       ...prev,
       [field]: !prev[field]
@@ -111,53 +210,128 @@ const EstateSettings = () => {
     }));
   };
 
-  const saveSettings = async () => {
-    if (!user) return;
+ // In EstateSettings.jsx, update the saveSettings function:
 
-    try {
-      setSaving(true);
+const saveSettings = async () => {
+  if (!canEdit) {
+    alert('Only the Firm Principal can edit settings.');
+    return;
+  }
+  
+  if (!user) return;
 
-      const settingsData = {
-        notifications: {
-          email: settings.emailNotifications,
-          sms: settings.smsNotifications,
-          new_listings: settings.newListingAlerts,
-          rent_due: settings.rentDueAlerts,
-          maintenance: settings.maintenanceAlerts,
-          marketing: settings.marketingEmails
-        },
-        display: {
-          theme: settings.theme,
-          language: settings.language,
-          date_format: settings.dateFormat,
-          timezone: settings.timeZone
-        },
-        payment: {
-          method: settings.paymentMethod,
-          bank_name: settings.bankName,
-          account_number: settings.accountNumber,
-          account_name: settings.accountName
-        }
-      };
+  try {
+    setSaving(true);
 
-      // Update estate firm profile
-      const { error } = await supabase
+    const notifications = {
+      email: settings.emailNotifications,
+      sms: settings.smsNotifications,
+      new_listings: settings.newListingAlerts,
+      rent_due: settings.rentDueAlerts,
+      maintenance: settings.maintenanceAlerts,
+      marketing: settings.marketingEmails
+    };
+
+    const display = {
+      theme: settings.theme,
+      language: settings.language,
+      date_format: settings.dateFormat,
+      timezone: settings.timeZone
+    };
+
+    const security = {
+      two_factor_auth: settings.twoFactorAuth,
+      login_alerts: settings.loginAlerts,
+      session_timeout: settings.sessionTimeout
+    };
+
+    const bankDetails = {
+      bank_name: settings.bankName,
+      account_number: settings.accountNumber,
+      account_name: settings.accountName
+    };
+
+    // Get the correct firm ID (parent for staff)
+    let targetUserId = user.id;
+    
+    const { data: roleData } = await supabase
+      .from('estate_firm_profiles')
+      .select('parent_estate_firm_id, is_staff_account')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    
+    if (roleData?.is_staff_account && roleData?.parent_estate_firm_id) {
+      targetUserId = roleData.parent_estate_firm_id;
+      console.log('Saving to parent firm ID:', targetUserId);
+    }
+
+    // First, check if profile exists
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from('estate_firm_profiles')
+      .select('id')
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
+    let error;
+
+    if (existingProfile) {
+      // UPDATE existing profile
+      const { error: updateError } = await supabase
         .from('estate_firm_profiles')
-        .upsert({
-          user_id: user.id,
+        .update({
           firm_name: settings.firmName,
           business_email: settings.businessEmail,
           business_phone: settings.businessPhone,
           address: settings.businessAddress,
           website: settings.website,
-          settings: settingsData
-        }, {
-          onConflict: 'user_id'
+          bank_details: bankDetails,
+          payment_method: settings.paymentMethod,
+          settings: {
+            notifications,
+            display,
+            security
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', targetUserId);
+      
+      error = updateError;
+    } else {
+      // INSERT new profile
+      const { error: insertError } = await supabase
+        .from('estate_firm_profiles')
+        .insert({
+          user_id: targetUserId,
+          firm_name: settings.firmName,
+          business_email: settings.businessEmail,
+          business_phone: settings.businessPhone,
+          address: settings.businessAddress,
+          website: settings.website,
+          bank_details: bankDetails,
+          payment_method: settings.paymentMethod,
+          settings: {
+            notifications,
+            display,
+            security
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         });
+      
+      error = insertError;
+    }
 
-      if (error) throw error;
+    if (error) throw error;
 
-      // Log activity
+    console.log('Bank details saved:', bankDetails);
+
+    // Update bank details status alert
+    const hasBankDetails = settings.bankName && settings.accountNumber && settings.accountName;
+    setShowBankDetailsMissingAlert(!hasBankDetails);
+    setShowSuccessMessage(true);
+
+    // Log activity
+    try {
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'settings',
@@ -165,16 +339,19 @@ const EstateSettings = () => {
         description: 'Updated estate firm settings',
         created_at: new Date().toISOString()
       });
-
-      alert('Settings saved successfully!');
-
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      alert('Failed to save settings. Please try again.');
-    } finally {
-      setSaving(false);
+    } catch (activityError) {
+      console.warn('Could not log activity:', activityError);
     }
-  };
+
+    alert('Settings saved successfully!');
+
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    alert('Failed to save settings. Please try again.');
+  } finally {
+    setSaving(false);
+  }
+};
 
   const changePassword = async () => {
     if (!user) return;
@@ -196,7 +373,6 @@ const EstateSettings = () => {
 
       if (error) throw error;
 
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'security',
@@ -219,9 +395,27 @@ const EstateSettings = () => {
   };
 
   if (loading) {
-  return <RentEasyLoader message="Loading your Settings..." fullScreen />;
-}
+    return <RentEasyLoader message="Loading your Settings..." fullScreen />;
+  }
 
+  // Associates and Executives cannot edit settings
+  if (!canEdit) {
+    return (
+      <div className="estate-settings restricted">
+        <div className="restricted-card">
+          <Shield size={48} />
+          <h2>Access Restricted</h2>
+          <p>Only the Firm Principal can access and edit firm settings.</p>
+          <p className="restricted-note">Please contact your firm administrator for settings changes.</p>
+          <button className="btn btn-primary" onClick={() => window.history.back()}>
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Render General Settings
   const renderGeneralSettings = () => (
     <div className="settings-section">
       <h3><User size={20} /> General Information</h3>
@@ -231,8 +425,9 @@ const EstateSettings = () => {
           <input
             type="text"
             value={settings.firmName}
-            onChange={(e) => handleInputChange('general', 'firmName', e.target.value)}
+            onChange={(e) => handleInputChange('firmName', e.target.value)}
             placeholder="Enter firm name"
+            disabled={!canEdit}
           />
         </div>
         
@@ -241,8 +436,9 @@ const EstateSettings = () => {
           <input
             type="email"
             value={settings.businessEmail}
-            onChange={(e) => handleInputChange('general', 'businessEmail', e.target.value)}
+            onChange={(e) => handleInputChange('businessEmail', e.target.value)}
             placeholder="business@email.com"
+            disabled={!canEdit}
           />
         </div>
         
@@ -251,8 +447,9 @@ const EstateSettings = () => {
           <input
             type="tel"
             value={settings.businessPhone}
-            onChange={(e) => handleInputChange('general', 'businessPhone', e.target.value)}
+            onChange={(e) => handleInputChange('businessPhone', e.target.value)}
             placeholder="+2348012345678"
+            disabled={!canEdit}
           />
         </div>
         
@@ -260,9 +457,10 @@ const EstateSettings = () => {
           <label>Business Address</label>
           <textarea
             value={settings.businessAddress}
-            onChange={(e) => handleInputChange('general', 'businessAddress', e.target.value)}
+            onChange={(e) => handleInputChange('businessAddress', e.target.value)}
             placeholder="Full business address"
             rows={3}
+            disabled={!canEdit}
           />
         </div>
         
@@ -271,14 +469,16 @@ const EstateSettings = () => {
           <input
             type="url"
             value={settings.website}
-            onChange={(e) => handleInputChange('general', 'website', e.target.value)}
+            onChange={(e) => handleInputChange('website', e.target.value)}
             placeholder="www.example.com"
+            disabled={!canEdit}
           />
         </div>
       </div>
     </div>
   );
 
+  // Render Notification Settings
   const renderNotificationSettings = () => (
     <div className="settings-section">
       <h3><Bell size={20} /> Notifications</h3>
@@ -297,6 +497,7 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.emailNotifications}
                 onChange={() => handleToggle('emailNotifications')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
@@ -315,6 +516,7 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.smsNotifications}
                 onChange={() => handleToggle('smsNotifications')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
@@ -333,6 +535,7 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.newListingAlerts}
                 onChange={() => handleToggle('newListingAlerts')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
@@ -340,7 +543,7 @@ const EstateSettings = () => {
           
           <div className="toggle-item">
             <div className="toggle-label">
-              <CreditCard size={16} />
+              <DollarSign size={16} />
               <div>
                 <span>Rent Due Alerts</span>
                 <small>Reminders for upcoming rent payments</small>
@@ -351,6 +554,7 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.rentDueAlerts}
                 onChange={() => handleToggle('rentDueAlerts')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
@@ -369,6 +573,7 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.maintenanceAlerts}
                 onChange={() => handleToggle('maintenanceAlerts')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
@@ -378,6 +583,7 @@ const EstateSettings = () => {
     </div>
   );
 
+  // Render Security Settings
   const renderSecuritySettings = () => (
     <div className="settings-section">
       <h3><Shield size={20} /> Security</h3>
@@ -464,6 +670,7 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.twoFactorAuth}
                 onChange={() => handleToggle('twoFactorAuth')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
@@ -482,24 +689,64 @@ const EstateSettings = () => {
                 type="checkbox"
                 checked={settings.loginAlerts}
                 onChange={() => handleToggle('loginAlerts')}
+                disabled={!canEdit}
               />
               <span className="slider"></span>
             </label>
+          </div>
+          
+          <div className="form-group">
+            <label>Session Timeout (minutes)</label>
+            <input
+              type="number"
+              value={settings.sessionTimeout}
+              onChange={(e) => handleInputChange('sessionTimeout', parseInt(e.target.value))}
+              min="5"
+              max="120"
+              step="5"
+              disabled={!canEdit}
+            />
+            <small>Auto logout after inactivity</small>
           </div>
         </div>
       </div>
     </div>
   );
 
+  // Render Payment Settings (Enhanced with Bank Details)
   const renderPaymentSettings = () => (
     <div className="settings-section">
-      <h3><CreditCard size={20} /> Payment Settings</h3>
+      <div className="section-header">
+        <h3><CreditCard size={20} /> Payment Settings</h3>
+        {showBankDetailsMissingAlert && canEdit && (
+          <div className="bank-details-alert">
+            <AlertCircle size={16} />
+            <span>⚠️ Action Required: Please add your bank details to receive rent payments</span>
+          </div>
+        )}
+        {showSuccessMessage && (
+          <div className="success-alert">
+            <CheckCircle size={16} />
+            <span>Settings saved successfully!</span>
+          </div>
+        )}
+      </div>
+      
       <div className="payment-settings">
+        <div className="info-card">
+          <Receipt size={24} />
+          <div>
+            <h4>Why add bank details?</h4>
+            <p>When tenants make rent payments, they will see these bank details to send their payments. Without this, tenants cannot complete payments and you won't receive rent.</p>
+          </div>
+        </div>
+
         <div className="form-group">
           <label>Preferred Payment Method</label>
           <select
             value={settings.paymentMethod}
-            onChange={(e) => handleInputChange('payment', 'paymentMethod', e.target.value)}
+            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+            disabled={!canEdit}
           >
             <option value="bank-transfer">Bank Transfer</option>
             <option value="paystack">Paystack</option>
@@ -509,42 +756,68 @@ const EstateSettings = () => {
         </div>
         
         {settings.paymentMethod === 'bank-transfer' && (
-          <>
-            <div className="form-group">
-              <label>Bank Name</label>
-              <input
-                type="text"
-                value={settings.bankName}
-                onChange={(e) => handleInputChange('payment', 'bankName', e.target.value)}
-                placeholder="Bank name"
-              />
+          <div className="bank-details-form">
+            <div className="bank-details-header">
+              <h4>Bank Account Details</h4>
+              <p className="bank-details-hint">These details will be shown to tenants when they make rent payments</p>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Bank Name <span className="required">*</span></label>
+                <input
+                  type="text"
+                  value={settings.bankName}
+                  onChange={(e) => handleInputChange('bankName', e.target.value)}
+                  placeholder="e.g., GTBank, Access Bank, First Bank"
+                  className={!settings.bankName && showBankDetailsMissingAlert ? 'error' : ''}
+                  disabled={!canEdit}
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>Account Number <span className="required">*</span></label>
+                <input
+                  type="text"
+                  value={settings.accountNumber}
+                  onChange={(e) => handleInputChange('accountNumber', e.target.value)}
+                  placeholder="10-digit account number"
+                  maxLength="10"
+                  className={!settings.accountNumber && showBankDetailsMissingAlert ? 'error' : ''}
+                  disabled={!canEdit}
+                />
+              </div>
+              
+              <div className="form-group full-width">
+                <label>Account Name <span className="required">*</span></label>
+                <input
+                  type="text"
+                  value={settings.accountName}
+                  onChange={(e) => handleInputChange('accountName', e.target.value)}
+                  placeholder="Account holder name as on bank statement"
+                  className={!settings.accountName && showBankDetailsMissingAlert ? 'error' : ''}
+                  disabled={!canEdit}
+                />
+              </div>
             </div>
             
-            <div className="form-group">
-              <label>Account Number</label>
-              <input
-                type="text"
-                value={settings.accountNumber}
-                onChange={(e) => handleInputChange('payment', 'accountNumber', e.target.value)}
-                placeholder="Account number"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>Account Name</label>
-              <input
-                type="text"
-                value={settings.accountName}
-                onChange={(e) => handleInputChange('payment', 'accountName', e.target.value)}
-                placeholder="Account name"
-              />
-            </div>
-          </>
+            {settings.bankName && settings.accountNumber && settings.accountName && (
+              <div className="bank-details-preview">
+                <CheckCircle size={14} />
+                <span>Bank details saved. Tenants will see:</span>
+                <div className="preview-box">
+                  <p><strong>Bank:</strong> {settings.bankName}</p>
+                  <p><strong>Account:</strong> {settings.accountNumber}</p>
+                  <p><strong>Name:</strong> {settings.accountName}</p>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
   );
 
+  // Render Display Settings
   const renderDisplaySettings = () => (
     <div className="settings-section">
       <h3><Globe size={20} /> Display & Language</h3>
@@ -553,7 +826,8 @@ const EstateSettings = () => {
           <label>Theme</label>
           <select
             value={settings.theme}
-            onChange={(e) => handleInputChange('display', 'theme', e.target.value)}
+            onChange={(e) => handleInputChange('theme', e.target.value)}
+            disabled={!canEdit}
           >
             <option value="light">Light</option>
             <option value="dark">Dark</option>
@@ -565,11 +839,13 @@ const EstateSettings = () => {
           <label>Language</label>
           <select
             value={settings.language}
-            onChange={(e) => handleInputChange('display', 'language', e.target.value)}
+            onChange={(e) => handleInputChange('language', e.target.value)}
+            disabled={!canEdit}
           >
             <option value="en">English</option>
             <option value="fr">French</option>
             <option value="es">Spanish</option>
+            <option value="pt">Portuguese</option>
           </select>
         </div>
         
@@ -577,7 +853,8 @@ const EstateSettings = () => {
           <label>Date Format</label>
           <select
             value={settings.dateFormat}
-            onChange={(e) => handleInputChange('display', 'dateFormat', e.target.value)}
+            onChange={(e) => handleInputChange('dateFormat', e.target.value)}
+            disabled={!canEdit}
           >
             <option value="DD/MM/YYYY">DD/MM/YYYY</option>
             <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -589,7 +866,8 @@ const EstateSettings = () => {
           <label>Time Zone</label>
           <select
             value={settings.timeZone}
-            onChange={(e) => handleInputChange('display', 'timeZone', e.target.value)}
+            onChange={(e) => handleInputChange('timeZone', e.target.value)}
+            disabled={!canEdit}
           >
             <option value="Africa/Lagos">West Africa Time (WAT)</option>
             <option value="Africa/Cairo">Eastern European Time (EET)</option>
@@ -602,10 +880,46 @@ const EstateSettings = () => {
 
   return (
     <div className="estate-settings">
+      {/* Role Banner for Non-Principal */}
+      {userRole !== 'principal' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>View Only - Only the Firm Principal can edit settings</span>
+        </div>
+      )}
+
+      {/* Success Message Banner */}
+      {showSuccessMessage && (
+        <div className="success-banner">
+          <CheckCircle size={20} />
+          <span>Settings saved successfully!</span>
+        </div>
+      )}
+
+      {/* Header */}
       <div className="settings-header">
-        <h1><Settings size={28} /> Estate Firm Settings</h1>
-        <p>Manage your firm's preferences, security, and notification settings</p>
+        <button className="back-btn" onClick={() => window.history.back()}>
+          <ArrowLeft size={20} /> Back
+        </button>
+        <div>
+          <h1><Settings size={28} /> Estate Firm Settings</h1>
+          <p>Manage your firm's preferences, security, and payment details</p>
+        </div>
       </div>
+      
+      {/* Bank Details Missing Alert Banner (if not added) */}
+      {showBankDetailsMissingAlert && canEdit && (
+        <div className="warning-banner">
+          <AlertCircle size={24} />
+          <div className="warning-content">
+            <strong>⚠️ Bank Details Missing</strong>
+            <p>You haven't added your bank account details. Tenants cannot make rent payments until you add your bank information.</p>
+          </div>
+          <button className="warning-button" onClick={() => setActiveTab('payment')}>
+            Add Bank Details Now
+          </button>
+        </div>
+      )}
       
       <div className="settings-container">
         <div className="settings-sidebar">
@@ -652,11 +966,13 @@ const EstateSettings = () => {
           {activeTab === 'payment' && renderPaymentSettings()}
           {activeTab === 'display' && renderDisplaySettings()}
           
-          <div className="settings-actions">
-            <button className="btn-save-settings" onClick={saveSettings}>
-              <Save size={18} /> Save All Changes
-            </button>
-          </div>
+          {canEdit && (
+            <div className="settings-actions">
+              <button className="btn-save-settings" onClick={saveSettings} disabled={saving}>
+                <Save size={18} /> {saving ? 'Saving...' : 'Save All Changes'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

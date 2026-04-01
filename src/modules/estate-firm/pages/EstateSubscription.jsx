@@ -6,7 +6,7 @@ import SubscriptionModal from '../components/SubscriptionModal';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import {
   Crown, Zap, Calendar, CheckCircle, XCircle,
-  ArrowLeft, CreditCard, Receipt, AlertCircle
+  ArrowLeft, CreditCard, Receipt, AlertCircle, Shield
 } from 'lucide-react';
 import './EstateSubscription.css';
 
@@ -18,42 +18,81 @@ const EstateSubscription = () => {
   const [subscriptionHistory, setSubscriptionHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [userRole, setUserRole] = useState('principal');
+  const [canSubscribe, setCanSubscribe] = useState(true);
 
   useEffect(() => {
     if (user) {
+      getUserRole();
       loadData();
     }
   }, [user]);
+
+  const getUserRole = async () => {
+    try {
+      const { data: roleData, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (!error && roleData) {
+        const role = roleData.staff_role || 'principal';
+        setUserRole(role);
+        // Only Principal and Executive can subscribe
+        setCanSubscribe(role === 'principal' || role === 'executive');
+      }
+    } catch (err) {
+      console.warn('Could not fetch user role:', err);
+      setCanSubscribe(true);
+    }
+  };
 
   const loadData = async () => {
     try {
       setLoading(true);
 
-      // 1. Get estate firm profile ID
+      // Get user role first to determine which firm ID to use
+      let effectiveUserId = user.id;
+      
+      const { data: roleData } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role, parent_estate_firm_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      // If staff, use parent firm ID for subscription checks
+      if (roleData?.staff_role === 'associate' || roleData?.staff_role === 'executive') {
+        if (roleData.parent_estate_firm_id) {
+          effectiveUserId = roleData.parent_estate_firm_id;
+        }
+      }
+
+      // 1. Get estate firm profile
       const { data: firm, error: firmError } = await supabase
         .from('estate_firm_profiles')
         .select('id, subscription_status, subscription_expiry, free_posts_remaining')
-        .eq('user_id', user.id)
+        .eq('id', effectiveUserId)
         .single();
       if (firmError) throw firmError;
       setEstateFirmId(firm.id);
 
-      // 2. Get current active subscription
+      // 2. Get current active subscription for the firm
       const { data: currentSub, error: subError } = await supabase
         .from('subscriptions')
         .select('*')
-        .eq('profile_id', user.id)
+        .eq('profile_id', effectiveUserId)
         .eq('status', 'active')
         .gte('expires_at', new Date().toISOString())
         .order('expires_at', { ascending: false })
         .maybeSingle();
       if (subError) throw subError;
 
-      // 3. Get subscription history (all past subscriptions, including pending)
+      // 3. Get subscription history for the firm
       const { data: history, error: histError } = await supabase
         .from('subscriptions')
         .select('*')
-        .eq('profile_id', user.id)
+        .eq('profile_id', effectiveUserId)
         .order('created_at', { ascending: false });
       if (histError) throw histError;
 
@@ -78,15 +117,39 @@ const EstateSubscription = () => {
 
   const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
 
-  
-   if (loading) {
-  return <RentEasyLoader message="Loading your clients..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading subscription data..." fullScreen />;
+  }
 
   const hasActiveSubscription = subscription?.status === 'active';
 
+  // Associates cannot access subscription page at all
+  if (userRole === 'associate') {
+    return (
+      <div className="estate-subscription restricted">
+        <div className="restricted-card">
+          <Shield size={48} />
+          <h2>Access Restricted</h2>
+          <p>Only Firm Principal and Executives can manage subscriptions.</p>
+          <p className="restricted-note">Please contact your firm administrator for subscription-related matters.</p>
+          <button className="btn btn-primary" onClick={() => navigate('/dashboard/estate-firm')}>
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="estate-subscription">
+      {/* Role Banner for Executive */}
+      {userRole === 'executive' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>Executive View - You can manage subscriptions for the firm</span>
+        </div>
+      )}
+
       <div className="page-header">
         <button className="back-btn" onClick={() => navigate('/dashboard/estate-firm')}>
           <ArrowLeft size={20} /> Back to Dashboard
@@ -129,9 +192,11 @@ const EstateSubscription = () => {
                 <li><CheckCircle size={16} /> Advanced analytics</li>
               </ul>
             </div>
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <CreditCard size={16} /> Renew or Upgrade
-            </button>
+            {canSubscribe && (
+              <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                <CreditCard size={16} /> Renew or Upgrade
+              </button>
+            )}
           </div>
         ) : (
           <div className="plan-details free">
@@ -152,19 +217,21 @@ const EstateSubscription = () => {
                 <li><CheckCircle size={16} /> Advanced analytics</li>
               </ul>
             </div>
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <Crown size={16} /> Subscribe Now
-            </button>
+            {canSubscribe && (
+              <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                <Crown size={16} /> Subscribe Now
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Subscription History */}
-      {subscriptionHistory.length > 0 && (
+      {/* Subscription History - Only show if user has permission */}
+      {canSubscribe && subscriptionHistory.length > 0 && (
         <div className="history-section">
           <h3>Subscription History</h3>
           <div className="history-table">
-            <table>
+            <table className="subscription-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -194,12 +261,14 @@ const EstateSubscription = () => {
         </div>
       )}
 
-      {/* Subscription Modal */}
-      <SubscriptionModal
-        show={showModal}
-        onHide={() => setShowModal(false)}
-        onSubscriptionSuccess={handleSubscriptionSuccess}
-      />
+      {/* Subscription Modal - Only show if can subscribe */}
+      {showModal && canSubscribe && (
+        <SubscriptionModal
+          show={showModal}
+          onHide={() => setShowModal(false)}
+          onSubscriptionSuccess={handleSubscriptionSuccess}
+        />
+      )}
     </div>
   );
 };

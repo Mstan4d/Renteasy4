@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../shared/context/AuthContext';
 import { supabase } from '../../../../shared/lib/supabaseClient';
 import { Calendar, Home, User, DollarSign, FileText, Star, Download, Mail, Phone } from 'lucide-react';
+import RentEasyLoader from '../../../../shared/components/RentEasyLoader';
 import './TenantRentalHistory.css';
 
 const TenantRentalHistory = () => {
@@ -22,194 +23,172 @@ const TenantRentalHistory = () => {
     }
   }, [user]);
 
-  const loadRentalHistory = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // 1. Get all units where tenant has been assigned (including past ones)
-      const { data: units, error: unitsError } = await supabase
-        .from('units')
-        .select(`
+ const loadRentalHistory = async () => {
+  setLoading(true);
+  setError(null);
+  
+  try {
+    // 1. Get all leases for this tenant (both active and completed)
+    const { data: leases, error: leasesError } = await supabase
+      .from('leases')
+      .select(`
+        *,
+        property:property_id (
+          id,
+          title,
+          address,
+          city,
+          state,
+          estate_firm_id,
+          landlord_id
+        ),
+        unit:unit_id (
           id,
           unit_number,
           rent_amount,
           rent_frequency,
-          lease_start_date,
-          lease_end_date,
-          status,
-          tenant_history,
-          property:property_id (
-            id,
-            title,
-            address,
-            city,
-            state,
-            estate_firm_id,
-            landlord_id
-          )
-        `)
-        .eq('tenant_id', user.id);
+          status
+        )
+      `)
+      .eq('tenant_id', user.id)
+      .order('end_date', { ascending: false });
 
-      if (unitsError) throw unitsError;
+    if (leasesError) throw leasesError;
 
-      if (!units || units.length === 0) {
-        setRentalHistory([]);
-        setLoading(false);
-        return;
-      }
-
-      // 2. Get landlord and estate firm info
-      const propertyIds = units.map(u => u.property?.id).filter(Boolean);
-      const estateFirmIds = units.map(u => u.property?.estate_firm_id).filter(Boolean);
-      const landlordIds = units.map(u => u.property?.landlord_id).filter(Boolean);
-
-      // Fetch estate firm profiles
-      let estateFirmMap = {};
-      if (estateFirmIds.length > 0) {
-        const { data: firms } = await supabase
-          .from('estate_firm_profiles')
-          .select('id, firm_name, business_phone, business_email')
-          .in('id', estateFirmIds);
-        if (firms) {
-          estateFirmMap = Object.fromEntries(firms.map(f => [f.id, f]));
-        }
-      }
-
-      // Fetch landlord profiles
-      let landlordMap = {};
-      if (landlordIds.length > 0) {
-        const { data: landlords } = await supabase
-          .from('profiles')
-          .select('id, full_name, name, email, phone')
-          .in('id', landlordIds);
-        if (landlords) {
-          landlordMap = Object.fromEntries(landlords.map(l => [l.id, l]));
-        }
-      }
-
-      // 3. Get payment history for these units
-      const unitIds = units.map(u => u.id);
-      let paymentsMap = {};
-      if (unitIds.length > 0) {
-        const { data: payments } = await supabase
-          .from('payments')
-          .select('*')
-          .in('unit_id', unitIds)
-          .eq('payment_type', 'rent')
-          .order('payment_date', { ascending: false });
-        
-        if (payments) {
-          paymentsMap = payments.reduce((acc, p) => {
-            if (!acc[p.unit_id]) acc[p.unit_id] = [];
-            acc[p.unit_id].push(p);
-            return acc;
-          }, {});
-        }
-      }
-
-      // 4. Get rental confirmations
-      let confirmationsMap = {};
-      if (unitIds.length > 0) {
-        const { data: confirmations } = await supabase
-          .from('rental_confirmations')
-          .select('*')
-          .in('unit_id', unitIds);
-        
-        if (confirmations) {
-          confirmationsMap = Object.fromEntries(confirmations.map(c => [c.unit_id, c]));
-        }
-      }
-
-      // 5. Transform data for display
-      const transformedHistory = units.map(unit => {
-        const property = unit.property;
-        const isEstateFirm = property?.estate_firm_id;
-        const landlord = isEstateFirm 
-          ? estateFirmMap[property.estate_firm_id] 
-          : landlordMap[property.landlord_id];
-        
-        const unitPayments = paymentsMap[unit.id] || [];
-        const confirmedPayments = unitPayments.filter(p => p.status === 'confirmed');
-        const totalPaid = confirmedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-        
-        const confirmation = confirmationsMap[unit.id];
-        const tenantRating = confirmation?.tenant_rating || null;
-        const landlordRating = confirmation?.landlord_rating || null;
-        
-        // Calculate deposit returned (check if lease completed and deposit was returned)
-        const isLeaseCompleted = unit.lease_end_date && new Date(unit.lease_end_date) < new Date();
-        const depositReturned = isLeaseCompleted ? unit.rent_amount * 2 : null; // Example: 2 months rent as deposit
-        
-        // Get tenant history from unit.tenant_history
-        const historyNotes = unit.tenant_history && unit.tenant_history.length > 0 
-          ? unit.tenant_history[unit.tenant_history.length - 1]?.notes 
-          : null;
-        
-        return {
-          id: unit.id,
-          propertyName: property?.title || 'Unknown Property',
-          address: property?.address || '',
-          city: property?.city || '',
-          state: property?.state || '',
-          landlordName: landlord?.firm_name || landlord?.full_name || landlord?.name || 'Unknown',
-          landlordPhone: landlord?.business_phone || landlord?.phone || null,
-          landlordEmail: landlord?.business_email || landlord?.email || null,
-          period: `${unit.lease_start_date ? new Date(unit.lease_start_date).getFullYear() : 'N/A'} - ${unit.lease_end_date ? new Date(unit.lease_end_date).getFullYear() : 'Present'}`,
-          startDate: unit.lease_start_date,
-          endDate: unit.lease_end_date,
-          status: unit.status === 'occupied' ? 'active' : 'completed',
-          rentAmount: unit.rent_amount,
-          rentFrequency: unit.rent_frequency,
-          totalPaid,
-          depositPaid: unit.rent_amount * 2, // Assuming 2 months deposit
-          depositReturned,
-          landlordRating,
-          tenantRating,
-          notes: historyNotes || '',
-          unitNumber: unit.unit_number,
-          paymentCount: confirmedPayments.length
-        };
-      });
-
-      // Sort by end date (most recent first)
-      transformedHistory.sort((a, b) => {
-        if (!a.endDate) return -1;
-        if (!b.endDate) return 1;
-        return new Date(b.endDate) - new Date(a.endDate);
-      });
-
-      setRentalHistory(transformedHistory);
-
-      // Calculate stats
-      const completedRentals = transformedHistory.filter(r => r.status === 'completed');
-      const totalRentals = transformedHistory.length;
-      const avgRating = transformedHistory
-        .filter(r => r.tenantRating)
-        .reduce((sum, r) => sum + r.tenantRating, 0) / (transformedHistory.filter(r => r.tenantRating).length || 1);
-      const totalDepositReturned = completedRentals.reduce((sum, r) => sum + (r.depositReturned || 0), 0);
-      const totalMonths = completedRentals.reduce((sum, r) => {
-        if (r.startDate && r.endDate) {
-          const months = (new Date(r.endDate) - new Date(r.startDate)) / (1000 * 60 * 60 * 24 * 30);
-          return sum + Math.max(0, months);
-        }
-        return sum;
-      }, 0);
-
+    if (!leases || leases.length === 0) {
+      setRentalHistory([]);
       setStats({
-        totalProperties: totalRentals,
-        averageRating: avgRating.toFixed(1),
-        totalDepositReturned,
-        totalMonths: Math.round(totalMonths)
+        totalProperties: 0,
+        averageRating: 0,
+        totalDepositReturned: 0,
+        totalMonths: 0
       });
-
-    } catch (err) {
-      console.error('Error loading rental history:', err);
-      setError(err.message);
-    } finally {
       setLoading(false);
+      return;
     }
-  };
+
+    // 2. Get payment history for these units
+    const unitIds = leases.map(l => l.unit_id).filter(Boolean);
+    let paymentsMap = {};
+    if (unitIds.length > 0) {
+      const { data: payments } = await supabase
+        .from('payments')
+        .select('*')
+        .in('unit_id', unitIds)
+        .eq('payment_type', 'rent')
+        .order('payment_date', { ascending: false });
+      
+      if (payments) {
+        paymentsMap = payments.reduce((acc, p) => {
+          if (!acc[p.unit_id]) acc[p.unit_id] = [];
+          acc[p.unit_id].push(p);
+          return acc;
+        }, {});
+      }
+    }
+
+    // 3. Get landlord/estate firm info
+    const propertyIds = leases.map(l => l.property_id).filter(Boolean);
+    const estateFirmIds = leases.map(l => l.property?.estate_firm_id).filter(Boolean);
+    const landlordIds = leases.map(l => l.property?.landlord_id).filter(Boolean);
+
+    // Fetch estate firm profiles
+    let estateFirmMap = {};
+    if (estateFirmIds.length > 0) {
+      const { data: firms } = await supabase
+        .from('estate_firm_profiles')
+        .select('id, firm_name, business_phone, business_email')
+        .in('id', estateFirmIds);
+      if (firms) {
+        estateFirmMap = Object.fromEntries(firms.map(f => [f.id, f]));
+      }
+    }
+
+    // Fetch landlord profiles
+    let landlordMap = {};
+    if (landlordIds.length > 0) {
+      const { data: landlords } = await supabase
+        .from('profiles')
+        .select('id, full_name, name, email, phone')
+        .in('id', landlordIds);
+      if (landlords) {
+        landlordMap = Object.fromEntries(landlords.map(l => [l.id, l]));
+      }
+    }
+
+    // 4. Transform data
+    const transformedHistory = leases.map(lease => {
+      const property = lease.property;
+      const unit = lease.unit;
+      const isEstateFirm = property?.estate_firm_id;
+      const landlord = isEstateFirm 
+        ? estateFirmMap[property.estate_firm_id] 
+        : landlordMap[property.landlord_id];
+      
+      const unitPayments = paymentsMap[lease.unit_id] || [];
+      const confirmedPayments = unitPayments.filter(p => p.status === 'confirmed');
+      const totalPaid = confirmedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      const isActive = lease.status === 'active';
+      const isCompleted = lease.status === 'completed' || (lease.end_date && new Date(lease.end_date) < new Date());
+      
+      // Deposit returned only if lease completed
+      const depositReturned = isCompleted ? lease.security_deposit : null;
+      
+      return {
+        id: lease.id,
+        propertyName: property?.title || 'Unknown Property',
+        address: property?.address || '',
+        city: property?.city || '',
+        state: property?.state || '',
+        landlordName: landlord?.firm_name || landlord?.full_name || landlord?.name || 'Unknown',
+        landlordPhone: landlord?.business_phone || landlord?.phone || null,
+        landlordEmail: landlord?.business_email || landlord?.email || null,
+        period: `${new Date(lease.start_date).getFullYear()} - ${lease.end_date ? new Date(lease.end_date).getFullYear() : 'Present'}`,
+        startDate: lease.start_date,
+        endDate: lease.end_date,
+        status: isActive ? 'active' : (isCompleted ? 'completed' : 'active'),
+        rentAmount: lease.monthly_rent || unit?.rent_amount,
+        rentFrequency: unit?.rent_frequency || 'monthly',
+        totalPaid,
+        depositPaid: lease.security_deposit,
+        depositReturned,
+        notes: lease.terms?.notes || '',
+        unitNumber: unit?.unit_number,
+        paymentCount: confirmedPayments.length,
+        leaseId: lease.id
+      };
+    });
+
+    setRentalHistory(transformedHistory);
+
+    // Calculate stats
+    const completedRentals = transformedHistory.filter(r => r.status === 'completed');
+    const totalRentals = transformedHistory.length;
+    const avgRating = 0; // You can add rating system later
+    const totalDepositReturned = completedRentals.reduce((sum, r) => sum + (r.depositReturned || 0), 0);
+    const totalMonths = completedRentals.reduce((sum, r) => {
+      if (r.startDate && r.endDate) {
+        const months = (new Date(r.endDate) - new Date(r.startDate)) / (1000 * 60 * 60 * 24 * 30);
+        return sum + Math.max(0, months);
+      }
+      return sum;
+    }, 0);
+
+    setStats({
+      totalProperties: totalRentals,
+      averageRating: avgRating.toFixed(1),
+      totalDepositReturned,
+      totalMonths: Math.round(totalMonths)
+    });
+
+  } catch (err) {
+    console.error('Error loading rental history:', err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const downloadTenantReport = async () => {
     try {
@@ -290,12 +269,7 @@ const TenantRentalHistory = () => {
   };
 
   if (loading) {
-    return (
-      <div className="rental-history-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading rental history...</p>
-      </div>
-    );
+    return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
   }
 
   if (error) {

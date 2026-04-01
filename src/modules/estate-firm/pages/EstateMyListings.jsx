@@ -9,11 +9,11 @@ import {
   Download, Filter, Search, PlusCircle,
   Calendar, MapPin, User, Building,
   RefreshCw, ChevronRight, X, Check,
-  FileText, Upload
+  FileText, Upload, Home as HomeIcon
 } from 'lucide-react';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import ConvertListingModal from '../components/ConvertListingModal';
-import ListingModal from '../components/ListingModal'; // new import
+import ListingModal from '../components/ListingModal';
 import './EstateMyListings.css';
 
 const EstateMyListings = () => {
@@ -23,15 +23,19 @@ const EstateMyListings = () => {
   const [listings, setListings] = useState([]);
   const [filteredListings, setFilteredListings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('active'); // 'active', 'rented', 'converted', 'all'
+  const [activeTab, setActiveTab] = useState('active');
   const [searchTerm, setSearchTerm] = useState('');
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [selectedListing, setSelectedListing] = useState(null);
-  const [converting, setConverting] = useState(false);
-  
-  // State for edit modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [listingToEdit, setListingToEdit] = useState(null);
+  const [markingAsRented, setMarkingAsRented] = useState(false);
+  const [showMarkRentedModal, setShowMarkRentedModal] = useState(false);
+  const [listingToMark, setListingToMark] = useState(null);
+  
+  // Role-based state
+  const [userRole, setUserRole] = useState('principal');
+  const [isStaff, setIsStaff] = useState(false);
 
   // Stats
   const [stats, setStats] = useState({
@@ -41,14 +45,37 @@ const EstateMyListings = () => {
     total: 0
   });
 
-  // Helper to navigate to post property
   const handleAddProperty = () => {
     navigate('/post-property?type=estate-firm');
   };
 
+  // Get user role
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error: roleError } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role, is_staff_account, parent_estate_firm_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!roleError && roleData) {
+          setUserRole(roleData.staff_role || 'principal');
+          setIsStaff(roleData.is_staff_account || false);
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+      }
+    };
+    
+    getUserRole();
+  }, [user]);
+
   // Get estate firm profile ID
   useEffect(() => {
     const getEstateFirmId = async () => {
+      if (!user) return;
       const { data } = await supabase
         .from('estate_firm_profiles')
         .select('id')
@@ -59,47 +86,163 @@ const EstateMyListings = () => {
     getEstateFirmId();
   }, [user]);
 
-  // Load listings
+  // Load listings with role-based filtering
   useEffect(() => {
     if (estateFirmId) loadListings();
   }, [estateFirmId]);
 
-  const loadListings = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('listings')
-        .select(`
-          *,
-          unit:unit_id (
-            id,
-            property_id,
-            unit_number,
-            status,
-            tenant_name,
-            property:property_id (
-              id,
-              name,
-              address
-            )
-          )
-        `)
-        .eq('estate_firm_id', estateFirmId)
-        .order('created_at', { ascending: false });
+  // In EstateMyListings.jsx, update the loadListings function:
 
-      if (error) throw error;
-      setListings(data || []);
+const loadListings = async () => {
+  if (!estateFirmId) return;
+  
+  setLoading(true);
+  try {
+    // Get user role and staff info
+    let effectiveFirmId = estateFirmId;
+    let currentUserRole = 'principal';
+    let isStaff = false;
+    
+    const { data: roleData } = await supabase
+      .from('estate_firm_profiles')
+      .select('staff_role, is_staff_account, parent_estate_firm_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    
+    if (roleData) {
+      currentUserRole = roleData.staff_role || 'principal';
+      isStaff = roleData.is_staff_account || false;
       
-      const active = data?.filter(l => l.status === 'pending' || l.status === 'approved').length || 0;
-      const rented = data?.filter(l => l.status === 'rented' && !l.unit_id).length || 0;
-      const converted = data?.filter(l => l.unit_id).length || 0;
-      setStats({ active, rented, converted, total: data?.length || 0 });
+      // If staff, use parent firm ID
+      if (isStaff && roleData.parent_estate_firm_id) {
+        effectiveFirmId = roleData.parent_estate_firm_id;
+      }
+    }
+    
+    // Build query
+    let query = supabase
+      .from('listings')
+      .select(`
+        *,
+        unit:unit_id (
+          id,
+          property_id,
+          unit_number,
+          status,
+          tenant_name,
+          property:property_id (
+            id,
+            name,
+            address
+          )
+        )
+      `)
+      .eq('estate_firm_id', effectiveFirmId);
+    
+    // If associate, only show their own listings
+    if (currentUserRole === 'associate') {
+      query = query.eq('created_by_staff_id', user.id);
+      console.log('Associate filter: showing only listings created by staff ID:', user.id);
+    }
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) throw error;
+    
+    console.log('Listings loaded:', data?.length);
+    setListings(data || []);
+    
+    const active = data?.filter(l => l.status === 'pending' || l.status === 'approved').length || 0;
+    const rented = data?.filter(l => l.status === 'rented' && !l.unit_id).length || 0;
+    const converted = data?.filter(l => l.unit_id).length || 0;
+    setStats({ active, rented, converted, total: data?.length || 0 });
+  } catch (error) {
+    console.error('Error loading listings:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // Mark listing as rented directly
+  const handleMarkAsRented = async (listing) => {
+    setListingToMark(listing);
+    setShowMarkRentedModal(true);
+  };
+
+  const confirmMarkAsRented = async () => {
+    if (!listingToMark) return;
+    
+    setMarkingAsRented(true);
+    try {
+      // Update listing status to 'rented'
+      const { error } = await supabase
+        .from('listings')
+        .update({
+          status: 'rented',
+          rented_at: new Date().toISOString(),
+          rented_by: user.id
+        })
+        .eq('id', listingToMark.id);
+      
+      if (error) throw error;
+
+      // Send notification to tenant (if there's a tenant in the chat)
+      const { data: chats } = await supabase
+        .from('chats')
+        .select('participant2_id')
+        .eq('listing_id', listingToMark.id)
+        .eq('chat_type', 'tenant_estate_firm')
+        .maybeSingle();
+      
+      if (chats?.participant2_id) {
+        await supabase.from('notifications').insert({
+          user_id: chats.participant2_id,
+          type: 'listing_rented',
+          title: 'Property Rented!',
+          message: `The property "${listingToMark.title}" has been rented. You will receive lease details shortly.`,
+          link: '/dashboard/tenant/leases',
+          created_at: new Date().toISOString()
+        });
+      }
+
+      alert('Property marked as rented successfully!');
+      setShowMarkRentedModal(false);
+      setListingToMark(null);
+      loadListings();
+      
     } catch (error) {
-      console.error('Error loading listings:', error);
+      console.error('Error marking as rented:', error);
+      alert('Failed to mark as rented. Please try again.');
     } finally {
-      setLoading(false);
+      setMarkingAsRented(false);
     }
   };
+
+  const handleConvertClick = (listing, e) => {
+    if (e) e.stopPropagation();
+    setSelectedListing(listing);
+    setShowConvertModal(true);
+  };
+
+  const handleCardClick = (listing) => {
+    if (listing.status === 'rented' && !listing.unit_id) {
+      handleConvertClick(listing);
+    } else if (listing.unit_id) {
+      navigate(`/dashboard/estate-firm/properties/${listing.unit?.property_id}`);
+    } else {
+      window.open(`/listings/${listing.id}`, '_blank');
+    }
+  };
+
+  const getStatusBadge = (listing) => {
+    if (listing.unit_id) return <span className="status-badge converted">✅ Converted</span>;
+    if (listing.status === 'rented') return <span className="status-badge rented">🏠 Rented - Convert Now</span>;
+    if (listing.status === 'pending' || listing.status === 'approved') return <span className="status-badge active">📢 Active</span>;
+    return <span className="status-badge">{listing.status}</span>;
+  };
+
+  const formatPrice = (price) => `₦${(price || 0).toLocaleString()}`;
+  const formatDate = (date) => new Date(date).toLocaleDateString();
 
   // Filter listings based on active tab and search
   useEffect(() => {
@@ -122,24 +265,17 @@ const EstateMyListings = () => {
     setFilteredListings(filtered);
   }, [listings, activeTab, searchTerm]);
 
-  const handleConvert = async () => {
-    // ... existing convert logic (unchanged)
-  };
-
-  const getStatusBadge = (listing) => {
-    if (listing.unit_id) return <span className="status-badge converted">Converted</span>;
-    if (listing.status === 'rented') return <span className="status-badge rented">Rented - Needs Conversion</span>;
-    if (listing.status === 'pending' || listing.status === 'approved') return <span className="status-badge active">Active</span>;
-    return <span className="status-badge">{listing.status}</span>;
-  };
-
-  const formatPrice = (price) => `₦${(price || 0).toLocaleString()}`;
-  const formatDate = (date) => new Date(date).toLocaleDateString();
-
   if (loading) return <RentEasyLoader message="Loading your Listings..." fullScreen />;
 
   return (
     <div className="estate-my-listings">
+      {/* Role Banner for Associates */}
+      {userRole === 'associate' && (
+        <div className="role-banner">
+          <span>🤝 Associate View - You can only see listings you created</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="page-header">
         <button className="back-btn" onClick={() => navigate('/dashboard/estate-firm')}>
@@ -217,7 +353,11 @@ const EstateMyListings = () => {
       ) : (
         <div className="listings-grid">
           {filteredListings.map(listing => (
-            <div key={listing.id} className="listing-card">
+            <div 
+              key={listing.id} 
+              className={`listing-card ${listing.status === 'rented' && !listing.unit_id ? 'convertible' : ''}`}
+              onClick={() => handleCardClick(listing)}
+            >
               <div className="listing-image">
                 {listing.images?.[0] ? (
                   <img src={listing.images[0]} alt={listing.title} />
@@ -225,6 +365,21 @@ const EstateMyListings = () => {
                   <div className="image-placeholder"><Home size={32} /></div>
                 )}
                 {getStatusBadge(listing)}
+                {listing.status === 'rented' && !listing.unit_id && (
+                  <div className="convert-badge">Click to Convert</div>
+                )}
+                {listing.status === 'approved' && (
+                  <button 
+                    className="mark-rented-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMarkAsRented(listing);
+                    }}
+                    title="Mark as Rented"
+                  >
+                    <HomeIcon size={14} /> Mark Rented
+                  </button>
+                )}
               </div>
 
               <div className="listing-content">
@@ -235,13 +390,40 @@ const EstateMyListings = () => {
                   <div className="detail"><Calendar size={14} /><span>Posted {formatDate(listing.created_at)}</span></div>
                 </div>
 
-                {/* Conversion Actions */}
+                {/* Show created by for executives/principals to see which associate created it */}
+                {userRole !== 'associate' && listing.created_by_staff_id && (
+                  <div className="created-by-info">
+                    <User size={12} />
+                    <span>Created by: {listing.created_by_name || 'Staff'}</span>
+                  </div>
+                )}
+
+                {/* Conversion Actions for rented listings */}
                 {listing.status === 'rented' && !listing.unit_id && (
                   <div className="conversion-actions">
-                    <button className="btn-convert" onClick={() => { setSelectedListing(listing); setShowConvertModal(true); }}>
+                    <button 
+                      className="btn-convert" 
+                      onClick={(e) => handleConvertClick(listing, e)}
+                    >
                       <Upload size={16} /> Convert to Unit
                     </button>
-                    <p className="convert-hint">This listing is rented. Add it to your portfolio to start tracking payments.</p>
+                    <p className="convert-hint">This listing is rented. Click to add to your portfolio.</p>
+                  </div>
+                )}
+
+                {/* Mark as Rented button for active listings (estate firm only) */}
+                {listing.status === 'approved' && (
+                  <div className="mark-rented-actions">
+                    <button 
+                      className="btn-mark-rented" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkAsRented(listing);
+                      }}
+                    >
+                      <HomeIcon size={16} /> Mark as Rented
+                    </button>
+                    <p className="mark-hint">Mark when property is rented</p>
                   </div>
                 )}
 
@@ -249,7 +431,13 @@ const EstateMyListings = () => {
                   <div className="unit-info">
                     <CheckCircle size={16} className="text-success" />
                     <span>Converted to unit in {listing.unit?.property?.name || 'property'}</span>
-                    <button className="btn-view-unit" onClick={() => navigate(`/dashboard/estate-firm/properties/${listing.unit?.property_id}`)}>
+                    <button 
+                      className="btn-view-unit" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/dashboard/estate-firm/properties/${listing.unit?.property_id}`);
+                      }}
+                    >
                       <Eye size={14} /> View Unit
                     </button>
                   </div>
@@ -257,13 +445,20 @@ const EstateMyListings = () => {
 
                 {/* Footer */}
                 <div className="listing-footer">
-                  <button className="btn-view" onClick={() => navigate(`/listings/${listing.id}`)}>
+                  <button 
+                    className="btn-view" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(`/listings/${listing.id}`, '_blank');
+                    }}
+                  >
                     <Eye size={14} /> View Listing
                   </button>
-                  {!listing.unit_id && listing.status !== 'rented' && (
+                  {!listing.unit_id && listing.status !== 'rented' && listing.status !== 'approved' && (
                     <button 
                       className="btn-edit"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setListingToEdit(listing);
                         setShowEditModal(true);
                       }}
@@ -278,13 +473,46 @@ const EstateMyListings = () => {
         </div>
       )}
 
+      {/* Mark as Rented Confirmation Modal */}
+      {showMarkRentedModal && listingToMark && (
+        <div className="modal-overlay" onClick={() => setShowMarkRentedModal(false)}>
+          <div className="mark-rented-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Mark as Rented</h2>
+              <button className="close-btn" onClick={() => setShowMarkRentedModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="listing-preview">
+                <h3>{listingToMark.title}</h3>
+                <p>{listingToMark.address}</p>
+                <div className="price">{formatPrice(listingToMark.price)}/year</div>
+              </div>
+              <div className="warning-message">
+                <AlertCircle size={20} />
+                <p>Marking this listing as rented will remove it from the marketplace. You will need to convert it to a unit to add tenant details.</p>
+              </div>
+              <div className="confirmation-actions">
+                <button className="btn-secondary" onClick={() => setShowMarkRentedModal(false)}>Cancel</button>
+                <button className="btn-primary" onClick={confirmMarkAsRented} disabled={markingAsRented}>
+                  {markingAsRented ? 'Marking...' : 'Confirm Mark as Rented'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Convert Modal */}
       {showConvertModal && selectedListing && (
         <ConvertListingModal
           listing={selectedListing}
           estateFirmId={estateFirmId}
           onClose={() => { setShowConvertModal(false); setSelectedListing(null); }}
-          onSuccess={() => { loadListings(); setShowConvertModal(false); setSelectedListing(null); }}
+          onSuccess={() => { 
+            loadListings(); 
+            setShowConvertModal(false); 
+            setSelectedListing(null); 
+          }}
         />
       )}
 
@@ -296,7 +524,7 @@ const EstateMyListings = () => {
           estateFirmId={estateFirmId}
           onClose={() => { setShowEditModal(false); setListingToEdit(null); }}
           onSuccess={() => {
-            loadListings(); // refresh after edit
+            loadListings();
             setShowEditModal(false);
             setListingToEdit(null);
           }}

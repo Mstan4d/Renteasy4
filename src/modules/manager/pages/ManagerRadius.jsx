@@ -16,27 +16,31 @@ const ManagerRadius = () => {
   const [saving, setSaving] = useState(false);
   const [mapLocation, setMapLocation] = useState(null);
 
-  // Nigerian states and LGAs (static data – could be moved to DB later)
+  // Nigerian states and LGAs (static data)
   const nigerianStates = [
     {
       name: 'Lagos',
       lgas: ['Ikeja', 'Agege', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere']
     },
     {
-      name: 'Abuja',
+      name: 'FCT',
       lgas: ['Abuja Municipal', 'Bwari', 'Gwagwalada', 'Kuje', 'Kwali', 'Abaji']
     },
     {
       name: 'Rivers',
-      lgas: ['Port Harcourt', 'Obio-Akpor', 'Okrika', 'Ogu–Bolo', 'Eleme', 'Tai', 'Gokana', 'Khana', 'Oyigbo', 'Opobo–Nkoro', 'Andoni', 'Bonny', 'Degema', 'Asari-Toru', 'Akuku-Toru', 'Abua–Odual', 'Ahoada East', 'Ahoada West', 'Ogba–Egbema–Ndoni', 'Emohua', 'Ikwerre', 'Etche', 'Omuma']
+      lgas: ['Port Harcourt', 'Obio-Akpor', 'Okrika', 'Eleme', 'Tai', 'Gokana', 'Khana', 'Oyigbo', 'Bonny']
     },
     {
       name: 'Oyo',
-      lgas: ['Ibadan North', 'Ibadan North-East', 'Ibadan North-West', 'Ibadan South-East', 'Ibadan South-West', 'Akinyele', 'Egbeda', 'Lagelu', 'Oluyole', 'Ona Ara', 'Ido', 'Afijio', 'Atiba', 'Atisbo', 'Saki East', 'Saki West', 'Iseyin', 'Itesiwaju', 'Iwajowa', 'Kajola', 'Ogbomosho North', 'Ogbomosho South', 'Ogo Oluwa', 'Olorunsogo', 'Irepo', 'Ibarapa Central', 'Ibarapa East', 'Ibarapa North', 'Orelope', 'Ori Ire', 'Oyo East', 'Oyo West', 'Surulere']
+      lgas: ['Ibadan North', 'Ibadan North-East', 'Ibadan North-West', 'Ibadan South-East', 'Ibadan South-West', 'Akinyele', 'Egbeda', 'Lagelu', 'Oluyole']
+    },
+    {
+      name: 'Ogun',
+      lgas: ['Abeokuta North', 'Abeokuta South', 'Ado-Odo/Ota', 'Ewekoro', 'Ifo', 'Ijebu-Ode', 'Sagamu']
     },
     {
       name: 'Kano',
-      lgas: ['Dala', 'Fagge', 'Gabasawa', 'Gaya', 'Gwale', 'Kano Municipal', 'Kumbotso', 'Kura', 'Madobi', 'Minjibir', 'Nasarawa', 'Rano', 'Rimin Gado', 'Tarauni', 'Tofa', 'Tsanyawa', 'Ungogo', 'Warawa', 'Wudil']
+      lgas: ['Dala', 'Fagge', 'Gwale', 'Kano Municipal', 'Kumbotso', 'Nasarawa', 'Tarauni', 'Ungogo']
     }
   ];
 
@@ -57,11 +61,11 @@ const ManagerRadius = () => {
 
       if (data) {
         setRadius(data.notification_radius_km || 1);
+        
         // Convert stored LGA names to area objects
         if (data.preferred_lgas && data.preferred_lgas.length) {
           const areas = [];
           data.preferred_lgas.forEach(lgaName => {
-            // Find state containing this LGA
             for (const state of nigerianStates) {
               if (state.lgas.includes(lgaName)) {
                 areas.push({
@@ -75,6 +79,7 @@ const ManagerRadius = () => {
           });
           setSelectedAreas(areas);
         }
+        
         if (data.lat && data.lng) {
           setMapLocation({ lat: data.lat, lng: data.lng });
         }
@@ -129,7 +134,7 @@ const ManagerRadius = () => {
     if (error) {
       alert("❌ Error saving settings: " + error.message);
     } else {
-      alert("✅ Settings synced to RentEasy Cloud!");
+      alert("✅ Settings saved successfully!");
     }
     setSaving(false);
   };
@@ -158,7 +163,6 @@ const ManagerRadius = () => {
   const calculateCoverage = () => selectedAreas.length;
 
   const getNotificationEstimate = () => {
-    // Rough estimate: 5-20 listings per LGA per month
     const baseEstimate = selectedAreas.length * 10;
     const radiusMultiplier = radius * 1.5;
     return Math.floor(baseEstimate * radiusMultiplier);
@@ -301,12 +305,10 @@ const ManagerRadius = () => {
                         );
                         
                         if (allSelected) {
-                          // Deselect all
                           setSelectedAreas(prev => 
                             prev.filter(area => area.state !== state.name)
                           );
                         } else {
-                          // Select all
                           const newAreas = state.lgas.map(lga => ({
                             id: `${state.name}-${lga}`,
                             state: state.name,

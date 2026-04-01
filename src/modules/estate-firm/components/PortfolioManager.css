@@ -674,27 +674,6 @@
   margin-bottom: 1.5rem;
 }
 
-/* Loading */
-.loading-spinner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  background: white;
-  border-radius: 24px;
-  padding: 2rem;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid #f3f4f6;
-  border-top-color: #667eea;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
 
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -888,3 +867,4 @@
     overflow-x: auto;
   }
 }
+

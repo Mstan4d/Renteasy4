@@ -10,7 +10,7 @@ const ManagerChats = () => {
   const navigate = useNavigate();
 
   const [chats, setChats] = useState([]);
-  const [filter, setFilter] = useState('all'); // all, active, rented, pending
+  const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     total: 0,
@@ -24,72 +24,86 @@ const ManagerChats = () => {
   }, [user]);
 
   const loadChats = async () => {
-    setLoading(true);
-    try {
-      // Get all chats where manager is involved
-      const { data: chatsData, error: chatsError } = await supabase
-        .from('chats')
-        .select(`
-          *,
-          listing:listings!listing_id (
-            title,
-            price,
-            status
-          ),
-          messages:messages!chat_id (
-            content,
-            created_at,
-            is_system
-          )
-        `)
-        .or(`monitoring_manager_id.eq.${user.id},participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
-        .order('created_at', { ascending: false });
+  setLoading(true);
+  try {
+    // Get all listings assigned to this manager
+    const { data: myListings, error: listingsError } = await supabase
+      .from('listings')
+      .select('id, title, price, status, images, address, city, state')
+      .eq('assigned_manager_id', user.id);
 
-      if (chatsError) throw chatsError;
-
-      // For each chat, get the last message
-      const enrichedChats = await Promise.all(
-        (chatsData || []).map(async (chat) => {
-          // Fetch last message (if not already in messages array)
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('content, created_at, is_system')
-            .eq('chat_id', chat.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          // Determine chat type
-          const isIntermediary = chat.participant1_id && chat.participant2_id && chat.monitoring_manager_id === user.id;
-          const chatType = isIntermediary ? 'manager_intermediary' : 'monitoring';
-
-          return {
-            ...chat,
-            listingTitle: chat.listing?.title || 'Unknown',
-            listingPrice: chat.listing?.price || 0,
-            listingStatus: chat.listing?.status || 'unknown',
-            messages: chat.messages || [],
-            lastMessage: lastMsg,
-            chatType
-          };
-        })
-      );
-
-      setChats(enrichedChats);
-      calculateStats(enrichedChats);
-    } catch (error) {
-      console.error('Error loading chats:', error);
-    } finally {
+    if (listingsError) throw listingsError;
+    
+    const listingIds = myListings?.map(l => l.id) || [];
+    
+    if (listingIds.length === 0) {
+      setChats([]);
       setLoading(false);
+      return;
     }
-  };
+    
+    // Get chats for these listings
+    const { data: chatsData, error: chatsError } = await supabase
+      .from('chats')
+      .select(`
+        *,
+        participant1:participant1_id (id, full_name, name, avatar_url),
+        participant2:participant2_id (id, full_name, name, avatar_url)
+      `)
+      .in('listing_id', listingIds)
+      .order('updated_at', { ascending: false });
+
+    if (chatsError) throw chatsError;
+
+    // For each chat, get the last message
+    const enrichedChats = await Promise.all(
+      (chatsData || []).map(async (chat) => {
+        const listing = myListings.find(l => l.id === chat.listing_id);
+        
+        const { data: lastMsg } = await supabase
+          .from('messages')
+          .select('content, created_at, is_system_message, sender_id')
+          .eq('chat_id', chat.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const { count: unreadCount } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('chat_id', chat.id)
+          .eq('read_at', null)
+          .neq('sender_id', user.id);
+
+        return {
+          ...chat,
+          listingTitle: listing?.title || 'Unknown Property',
+          listingPrice: listing?.price || 0,
+          listingStatus: listing?.status || 'unknown',
+          listingImage: listing?.images?.[0] || null,
+          listingLocation: `${listing?.city || ''} ${listing?.state || ''}`.trim() || 'Location not set',
+          lastMessage: lastMsg,
+          unreadCount: unreadCount || 0,
+          isMonitoring: chat.monitoring_manager_id === user.id
+        };
+      })
+    );
+
+    setChats(enrichedChats);
+    calculateStats(enrichedChats);
+  } catch (error) {
+    console.error('Error loading chats:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const calculateStats = (chatsData) => {
     const stats = {
       total: chatsData.length,
-      active: chatsData.filter(c => c.state === 'active' && !c.rented).length,
+      active: chatsData.filter(c => c.state === 'active' && !c.rented && c.isMonitoring).length,
       rented: chatsData.filter(c => c.rented === true).length,
-      pending: chatsData.filter(c => c.state === 'pending_availability').length
+      pending: chatsData.filter(c => c.state === 'pending_availability' && c.isMonitoring).length
     };
     setStats(stats);
   };
@@ -107,334 +121,210 @@ const ManagerChats = () => {
     }
   };
 
-  const getChatTypeLabel = (chat) => {
-    return chat.chatType === 'manager_intermediary'
-      ? { label: 'Intermediary', color: '#0c5460', bgColor: '#d1ecf1', icon: '💬' }
-      : { label: 'Monitoring', color: '#721c24', bgColor: '#f8d7da', icon: '👁️' };
-  };
-
-  const getStatusLabel = (chat) => {
+  const getStatusInfo = (chat) => {
     if (chat.rented) {
-      return { label: 'Rented', color: '#155724', bgColor: '#d4edda', icon: '✅' };
+      return { label: 'Rented', class: 'status-rented', icon: '✅' };
     }
     switch (chat.state) {
       case 'active':
-        return { label: 'Active', color: '#004085', bgColor: '#cce5ff', icon: '💬' };
+        return { label: 'Active', class: 'status-active', icon: '💬' };
       case 'pending_availability':
-        return { label: 'Pending', color: '#856404', bgColor: '#fff3cd', icon: '⏳' };
+        return { label: 'Awaiting Response', class: 'status-pending', icon: '⏳' };
       default:
-        return { label: chat.state, color: '#6c757d', bgColor: '#f8f9fa', icon: '📝' };
+        return { label: chat.state || 'Unknown', class: 'status-default', icon: '📝' };
     }
   };
 
   const openChat = (chatId) => {
-    navigate(`/dashboard/manager/chat/${chatId}/monitor`);
+    navigate(`/dashboard/messages/chat/${chatId}`);
   };
 
-  const confirmRental = async (chatId) => {
-    const chat = chats.find(c => c.id === chatId);
-    if (!chat) return;
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
+  const formatRelativeTime = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
 
-    if (!window.confirm('Mark this property as rented and confirm commission payment?')) return;
-
-    try {
-      // Update chat state
-      const { error: chatError } = await supabase
-        .from('chats')
-        .update({
-          state: 'rented',
-          rented: true,
-          rented_at: new Date().toISOString()
-        })
-        .eq('id', chatId);
-
-      if (chatError) throw chatError;
-
-      // Add system message
-      const { error: msgError } = await supabase
-        .from('messages')
-        .insert([{
-          chat_id: chatId,
-          sender_id: '00000000-0000-0000-0000-000000000000',
-          content: `✅ Property marked as rented by manager ${user.name}. Commission confirmed.`,
-          is_system: true
-        }]);
-
-      if (msgError) throw msgError;
-
-      // Update listing status
-      const { error: listingError } = await supabase
-        .from('listings')
-        .update({ status: 'rented' })
-        .eq('id', chat.listing_id);
-
-      if (listingError) throw listingError;
-
-      // Record commission (pending admin approval)
-      const rentalAmount = chat.listingPrice || 0;
-      const managerShare = rentalAmount * 0.025;
-      const referrerShare = rentalAmount * 0.015;
-      const platformShare = rentalAmount * 0.035;
-
-      const { error: commError } = await supabase
-        .from('commissions')
-        .insert([{
-          listing_id: chat.listing_id,
-          manager_id: user.id,
-          rental_amount: rentalAmount,
-          manager_share: managerShare,
-          referrer_share: referrerShare,
-          platform_share: platformShare,
-          status: 'pending'
-        }]);
-
-      if (commError) throw commError;
-
-      alert(`✅ Rental confirmed! Your commission: ₦${managerShare.toLocaleString()}`);
-      loadChats(); // refresh
-    } catch (error) {
-      console.error('Error confirming rental:', error);
-      alert('Failed to confirm rental.');
-    }
-  };
-
-  const verifyProperty = async (chatId) => {
-    const chat = chats.find(c => c.id === chatId);
-    if (!chat) return;
-
-    if (!window.confirm('Verify this property after onsite inspection?')) return;
-
-    try {
-      // Update listing as verified
-      const { error: listingError } = await supabase
-        .from('listings')
-        .update({
-          verified: true,
-          verified_by: user.id,
-          verification_date: new Date().toISOString(),
-          permanent_manager: true,
-          managed_by: user.id
-        })
-        .eq('id', chat.listing_id);
-
-      if (listingError) throw listingError;
-
-      // Optionally update chat to reflect permanent assignment
-      const { error: chatError } = await supabase
-        .from('chats')
-        .update({ permanent_assignment: true })
-        .eq('id', chatId);
-
-      if (chatError) throw chatError;
-
-      // Add system message
-      await supabase.from('messages').insert([{
-        chat_id: chatId,
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        content: `✅ Property verified on-site by manager ${user.name}. Permanent assignment confirmed.`,
-        is_system: true
-      }]);
-
-      alert('✅ Property verified! You are now permanently assigned.');
-      loadChats();
-    } catch (error) {
-      console.error('Error verifying property:', error);
-      alert('Failed to verify property.');
-    }
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
   };
 
   if (loading) {
-    return <div className="loading">Loading chats...</div>;
+    return (
+      <div className="manager-chats">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading your chats...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="manager-chats">
-      {/* HEADER */}
+      {/* Header */}
       <div className="page-header">
         <div>
-          <h1>💬 My Chats</h1>
+          <h1>Chat Monitoring</h1>
           <p>Manage conversations and track commission opportunities</p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => navigate('/dashboard/manager')}
-        >
+        <button className="btn-outline" onClick={() => navigate('/dashboard/manager')}>
           Back to Dashboard
         </button>
       </div>
 
-      {/* STATS */}
-      <div className="chats-stats">
-        <div className="stat-card" onClick={() => setFilter('all')}>
-          <div className="stat-number">{stats.total}</div>
-          <div className="stat-label">Total Chats</div>
+      {/* Stats Cards */}
+      <div className="stats-grid">
+        <div className={`stat-card ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+          <div className="stat-icon">💬</div>
+          <div className="stat-info">
+            <div className="stat-value">{stats.total}</div>
+            <div className="stat-label">Total Chats</div>
+          </div>
         </div>
-        <div className="stat-card" onClick={() => setFilter('active')}>
-          <div className="stat-number">{stats.active}</div>
-          <div className="stat-label">Active</div>
+        <div className={`stat-card ${filter === 'active' ? 'active' : ''}`} onClick={() => setFilter('active')}>
+          <div className="stat-icon">🟢</div>
+          <div className="stat-info">
+            <div className="stat-value">{stats.active}</div>
+            <div className="stat-label">Active</div>
+          </div>
         </div>
-        <div className="stat-card" onClick={() => setFilter('rented')}>
-          <div className="stat-number">{stats.rented}</div>
-          <div className="stat-label">Rented</div>
+        <div className={`stat-card ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')}>
+          <div className="stat-icon">⏳</div>
+          <div className="stat-info">
+            <div className="stat-value">{stats.pending}</div>
+            <div className="stat-label">Pending</div>
+          </div>
         </div>
-        <div className="stat-card" onClick={() => setFilter('pending')}>
-          <div className="stat-number">{stats.pending}</div>
-          <div className="stat-label">Pending</div>
+        <div className={`stat-card ${filter === 'rented' ? 'active' : ''}`} onClick={() => setFilter('rented')}>
+          <div className="stat-icon">✅</div>
+          <div className="stat-info">
+            <div className="stat-value">{stats.rented}</div>
+            <div className="stat-label">Completed</div>
+          </div>
         </div>
       </div>
 
-      {/* FILTERS */}
-      <div className="chats-filters">
-        <button
-          className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          All Chats
+      {/* Filter Tabs */}
+      <div className="filter-tabs">
+        <button className={`filter-tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+          All
         </button>
-        <button
-          className={`filter-btn ${filter === 'active' ? 'active' : ''}`}
-          onClick={() => setFilter('active')}
-        >
+        <button className={`filter-tab ${filter === 'active' ? 'active' : ''}`} onClick={() => setFilter('active')}>
           Active
         </button>
-        <button
-          className={`filter-btn ${filter === 'rented' ? 'active' : ''}`}
-          onClick={() => setFilter('rented')}
-        >
-          Rented
-        </button>
-        <button
-          className={`filter-btn ${filter === 'pending' ? 'active' : ''}`}
-          onClick={() => setFilter('pending')}
-        >
+        <button className={`filter-tab ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')}>
           Pending
+        </button>
+        <button className={`filter-tab ${filter === 'rented' ? 'active' : ''}`} onClick={() => setFilter('rented')}>
+          Completed
         </button>
       </div>
 
-      {/* CHATS LIST */}
+      {/* Chats List */}
       <div className="chats-list">
         {getFilteredChats().length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">
-              {filter === 'all' ? '💬' :
-                filter === 'active' ? '🔍' :
-                  filter === 'rented' ? '✅' : '⏳'}
+              {filter === 'all' ? '💬' : filter === 'active' ? '🔍' : filter === 'rented' ? '✅' : '⏳'}
             </div>
             <h3>No {filter} chats found</h3>
             <p>
               {filter === 'all' ? 'Accept a listing to start managing chats' :
-                filter === 'active' ? 'No active chats at the moment' :
-                  filter === 'rented' ? 'No rented properties yet' :
-                    'No pending availability checks'}
+               filter === 'active' ? 'No active chats at the moment' :
+               filter === 'rented' ? 'No completed rentals yet' :
+               'No pending availability checks'}
             </p>
             {filter !== 'all' && (
-              <button
-                className="btn btn-outline"
-                onClick={() => setFilter('all')}
-              >
+              <button className="btn-outline" onClick={() => setFilter('all')}>
                 View All Chats
               </button>
             )}
           </div>
         ) : (
           getFilteredChats().map(chat => {
-            const chatType = getChatTypeLabel(chat);
-            const status = getStatusLabel(chat);
-            const messagesCount = chat.messages?.length || 0;
-            const lastMessage = chat.lastMessage;
-            const isPermanent = chat.permanent_assignment;
-
+            const status = getStatusInfo(chat);
+            const commission = chat.listingPrice * 0.025;
+            const hasUnread = chat.unreadCount > 0;
+            
             return (
-              <div key={chat.id} className="chat-card">
-                <div className="chat-header">
-                  <div className="chat-title">
-                    <h4>{chat.listingTitle}</h4>
-                    <div className="chat-subtitle">
-                      <span className="chat-price">₦{chat.listingPrice?.toLocaleString()}</span>
-                      <span
-                        className="chat-type"
-                        style={{ backgroundColor: chatType.bgColor, color: chatType.color }}
-                      >
-                        {chatType.icon} {chatType.label}
-                      </span>
-                      <span
-                        className="chat-status"
-                        style={{ backgroundColor: status.bgColor, color: status.color }}
-                      >
+              <div key={chat.id} className={`chat-card ${hasUnread ? 'unread' : ''}`} onClick={() => openChat(chat.id)}>
+                {/* Left Section - Property Image */}
+                <div className="chat-image">
+                  {chat.listingImage ? (
+                    <img src={chat.listingImage} alt={chat.listingTitle} />
+                  ) : (
+                    <div className="image-placeholder">🏠</div>
+                  )}
+                </div>
+
+                {/* Middle Section - Chat Info */}
+                <div className="chat-info">
+                  <div className="chat-header">
+                    <h4 className="chat-title">{chat.listingTitle}</h4>
+                    <div className="chat-badges">
+                      <span className={`status-badge ${status.class}`}>
                         {status.icon} {status.label}
                       </span>
-                      {isPermanent && (
-                        <span className="badge permanent">👨‍💼 Permanent</span>
+                      {chat.isMonitoring && (
+                        <span className="monitoring-badge">👁️ Monitoring</span>
                       )}
                     </div>
                   </div>
 
-                  <div className="chat-meta">
-                    <div className="meta-item">
-                      <span className="meta-label">Messages:</span>
-                      <span className="meta-value">{messagesCount}</span>
+                  <div className="chat-details">
+                    <div className="detail-row">
+                      <span className="detail-label">Price:</span>
+                      <span className="detail-value price">{formatCurrency(chat.listingPrice)}/year</span>
                     </div>
-                    <div className="meta-item">
-                      <span className="meta-label">Commission:</span>
-                      <span className="meta-value highlight">
-                        ₦{(chat.listingPrice * 0.025).toLocaleString()}
-                      </span>
+                    <div className="detail-row">
+                      <span className="detail-label">Location:</span>
+                      <span className="detail-value">{chat.listingLocation || 'Location not set'}</span>
                     </div>
-                    {lastMessage && (
-                      <div className="meta-item">
-                        <span className="meta-label">Last activity:</span>
-                        <span className="meta-value">
-                          {new Date(lastMessage.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    )}
+                    <div className="detail-row">
+                      <span className="detail-label">Commission:</span>
+                      <span className="detail-value commission">{formatCurrency(commission)}</span>
+                      <span className="commission-rate">(2.5%)</span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="chat-body">
-                  {lastMessage && (
+                  {/* Last Message Preview */}
+                  {chat.lastMessage && (
                     <div className="last-message">
                       <span className="message-preview">
-                        {lastMessage.content.length > 100
-                          ? lastMessage.content.substring(0, 100) + '...'
-                          : lastMessage.content}
+                        {chat.lastMessage.is_system_message ? '🔔 System: ' : '💬 '}
+                        {chat.lastMessage.content?.length > 80 
+                          ? `${chat.lastMessage.content.substring(0, 80)}...` 
+                          : chat.lastMessage.content}
                       </span>
+                      <span className="message-time">{formatRelativeTime(chat.lastMessage.created_at)}</span>
                     </div>
                   )}
                 </div>
 
+                {/* Right Section - Actions */}
                 <div className="chat-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => openChat(chat.id)}
-                  >
-                    {chatType.label === 'Intermediary' ? 'Join Chat' : 'Monitor Chat'}
-                  </button>
-
-                  {!chat.rented && chat.state === 'active' && (
-                    <button
-                      className="btn btn-success"
-                      onClick={() => confirmRental(chat.id)}
-                    >
-                      Mark as Rented
+                  <div className="action-buttons">
+                    <button className="btn-monitor" onClick={(e) => { e.stopPropagation(); openChat(chat.id); }}>
+                      {chat.isMonitoring ? '👁️ Monitor Chat' : '💬 Join Chat'}
                     </button>
-                  )}
-
-                  {!isPermanent && !chat.rented && (
-                    <button
-                      className="btn btn-warning"
-                      onClick={() => verifyProperty(chat.id)}
-                    >
-                      Verify Property
+                    <button className="btn-view" onClick={(e) => { e.stopPropagation(); navigate(`/listings/${chat.listing_id}`); }}>
+                      📍 View Property
                     </button>
+                  </div>
+                  {hasUnread && (
+                    <div className="unread-indicator">
+                      <span className="unread-dot"></span>
+                      <span className="unread-count">{chat.unreadCount} new</span>
+                    </div>
                   )}
-
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => navigate(`/listings/${chat.listing_id}`)}
-                  >
-                    View Property
-                  </button>
                 </div>
               </div>
             );
@@ -442,29 +332,26 @@ const ManagerChats = () => {
         )}
       </div>
 
-      {/* COMMISSION INFO */}
-      <div className="commission-info">
-        <div className="info-header">
-          <h3>💰 Commission Information</h3>
+      {/* Commission Summary */}
+      <div className="commission-summary">
+        <div className="summary-header">
+          <h3>💰 Commission Summary</h3>
         </div>
-        <div className="info-content">
-          <div className="info-item">
-            <span className="info-label">Your Commission Rate:</span>
-            <span className="info-value">2.5% per rental</span>
+        <div className="summary-grid">
+          <div className="summary-item">
+            <span className="summary-label">Your Rate</span>
+            <span className="summary-value">2.5%</span>
           </div>
-          <div className="info-item">
-            <span className="info-label">Total Potential:</span>
-            <span className="info-value">
-              ₦{chats.reduce((sum, chat) => sum + (chat.listingPrice * 0.025), 0).toLocaleString()}
+          <div className="summary-item">
+            <span className="summary-label">Potential Earnings</span>
+            <span className="summary-value">
+              {formatCurrency(chats.reduce((sum, chat) => sum + (chat.listingPrice * 0.025), 0))}
             </span>
           </div>
-          <div className="info-item">
-            <span className="info-label">Confirmed Earnings:</span>
-            <span className="info-value">
-              ₦{chats
-                .filter(c => c.rented)
-                .reduce((sum, chat) => sum + (chat.listingPrice * 0.025), 0)
-                .toLocaleString()}
+          <div className="summary-item">
+            <span className="summary-label">Confirmed Earnings</span>
+            <span className="summary-value highlight">
+              {formatCurrency(chats.filter(c => c.rented).reduce((sum, chat) => sum + (chat.listingPrice * 0.025), 0))}
             </span>
           </div>
         </div>

@@ -107,67 +107,79 @@ const Home = () => {
       const tenantMap = Object.fromEntries((tenantsRes.data || []).map(t => [t.id, t]));
 
       const transformedListings = (listings || []).map(listing => {
-        let posterRole = null;
-        let posterName = 'Anonymous';
-        let posterAvatar = null;
-        let userVerified = false;
+  let posterRole = null;
+  let posterName = 'Anonymous';
+  let posterAvatar = null;
+  let userVerified = false;
 
-        if (listing.estate_firm_id && estateFirmMap[listing.estate_firm_id]) {
-          const firm = estateFirmMap[listing.estate_firm_id];
-          posterRole = 'estate-firm';
-          posterName = firm.firm_name || 'Estate Firm';
-          posterAvatar = firm.logo_url;
-          userVerified = firm.verification_status === 'verified';
-        } else if (listing.landlord_id && landlordMap[listing.landlord_id]) {
-          const landlord = landlordMap[listing.landlord_id];
-          posterRole = 'landlord';
-          posterName = landlord.full_name || landlord.name || 'Landlord';
-          posterAvatar = landlord.avatar_url;
-          userVerified = landlord.kyc_status === 'approved';
-        } else if (listing.tenant_id && tenantMap[listing.tenant_id]) {
-          const tenant = tenantMap[listing.tenant_id];
-          posterRole = 'tenant';
-          posterName = tenant.full_name || tenant.name || 'Tenant';
-          posterAvatar = tenant.avatar_url;
-          userVerified = tenant.kyc_status === 'approved';
-        }
+  // Check estate firm first
+  if (listing.estate_firm_id && estateFirmMap[listing.estate_firm_id]) {
+    const firm = estateFirmMap[listing.estate_firm_id];
+    posterRole = 'estate-firm';
+    posterName = firm.firm_name || 'Estate Firm';
+    posterAvatar = firm.logo_url;
+    userVerified = firm.verification_status === 'verified';
+  } 
+  // Then check landlord
+  else if (listing.landlord_id && landlordMap[listing.landlord_id]) {
+    const landlord = landlordMap[listing.landlord_id];
+    posterRole = 'landlord';
+    posterName = landlord.full_name || landlord.name || 'Landlord';
+    posterAvatar = landlord.avatar_url;
+    userVerified = landlord.kyc_status === 'approved';
+  } 
+  // Then check tenant
+  else if (listing.tenant_id && tenantMap[listing.tenant_id]) {
+    const tenant = tenantMap[listing.tenant_id];
+    posterRole = 'tenant';
+    posterName = tenant.full_name || tenant.name || 'Tenant';
+    posterAvatar = tenant.avatar_url;
+    userVerified = tenant.kyc_status === 'approved';
+  }
+  // Fallback to listing fields
+  else if (listing.poster_role) {
+    posterRole = listing.poster_role;
+    posterName = listing.poster_name || 'Anonymous';
+  }
 
-        return {
-          id: listing.id,
-          title: listing.title || 'No title',
-          price: parseFloat(listing.price || listing.rent_amount || 0),
-          description: listing.description || 'No description',
-          images: listing.images || [],
-          location: listing.address || listing.landmark || 'No address',
-          state: listing.state || '',
-          lga: listing.lga || '',
-          lat: listing.lat,
-          lng: listing.lng,
-          userId: listing.estate_firm_id || listing.landlord_id || listing.tenant_id,
-          posterRole,
-          posterName,
-          posterAvatar,
-          userVerified,
-          verified: listing.verified || false,
-          verificationLevel: listing.verification_level || 'standard',
-          postedDate: new Date(listing.created_at).toLocaleDateString(),
-          amenities: listing.amenities || [],
-          propertyType: listing.property_type || 'Apartment',
-          category: listing.category || 'residential',
-          status: listing.status,
-          bedrooms: listing.bedrooms,
-          bathrooms: listing.bathrooms,
-          area: listing.area,
-          coordinates: listing.coordinates,
-          commissionRate: listing.commission_rate,
-          extra_fees: listing.extra_fees,
-          created_at: listing.created_at,
-          // Add video support
-    video_url: listing.video_url || null,           // Single video URL
-    video_urls: listing.video_urls || [],           // Multiple video URLs
+  // For estate firms, commission_rate should be 0
+  const commissionRate = posterRole === 'estate-firm' ? 0 : (listing.commission_rate || 7.5);
+
+  return {
+    id: listing.id,
+    title: listing.title || 'No title',
+    price: parseFloat(listing.price || listing.rent_amount || 0),
+    description: listing.description || 'No description',
+    images: listing.images || [],
+    location: listing.address || listing.landmark || 'No address',
+    state: listing.state || '',
+    lga: listing.lga || '',
+    lat: listing.lat,
+    lng: listing.lng,
+    userId: listing.estate_firm_id || listing.landlord_id || listing.tenant_id,
+    posterRole,
+    posterName,
+    posterAvatar,
+    userVerified,
+    verified: listing.verified || false,
+    verificationLevel: listing.verification_level || 'standard',
+    postedDate: new Date(listing.created_at).toLocaleDateString(),
+    amenities: listing.amenities || [],
+    propertyType: listing.property_type || 'Apartment',
+    category: listing.category || 'residential',
+    status: listing.status,
+    bedrooms: listing.bedrooms,
+    bathrooms: listing.bathrooms,
+    area: listing.area,
+    coordinates: listing.coordinates,
+    commission_rate: commissionRate,  // Set commission_rate based on poster role
+    extra_fees: listing.extra_fees,
+    created_at: listing.created_at,
+    video_url: listing.video_url || null,
+    video_urls: listing.video_urls || [],
     has_video: !!(listing.video_url || (listing.video_urls && listing.video_urls.length > 0))
-        };
-      });
+  };
+});
 
       setAllListings(transformedListings);
 

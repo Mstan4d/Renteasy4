@@ -15,6 +15,8 @@ const EstateProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [userRole, setUserRole] = useState('principal');
+  const [canEdit, setCanEdit] = useState(true);
   const [formData, setFormData] = useState({
     firmName: '',
     contactPerson: '',
@@ -51,6 +53,32 @@ const EstateProfile = () => {
     monthlyRevenue: 0,
     clientSatisfaction: 0
   });
+
+  // Get user role on mount
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error: roleError } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role, is_staff_account')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!roleError && roleData) {
+          const role = roleData.staff_role || 'principal';
+          setUserRole(role);
+          // Only Principal can edit
+          setCanEdit(role === 'principal');
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+        setCanEdit(true); // Default to true if error
+      }
+    };
+    
+    getUserRole();
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -179,7 +207,7 @@ const computeStats = async (estateFirmId) => {
       totalProperties: totalProperties || 0,
       activeClients: activeClients || 0,
       monthlyRevenue,
-      clientSatisfaction: 0 // You can calculate this later if needed
+      clientSatisfaction: 0
     });
 
   } catch (error) {
@@ -289,6 +317,10 @@ const computeStats = async (estateFirmId) => {
   };
 
   const handleLogoUpload = async (e) => {
+    if (!canEdit) {
+      alert('Only the Firm Principal can edit the profile.');
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     if (!user) {
@@ -311,6 +343,10 @@ const computeStats = async (estateFirmId) => {
   };
 
   const handleCoverUpload = async (e) => {
+    if (!canEdit) {
+      alert('Only the Firm Principal can edit the profile.');
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     if (!user) {
@@ -335,6 +371,11 @@ const computeStats = async (estateFirmId) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user) return;
+    
+    if (!canEdit) {
+      alert('Only the Firm Principal can edit the profile.');
+      return;
+    }
 
     try {
       const profileData = {
@@ -387,11 +428,19 @@ const computeStats = async (estateFirmId) => {
   };
 
   if (loading) {
-  return <RentEasyLoader message="Loading your Profile..." fullScreen />;
-}
+    return <RentEasyLoader message="Loading your Profile..." fullScreen />;
+  }
 
   return (
     <div className="estate-profile">
+      {/* Role Banner for Non-Principal */}
+      {!canEdit && (
+        <div className="role-banner">
+          <Shield size={16} />
+          <span>View Only Mode - Only the Firm Principal can edit this profile</span>
+        </div>
+      )}
+
       {/* Cover Image */}
       <div className="cover-image">
         {formData.coverImage ? (
@@ -403,7 +452,7 @@ const computeStats = async (estateFirmId) => {
           </div>
         )}
         
-        {isEditing && (
+        {isEditing && canEdit && (
           <>
             <label htmlFor="cover-upload" className="cover-upload-btn">
               <Camera size={16} />
@@ -431,7 +480,7 @@ const computeStats = async (estateFirmId) => {
                 <Building size={40} />
               )}
               
-              {isEditing && (
+              {isEditing && canEdit && (
                 <>
                   <label htmlFor="logo-upload" className="avatar-upload-btn">
                     <Camera size={12} />
@@ -492,10 +541,12 @@ const computeStats = async (estateFirmId) => {
                 </button>
               </div>
             ) : (
-              <button className="btn btn-primary" onClick={() => setIsEditing(true)}>
-                <Edit size={16} />
-                Edit Profile
-              </button>
+              canEdit && (
+                <button className="btn btn-primary" onClick={() => setIsEditing(true)}>
+                  <Edit size={16} />
+                  Edit Profile
+                </button>
+              )
             )}
           </div>
         </div>
@@ -543,7 +594,7 @@ const computeStats = async (estateFirmId) => {
           {/* About Section */}
           <div className="profile-section">
             <h3>About Firm</h3>
-            {isEditing ? (
+            {isEditing && canEdit ? (
               <textarea
                 name="description"
                 value={formData.description}
@@ -553,7 +604,7 @@ const computeStats = async (estateFirmId) => {
                 placeholder="Tell us about your firm..."
               />
             ) : (
-              <p className="about-text">{formData.description}</p>
+              <p className="about-text">{formData.description || 'No description provided.'}</p>
             )}
           </div>
 
@@ -563,7 +614,7 @@ const computeStats = async (estateFirmId) => {
             <div className="contact-grid">
               <div className="contact-item">
                 <label>Address</label>
-                {isEditing ? (
+                {isEditing && canEdit ? (
                   <input
                     type="text"
                     name="address"
@@ -574,14 +625,14 @@ const computeStats = async (estateFirmId) => {
                 ) : (
                   <span className="contact-value">
                     <MapPin size={14} />
-                    {formData.address}
+                    {formData.address || 'Not provided'}
                   </span>
                 )}
               </div>
               
               <div className="contact-item">
                 <label>Contact Person</label>
-                {isEditing ? (
+                {isEditing && canEdit ? (
                   <input
                     type="text"
                     name="contactPerson"
@@ -590,13 +641,13 @@ const computeStats = async (estateFirmId) => {
                     className="form-input"
                   />
                 ) : (
-                  <span className="contact-value">{formData.contactPerson}</span>
+                  <span className="contact-value">{formData.contactPerson || 'Not provided'}</span>
                 )}
               </div>
               
               <div className="contact-item">
                 <label>Office Hours</label>
-                {isEditing ? (
+                {isEditing && canEdit ? (
                   <input
                     type="text"
                     name="officeHours"
@@ -607,14 +658,14 @@ const computeStats = async (estateFirmId) => {
                 ) : (
                   <span className="contact-value">
                     <Calendar size={14} />
-                    {formData.officeHours}
+                    {formData.officeHours || 'Not provided'}
                   </span>
                 )}
               </div>
               
               <div className="contact-item">
                 <label>Year Established</label>
-                {isEditing ? (
+                {isEditing && canEdit ? (
                   <input
                     type="text"
                     name="yearEstablished"
@@ -623,7 +674,7 @@ const computeStats = async (estateFirmId) => {
                     className="form-input"
                   />
                 ) : (
-                  <span className="contact-value">{formData.yearEstablished}</span>
+                  <span className="contact-value">{formData.yearEstablished || 'Not provided'}</span>
                 )}
               </div>
             </div>
@@ -637,7 +688,7 @@ const computeStats = async (estateFirmId) => {
                 <Briefcase size={16} />
                 <div>
                   <span className="stat-label">Total Employees</span>
-                  {isEditing ? (
+                  {isEditing && canEdit ? (
                     <input
                       type="text"
                       name="totalAgents"
@@ -646,7 +697,7 @@ const computeStats = async (estateFirmId) => {
                       className="form-input-sm"
                     />
                   ) : (
-                    <span className="stat-value">{formData.totalAgents}</span>
+                    <span className="stat-value">{formData.totalAgents || '0'}</span>
                   )}
                 </div>
               </div>
@@ -655,7 +706,7 @@ const computeStats = async (estateFirmId) => {
                 <Home size={16} />
                 <div>
                   <span className="stat-label">Properties Managed</span>
-                  {isEditing ? (
+                  {isEditing && canEdit ? (
                     <input
                       type="text"
                       name="propertiesManaged"
@@ -664,7 +715,7 @@ const computeStats = async (estateFirmId) => {
                       className="form-input-sm"
                     />
                   ) : (
-                    <span className="stat-value">{formData.propertiesManaged}</span>
+                    <span className="stat-value">{formData.propertiesManaged || '0'}</span>
                   )}
                 </div>
               </div>
@@ -686,16 +737,17 @@ const computeStats = async (estateFirmId) => {
                 <div
                   key={service}
                   className={`service-tag ${formData.services.includes(service) ? 'active' : ''}`}
-                  onClick={() => isEditing && handleServiceToggle(service)}
+                  onClick={() => isEditing && canEdit && handleServiceToggle(service)}
+                  style={{ cursor: isEditing && canEdit ? 'pointer' : 'default' }}
                 >
                   {service}
-                  {formData.services.includes(service) && isEditing && (
+                  {formData.services.includes(service) && isEditing && canEdit && (
                     <span className="remove-tag">×</span>
                   )}
                 </div>
               ))}
             </div>
-            {isEditing && <small className="hint">Click to toggle services</small>}
+            {isEditing && canEdit && <small className="hint">Click to toggle services</small>}
           </div>
 
           {/* Specialties */}
@@ -706,16 +758,17 @@ const computeStats = async (estateFirmId) => {
                 <div
                   key={specialty}
                   className={`specialty-tag ${formData.specialties.includes(specialty) ? 'active' : ''}`}
-                  onClick={() => isEditing && handleSpecialtyToggle(specialty)}
+                  onClick={() => isEditing && canEdit && handleSpecialtyToggle(specialty)}
+                  style={{ cursor: isEditing && canEdit ? 'pointer' : 'default' }}
                 >
                   {specialty}
-                  {formData.specialties.includes(specialty) && isEditing && (
+                  {formData.specialties.includes(specialty) && isEditing && canEdit && (
                     <span className="remove-tag">×</span>
                   )}
                 </div>
               ))}
             </div>
-            {isEditing && <small className="hint">Click to toggle specialties</small>}
+            {isEditing && canEdit && <small className="hint">Click to toggle specialties</small>}
           </div>
 
           {/* Social Links */}
@@ -725,7 +778,7 @@ const computeStats = async (estateFirmId) => {
               {['facebook', 'twitter', 'linkedin', 'instagram'].map(platform => (
                 <div key={platform} className="social-input">
                   <span className="social-icon">{platform.charAt(0).toUpperCase()}</span>
-                  {isEditing ? (
+                  {isEditing && canEdit ? (
                     <input
                       type="url"
                       value={formData.socialLinks[platform]}
@@ -774,7 +827,7 @@ const computeStats = async (estateFirmId) => {
               </div>
             </div>
             
-            {!formData.certification.certified && (
+            {!formData.certification.certified && canEdit && (
               <div className="verification-cta">
                 <p>Verify your business to unlock all features</p>
                 <button className="btn btn-primary btn-sm">

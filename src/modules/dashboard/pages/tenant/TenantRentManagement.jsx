@@ -55,135 +55,165 @@ const TenantRentManagement = () => {
     }
   }, [user]);
 
-  const loadTenantData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // 1. Get all units where tenant is assigned
-      const { data: unitsData, error: unitsError } = await supabase
-        .from('units')
-        .select('*')
-        .eq('tenant_id', user.id);
+  // src/modules/dashboard/pages/tenant/TenantRentManagement.jsx
+// Replace the loadTenantData function with this updated version
 
-      if (unitsError) throw unitsError;
+const loadTenantData = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    // 1. Get all units where tenant is assigned
+    const { data: unitsData, error: unitsError } = await supabase
+      .from('units')
+      .select('*')
+      .eq('tenant_id', user.id);
 
-      if (!unitsData || unitsData.length === 0) {
-        setUnits([]);
-        setLoading(false);
-        return;
-      }
+    if (unitsError) throw unitsError;
 
-      // 2. Get property IDs from units
-      const propertyIds = unitsData.map(u => u.property_id).filter(Boolean);
-      
-      // 3. Fetch properties
-      let propertiesMap = {};
-      if (propertyIds.length > 0) {
-        const { data: propertiesData, error: propsError } = await supabase
-          .from('properties')
-          .select('*')
-          .in('id', propertyIds);
-        
-        if (!propsError && propertiesData) {
-          propertiesMap = Object.fromEntries(propertiesData.map(p => [p.id, p]));
-        }
-      }
-
-      // 4. Get estate firm IDs and landlord IDs from properties
-      const estateFirmIds = Object.values(propertiesMap)
-        .map(p => p.estate_firm_id)
-        .filter(Boolean);
-      const landlordIds = Object.values(propertiesMap)
-        .map(p => p.landlord_id)
-        .filter(Boolean);
-
-      // 5. Fetch estate firm profiles
-      let estateFirmMap = {};
-      if (estateFirmIds.length > 0) {
-        const { data: firmsData } = await supabase
-          .from('estate_firm_profiles')
-          .select('id, firm_name, business_phone, business_email, user_id')
-          .in('id', estateFirmIds);
-        
-        if (firmsData) {
-          estateFirmMap = Object.fromEntries(firmsData.map(f => [f.id, f]));
-        }
-      }
-
-      // 6. Fetch landlord profiles
-      let landlordMap = {};
-      if (landlordIds.length > 0) {
-        const { data: landlordsData } = await supabase
-          .from('profiles')
-          .select('id, full_name, name, email, phone')
-          .in('id', landlordIds);
-        
-        if (landlordsData) {
-          landlordMap = Object.fromEntries(landlordsData.map(l => [l.id, l]));
-        }
-      }
-
-      // 7. Combine all data
-      const enrichedUnits = unitsData.map(unit => {
-        const property = propertiesMap[unit.property_id] || null;
-        let estateFirm = null;
-        let landlord = null;
-        
-        if (property?.estate_firm_id && estateFirmMap[property.estate_firm_id]) {
-          estateFirm = estateFirmMap[property.estate_firm_id];
-        }
-        if (property?.landlord_id && landlordMap[property.landlord_id]) {
-          landlord = landlordMap[property.landlord_id];
-        }
-        
-        return {
-          ...unit,
-          property: property ? {
-            ...property,
-            estate_firm: estateFirm,
-            landlord: landlord
-          } : null
-        };
-      });
-
-      setUnits(enrichedUnits);
-      
-      if (enrichedUnits.length > 0) {
-        setActiveUnit(enrichedUnits[0]);
-        setSelectedUnit(enrichedUnits[0]);
-        
-        // 8. Get payment history for the first unit
-        const { data: paymentsData, error: paymentsError } = await supabase
-          .from('payments')
-          .select('*')
-          .eq('unit_id', enrichedUnits[0].id)
-          .eq('payment_type', 'rent')
-          .order('payment_date', { ascending: false });
-        
-        if (!paymentsError) {
-          setPayments(paymentsData || []);
-        }
-        
-        // 9. Get payment extensions
-        const { data: extensionsData, error: extError } = await supabase
-          .from('payment_extensions')
-          .select('*')
-          .eq('unit_id', enrichedUnits[0].id)
-          .order('created_at', { ascending: false });
-        
-        if (!extError) {
-          setExtensions(extensionsData || []);
-        }
-      }
-      
-    } catch (err) {
-      console.error('Error loading tenant data:', err);
-      setError(err.message);
-    } finally {
+    if (!unitsData || unitsData.length === 0) {
+      setUnits([]);
       setLoading(false);
+      return;
     }
-  };
 
+    // 2. Get property IDs from units
+    const propertyIds = unitsData.map(u => u.property_id).filter(Boolean);
+    
+    // 3. Fetch properties
+    let propertiesMap = {};
+    if (propertyIds.length > 0) {
+      const { data: propertiesData, error: propsError } = await supabase
+        .from('properties')
+        .select('*')
+        .in('id', propertyIds);
+      
+      if (!propsError && propertiesData) {
+        propertiesMap = Object.fromEntries(propertiesData.map(p => [p.id, p]));
+      }
+    }
+
+    // 4. Get estate firm IDs from properties
+    const estateFirmIds = Object.values(propertiesMap)
+      .map(p => p.estate_firm_id)
+      .filter(Boolean);
+    const landlordIds = Object.values(propertiesMap)
+      .map(p => p.landlord_id)
+      .filter(Boolean);
+
+    // 5. Fetch estate firm profiles with bank details
+    let estateFirmMap = {};
+    if (estateFirmIds.length > 0) {
+      const { data: firmsData, error: firmsError } = await supabase
+        .from('estate_firm_profiles')
+        .select('id, firm_name, business_phone, business_email, user_id, bank_details')
+        .in('id', estateFirmIds);
+      
+      if (!firmsError && firmsData) {
+        estateFirmMap = Object.fromEntries(firmsData.map(f => [f.id, f]));
+        console.log('Estate firm bank details loaded:', firmsData.map(f => ({
+          id: f.id,
+          name: f.firm_name,
+          hasBankDetails: !!f.bank_details,
+          bankDetails: f.bank_details
+        })));
+      }
+    }
+
+    // 6. Fetch landlord profiles (for properties not managed by estate firms)
+    let landlordMap = {};
+    if (landlordIds.length > 0) {
+      const { data: landlordsData } = await supabase
+        .from('profiles')
+        .select('id, full_name, name, email, phone, bank_details')
+        .in('id', landlordIds);
+      
+      if (landlordsData) {
+        landlordMap = Object.fromEntries(landlordsData.map(l => [l.id, l]));
+      }
+    }
+
+    // 7. Combine all data with bank details from the source
+    const enrichedUnits = unitsData.map(unit => {
+      const property = propertiesMap[unit.property_id] || null;
+      let estateFirm = null;
+      let landlord = null;
+      let bankDetails = null;
+      let contactInfo = null;
+      
+      // Get the property owner (estate firm or landlord)
+      if (property?.estate_firm_id && estateFirmMap[property.estate_firm_id]) {
+        estateFirm = estateFirmMap[property.estate_firm_id];
+        // IMPORTANT: Bank details come directly from estate firm profile
+        bankDetails = estateFirm.bank_details;
+        contactInfo = {
+          id: estateFirm.id,
+          name: estateFirm.firm_name,
+          phone: estateFirm.business_phone,
+          email: estateFirm.business_email,
+          type: 'estate_firm'
+        };
+      } else if (property?.landlord_id && landlordMap[property.landlord_id]) {
+        landlord = landlordMap[property.landlord_id];
+        // Bank details from landlord profile
+        bankDetails = landlord.bank_details;
+        contactInfo = {
+          id: landlord.id,
+          name: landlord.full_name || landlord.name,
+          phone: landlord.phone,
+          email: landlord.email,
+          type: 'landlord'
+        };
+      }
+      
+      return {
+        ...unit,
+        property: property ? {
+          ...property,
+          estate_firm: estateFirm,
+          landlord: landlord
+        } : null,
+        bank_details: bankDetails,  // Direct from the source
+        contact_info: contactInfo
+      };
+    });
+
+    setUnits(enrichedUnits);
+    
+    if (enrichedUnits.length > 0) {
+      setActiveUnit(enrichedUnits[0]);
+      setSelectedUnit(enrichedUnits[0]);
+      
+      // 8. Get payment history for the first unit
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('unit_id', enrichedUnits[0].id)
+        .eq('payment_type', 'rent')
+        .order('payment_date', { ascending: false });
+      
+      if (!paymentsError) {
+        setPayments(paymentsData || []);
+      }
+      
+      // 9. Get payment extensions
+      const { data: extensionsData, error: extError } = await supabase
+        .from('payment_extensions')
+        .select('*')
+        .eq('unit_id', enrichedUnits[0].id)
+        .order('created_at', { ascending: false });
+      
+      if (!extError) {
+        setExtensions(extensionsData || []);
+      }
+    }
+    
+  } catch (err) {
+    console.error('Error loading tenant data:', err);
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
   const handleUnitChange = async (unitId) => {
   const unit = units.find(u => u.id === unitId);
   setActiveUnit(unit);
@@ -463,18 +493,10 @@ const TenantRentManagement = () => {
     return { text: `Due in ${daysUntilDue} days`, color: 'success' };
   };
 
-  const getPropertyContact = () => {
-    if (!activeUnit?.property) return null;
-    const prop = activeUnit.property;
-    
-    if (prop.estate_firm) {
-      return prop.estate_firm;
-    }
-    if (prop.landlord) {
-      return prop.landlord;
-    }
-    return null;
-  };
+ const getPropertyContact = () => {
+  if (!activeUnit?.contact_info) return null;
+  return activeUnit.contact_info;
+};
 
   const contactInfo = getPropertyContact();
   const paymentStatus = getPaymentStatus();
@@ -575,29 +597,41 @@ const TenantRentManagement = () => {
 
       {/* Contact Info Card */}
       {contactInfo && (
-        <div className="contact-card">
-          <h3>Property Manager Contact</h3>
-          <div className="contact-details">
-            <div className="contact-item">
-              <Building size={16} />
-              <span>{contactInfo.firm_name || contactInfo.full_name || contactInfo.name}</span>
-            </div>
-            {(contactInfo.business_phone || contactInfo.phone) && (
-              <div className="contact-item">
-                <Phone size={16} />
-                <span>{contactInfo.business_phone || contactInfo.phone}</span>
-              </div>
-            )}
-            {(contactInfo.business_email || contactInfo.email) && (
-              <div className="contact-item">
-                <Mail size={16} />
-                <span>{contactInfo.business_email || contactInfo.email}</span>
-              </div>
-            )}
-          </div>
+  <div className="contact-card">
+    <h3>Property Manager Contact</h3>
+    <div className="contact-details">
+      <div className="contact-item">
+        {contactInfo.type === 'estate_firm' ? <Building size={16} /> : <Home size={16} />}
+        <span>{contactInfo.name}</span>
+      </div>
+      {contactInfo.phone && (
+        <div className="contact-item">
+          <Phone size={16} />
+          <span>{contactInfo.phone}</span>
         </div>
       )}
-
+      {contactInfo.email && (
+        <div className="contact-item">
+          <Mail size={16} />
+          <span>{contactInfo.email}</span>
+        </div>
+      )}
+    </div>
+    
+    {/* Show bank details status */}
+    {activeUnit?.bank_details ? (
+      <div className="bank-details-status success">
+        <CheckCircle size={14} />
+        <span>Payment details available. You can make payments.</span>
+      </div>
+    ) : (
+      <div className="bank-details-status warning">
+        <AlertCircle size={14} />
+        <span>No payment details added yet. Please contact {contactInfo.name} to add bank details.</span>
+      </div>
+    )}
+  </div>
+)}
       {/* Tabs */}
       <div className="tabs-container">
         <button className={`tab ${activeTab === 'current' ? 'active' : ''}`} onClick={() => setActiveTab('current')}>

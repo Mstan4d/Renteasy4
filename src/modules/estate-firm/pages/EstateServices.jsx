@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import './EstateServicesPage.css';
 
 const EstateServicesPage = () => {
@@ -155,14 +156,7 @@ const EstateServicesPage = () => {
     );
 
   if (loading) {
-    return (
-      <div className="estate-services-page">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading services...</p>
-        </div>
-      </div>
-    );
+    return <RentEasyLoader message="Loading Services..." fullScreen />;
   }
 
   return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Building, PlusCircle, Upload, Filter, Download,
@@ -35,15 +35,13 @@ const PortfolioManager = () => {
   const [showPostModal, setShowPostModal] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [selectedProperty, setSelectedProperty] = useState(null);
-   // State for bulk posting
   const [bulkUnits, setBulkUnits] = useState([]);
   const [currentBulkIndex, setCurrentBulkIndex] = useState(0);
-const [showBulkModal, setShowBulkModal] = useState(false);
-
-
-// Inside the component:
-const [showConvertModal, setShowConvertModal] = useState(false);
-const [selectedListingForConvert, setSelectedListingForConvert] = useState(null);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [userRole, setUserRole] = useState('principal');
+  const [isStaff, setIsStaff] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [selectedListingForConvert, setSelectedListingForConvert] = useState(null);
   const [portfolioStats, setPortfolioStats] = useState({
     totalProperties: 0,
     totalUnits: 0,
@@ -54,6 +52,7 @@ const [selectedListingForConvert, setSelectedListingForConvert] = useState(null)
     totalLandlords: 0
   });
 
+  // Fetch profile ID once
   useEffect(() => {
     const fetchProfileId = async () => {
       if (!user) return;
@@ -64,241 +63,323 @@ const [selectedListingForConvert, setSelectedListingForConvert] = useState(null)
         .single();
       if (!error && data) {
         setEstateFirmProfileId(data.id);
-      } else {
-        console.error('Could not fetch estate firm profile ID', error);
       }
     };
     fetchProfileId();
   }, [user]);
 
+  // Fetch user role once
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error: roleError } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role, is_staff_account, parent_estate_firm_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!roleError && roleData) {
+          setUserRole(roleData.staff_role || 'principal');
+          setIsStaff(roleData.is_staff_account || false);
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+      }
+    };
+    
+    getUserRole();
+  }, [user]);
+
+  // Load portfolio data when dependencies are ready
   useEffect(() => {
     if (estateFirmProfileId) {
       loadPortfolioData();
     }
   }, [estateFirmProfileId, location.key]);
 
-const loadPortfolioData = async () => {
-  if (!estateFirmProfileId) return;
+  const loadPortfolioData = useCallback(async () => {
+    if (!estateFirmProfileId) return;
 
-  try {
-    setLoading(true);
-    console.log('Loading portfolio data for estate firm ID:', estateFirmProfileId);
+    try {
+      setLoading(true);
+      console.log('Loading portfolio data...');
 
-    // 1. Load all landlords for this estate firm
-    const { data: landlordsData, error: landlordsError } = await supabase
-      .from('estate_landlords')
-      .select('*')
-      .eq('estate_firm_id', estateFirmProfileId)
-      .order('name');
-
-    if (landlordsError) throw landlordsError;
-    setLandlords(landlordsData || []);
-    console.log('Landlords loaded:', landlordsData?.length);
-
-    // 2. Load all properties with their units
-    const { data: propertiesData, error: propertiesError } = await supabase
-      .from('properties')
-      .select('*')
-      .eq('estate_firm_id', estateFirmProfileId)
-      .order('created_at', { ascending: false });
-
-    if (propertiesError) throw propertiesError;
-    console.log('Properties loaded:', propertiesData?.length);
-
-    // 3. Load units for these properties
-    const propertyIds = (propertiesData || []).map(p => p.id);
-    let unitsData = [];
-    if (propertyIds.length > 0) {
-      const { data: units, error: unitsError } = await supabase
-        .from('units')
-        .select('*')
-        .in('property_id', propertyIds);
-      if (!unitsError) unitsData = units || [];
-      console.log('Units loaded:', unitsData.length);
-    }
-
-    // 4. Load RentEasy listings that haven't been converted yet
-    const { data: listingsData, error: listingsError } = await supabase
-      .from('listings')
-      .select(`
-        *,
-        landlord:landlord_id (*)
-      `)
-      .eq('estate_firm_id', estateFirmProfileId)
-      .is('unit_id', null)
-      .in('status', ['pending', 'approved', 'rented']);
-
-    if (listingsError) throw listingsError;
-    console.log('Unconverted listings loaded:', listingsData?.length);
-
-    // 5. Group units by property
-    const unitsByProperty = {};
-    unitsData.forEach(unit => {
-      if (!unitsByProperty[unit.property_id]) {
-        unitsByProperty[unit.property_id] = [];
-      }
-      unitsByProperty[unit.property_id].push(unit);
-    });
-
-    // 6. Transform regular properties with their units
-    const regularProperties = (propertiesData || []).map(property => {
-      const units = unitsByProperty[property.id] || [];
-      const occupiedUnits = units.filter(u => u.status === 'occupied');
-      const vacantUnits = units.filter(u => u.status === 'vacant');
+      // Get user role (use state value)
+      let currentUserRole = userRole;
+      let parentFirmId = null;
       
-      const monthlyRent = occupiedUnits.reduce((sum, u) => {
-        if (u.rent_frequency === 'yearly') return sum + (u.rent_amount / 12);
-        if (u.rent_frequency === 'monthly') return sum + u.rent_amount;
-        if (u.rent_frequency === 'quarterly') return sum + (u.rent_amount / 3);
-        return sum + (u.rent_amount / 12);
-      }, 0);
+      // If we don't have role yet, fetch it
+      if (!currentUserRole || currentUserRole === 'principal') {
+        try {
+          const { data: roleData } = await supabase
+            .from('estate_firm_profiles')
+            .select('staff_role, parent_estate_firm_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          
+          if (roleData) {
+            currentUserRole = roleData.staff_role || 'principal';
+            parentFirmId = roleData.parent_estate_firm_id;
+          }
+        } catch (err) {
+          console.warn('Could not fetch user role:', err);
+        }
+      }
 
-      return {
-        ...property,
-        is_listing: false,
-        source: 'external',
-        units,
-        unitCount: units.length,
-        occupiedCount: occupiedUnits.length,
-        vacantCount: vacantUnits.length,
-        monthlyRent
-      };
-    });
+      const effectiveFirmId = parentFirmId || estateFirmProfileId;
+      console.log('User role:', currentUserRole, 'Effective firm ID:', effectiveFirmId);
 
-    // 7. Transform listings into virtual properties for display
-    const listingProperties = (listingsData || []).map(listing => ({
-      id: listing.id,
-      is_listing: true,
-      listing_id: listing.id,
-      estate_firm_id: listing.estate_firm_id,
-      landlord_id: listing.landlord_id,
-      landlord: listing.landlord,
-      name: listing.title || 'Untitled Listing',
-      address: listing.address,
-      city: listing.city,
-      state: listing.state,
-      lga: listing.lga,
-      property_type: listing.property_type,
-      status: listing.status,
-      source: 'rent-easy-listing',
-      created_at: listing.created_at,
-      units: [],
-      unitCount: 1,
-      occupiedCount: listing.status === 'rented' ? 1 : 0,
-      vacantCount: listing.status !== 'rented' ? 1 : 0,
-      monthlyRent: listing.price && listing.rent_frequency === 'yearly' ? listing.price / 12 : listing.price
-    }));
+      // Run queries in parallel for better performance
+      const queries = [];
 
-    // 8. Combine all
-    const allProperties = [...regularProperties, ...listingProperties];
+      // Properties query
+      let propertiesQuery = supabase
+        .from('properties')
+        .select('*')
+        .eq('estate_firm_id', effectiveFirmId);
+      
+      if (currentUserRole === 'associate') {
+        propertiesQuery = propertiesQuery.eq('created_by_staff_id', user.id);
+      }
+      queries.push(propertiesQuery.order('created_at', { ascending: false }));
 
-    // 9. Calculate stats
-    const totalUnits = allProperties.reduce((sum, p) => sum + (p.unitCount || 0), 0);
-    const occupiedUnits = allProperties.reduce((sum, p) => sum + (p.occupiedCount || 0), 0);
-    const vacantUnits = allProperties.reduce((sum, p) => sum + (p.vacantCount || 0), 0);
-    const listedUnits = allProperties.filter(p => p.source === 'rent-easy-listing').length;
-    const monthlyRevenue = allProperties.reduce((sum, p) => sum + (p.monthlyRent || 0), 0);
+if (userRole === 'associate') {
+  propertiesQuery = propertiesQuery.eq('created_by_staff_id', user.id);
+}
+      // Landlords query (only for non-associate or associate with properties)
+      if (currentUserRole !== 'associate') {
+        queries.push(
+          supabase
+            .from('estate_landlords')
+            .select('*')
+            .eq('estate_firm_id', effectiveFirmId)
+            .order('name')
+        );
+      }
 
-    setProperties(allProperties);
-    setPortfolioStats({
-      totalProperties: allProperties.length,
-      totalUnits,
-      occupiedUnits,
-      vacantUnits,
-      listedUnits,
-      monthlyRevenue,
-      totalLandlords: landlordsData?.length || 0
-    });
+      // Listings query
+      let listingsQuery = supabase
+        .from('listings')
+        .select('*, landlord:landlord_id(*)')
+        .eq('estate_firm_id', effectiveFirmId)
+        .is('unit_id', null)
+        .in('status', ['pending', 'approved', 'rented']);
+      
+      if (currentUserRole === 'associate') {
+        listingsQuery = listingsQuery.eq('created_by_staff_id', user.id);
+      }
+      queries.push(listingsQuery);
 
-    console.log('Portfolio stats calculated:', {
-      totalProperties: allProperties.length,
-      totalUnits,
-      occupiedUnits,
-      vacantUnits,
-      monthlyRevenue
-    });
+      // Execute all queries in parallel
+      const [propertiesResult, landlordsResult, listingsResult] = await Promise.all(queries);
 
-    // Initialize all landlords as expanded
-    const initialExpanded = {};
-    (landlordsData || []).forEach(l => {
-      initialExpanded[l.id] = true;
-    });
-    setExpandedLandlords(initialExpanded);
+      const propertiesData = propertiesResult.data || [];
+      const listingsData = listingsResult.data || [];
+      
+      console.log('Properties loaded:', propertiesData.length);
+      console.log('Listings loaded:', listingsData.length);
 
-  } catch (error) {
-    console.error('Error loading portfolio data:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+      // Handle landlords based on role
+      let landlordsData = [];
+      if (currentUserRole === 'associate') {
+        // For associate: get landlords from their properties only
+        const myLandlordIds = [...new Set(propertiesData.map(p => p.landlord_id).filter(Boolean))];
+        
+        if (myLandlordIds.length > 0) {
+          const { data: landlords } = await supabase
+            .from('estate_landlords')
+            .select('*')
+            .in('id', myLandlordIds)
+            .order('name');
+          landlordsData = landlords || [];
+        }
+      } else {
+        landlordsData = landlordsResult?.data || [];
+      }
+      
+      setLandlords(landlordsData);
+      console.log('Landlords loaded:', landlordsData.length);
+
+      // Get units for these properties
+      const propertyIds = propertiesData.map(p => p.id);
+      let unitsData = [];
+      if (propertyIds.length > 0) {
+        let unitsQuery = supabase
+          .from('units')
+          .select('*')
+          .in('property_id', propertyIds);
+        
+        if (currentUserRole === 'associate') {
+          unitsQuery = unitsQuery.eq('created_by_staff_id', user.id);
+        }
+        
+        const { data: units } = await unitsQuery;
+        unitsData = units || [];
+        console.log('Units loaded:', unitsData.length);
+      }
+
+      // Group units by property
+      const unitsByProperty = {};
+      unitsData.forEach(unit => {
+        if (!unitsByProperty[unit.property_id]) {
+          unitsByProperty[unit.property_id] = [];
+        }
+        unitsByProperty[unit.property_id].push(unit);
+      });
+
+      // Transform properties
+      const regularProperties = propertiesData.map(property => {
+        const units = unitsByProperty[property.id] || [];
+        const occupiedUnits = units.filter(u => u.status === 'occupied');
+        const vacantUnits = units.filter(u => u.status === 'vacant');
+        
+        const monthlyRent = occupiedUnits.reduce((sum, u) => {
+          if (u.rent_frequency === 'yearly') return sum + (u.rent_amount / 12);
+          if (u.rent_frequency === 'monthly') return sum + u.rent_amount;
+          if (u.rent_frequency === 'quarterly') return sum + (u.rent_amount / 3);
+          return sum + (u.rent_amount / 12);
+        }, 0);
+
+        return {
+          ...property,
+          is_listing: false,
+          source: 'external',
+          units,
+          unitCount: units.length,
+          occupiedCount: occupiedUnits.length,
+          vacantCount: vacantUnits.length,
+          monthlyRent
+        };
+      });
+
+      // Transform listings
+      const listingProperties = listingsData.map(listing => ({
+        id: listing.id,
+        is_listing: true,
+        listing_id: listing.id,
+        estate_firm_id: listing.estate_firm_id,
+        landlord_id: listing.landlord_id,
+        landlord: listing.landlord,
+        name: listing.title || 'Untitled Listing',
+        address: listing.address,
+        city: listing.city,
+        state: listing.state,
+        lga: listing.lga,
+        property_type: listing.property_type,
+        status: listing.status,
+        source: 'rent-easy-listing',
+        created_at: listing.created_at,
+        units: [],
+        unitCount: 1,
+        occupiedCount: listing.status === 'rented' ? 1 : 0,
+        vacantCount: listing.status !== 'rented' ? 1 : 0,
+        monthlyRent: listing.price && listing.rent_frequency === 'yearly' ? listing.price / 12 : listing.price
+      }));
+
+      // Combine all properties
+      const allProperties = [...regularProperties, ...listingProperties];
+
+      // Calculate stats
+      const totalUnits = allProperties.reduce((sum, p) => sum + (p.unitCount || 0), 0);
+      const occupiedUnits = allProperties.reduce((sum, p) => sum + (p.occupiedCount || 0), 0);
+      const vacantUnits = allProperties.reduce((sum, p) => sum + (p.vacantCount || 0), 0);
+      const listedUnits = allProperties.filter(p => p.source === 'rent-easy-listing').length;
+      const monthlyRevenue = allProperties.reduce((sum, p) => sum + (p.monthlyRent || 0), 0);
+
+      setProperties(allProperties);
+      setPortfolioStats({
+        totalProperties: allProperties.length,
+        totalUnits,
+        occupiedUnits,
+        vacantUnits,
+        listedUnits,
+        monthlyRevenue,
+        totalLandlords: landlordsData?.length || 0
+      });
+
+      // Initialize expanded landlords
+      const initialExpanded = {};
+      landlordsData.forEach(l => {
+        initialExpanded[l.id] = true;
+      });
+      setExpandedLandlords(initialExpanded);
+
+    } catch (error) {
+      console.error('Error loading portfolio data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [estateFirmProfileId, user?.id, userRole]);
+
 
   const handleExportCSV = () => {
-  const csvContent = [
-    ['Property Name', 'Address', 'Landlord', 'Units', 'Occupied', 'Vacant', 'Monthly Revenue', 'Source'],
-    ...properties.map(p => [
-      `"${p.name || ''}"`,
-      `"${p.address || ''}"`,
-      `"${p.landlord?.name || 'None'}"`,
-      p.unitCount || 0,
-      p.occupiedCount || 0,
-      p.vacantCount || 0,
-      `₦${(p.monthlyRent || 0).toLocaleString()}`,
-      p.source || 'external'
-    ])
-  ].map(row => row.join(',')).join('\n');
+    const csvContent = [
+      ['Property Name', 'Address', 'Landlord', 'Units', 'Occupied', 'Vacant', 'Monthly Revenue', 'Source'],
+      ...properties.map(p => [
+        `"${p.name || ''}"`,
+        `"${p.address || ''}"`,
+        `"${p.landlord?.name || 'None'}"`,
+        p.unitCount || 0,
+        p.occupiedCount || 0,
+        p.vacantCount || 0,
+        `₦${(p.monthlyRent || 0).toLocaleString()}`,
+        p.source || 'external'
+      ])
+    ].map(row => row.join(',')).join('\n');
 
-  const blob = new Blob([csvContent], { type: 'text/csv' });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
-  a.click();
-  window.URL.revokeObjectURL(url);
-};
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `portfolio-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
-const handleBulkUpload = () => {
-  navigate('/dashboard/estate-firm/bulk-upload');
-};
+  const handleBulkUpload = () => {
+    navigate('/dashboard/estate-firm/bulk-upload');
+  };
 
   const handleAddProperty = () => {
     navigate('/dashboard/estate-firm/add-external-property');
   };
 
-// Replace the bulk post handler
-const handlePostAllVacant = async () => {
-  const vacantUnits = [];
-  properties.forEach(prop => {
-    prop.units?.forEach(unit => {
-      if (unit.status === 'vacant' && !unit.is_listed_on_renteasy) {
-        vacantUnits.push({ unit, property: prop });
-      }
+  const handlePostAllVacant = async () => {
+    const vacantUnits = [];
+    properties.forEach(prop => {
+      prop.units?.forEach(unit => {
+        if (unit.status === 'vacant' && !unit.is_listed_on_renteasy) {
+          vacantUnits.push({ unit, property: prop });
+        }
+      });
     });
-  });
 
-  if (vacantUnits.length === 0) {
-    alert('No vacant units found.');
-    return;
-  }
+    if (vacantUnits.length === 0) {
+      alert('No vacant units found.');
+      return;
+    }
 
-  if (!window.confirm(`Post ${vacantUnits.length} vacant unit(s) to RentEasy? You'll be able to add extra fees and images for each.`)) return;
+    if (!window.confirm(`Post ${vacantUnits.length} vacant unit(s) to RentEasy? You'll be able to add extra fees and images for each.`)) return;
 
-  setBulkUnits(vacantUnits);
-  setCurrentBulkIndex(0);
-  setShowBulkModal(true);
-};
-
-const handleBulkUnitSuccess = (postedListing) => {
-  const nextIndex = currentBulkIndex + 1;
-  if (nextIndex < bulkUnits.length) {
-    setCurrentBulkIndex(nextIndex);
-  } else {
-    alert(`All ${bulkUnits.length} units have been posted successfully!`);
-    setShowBulkModal(false);
-    setBulkUnits([]);
+    setBulkUnits(vacantUnits);
     setCurrentBulkIndex(0);
-    loadPortfolioData();
-  }
-};
+    setShowBulkModal(true);
+  };
+
+  const handleBulkUnitSuccess = (postedListing) => {
+    const nextIndex = currentBulkIndex + 1;
+    if (nextIndex < bulkUnits.length) {
+      setCurrentBulkIndex(nextIndex);
+    } else {
+      alert(`All ${bulkUnits.length} units have been posted successfully!`);
+      setShowBulkModal(false);
+      setBulkUnits([]);
+      setCurrentBulkIndex(0);
+      loadPortfolioData();
+    }
+  };
+
   const handleEditProperty = (property) => {
     if (property.is_listing) {
       navigate(`/dashboard/estate-firm/my-listings`);
@@ -332,12 +413,28 @@ const handleBulkUnitSuccess = (postedListing) => {
     }
   };
 
-  // Update the handler
-const handlePostToRentEasy = (unit, property) => {
-  setSelectedUnit(unit);
-  setSelectedProperty(property);
-  setShowPostModal(true);
-};
+  const handlePostToRentEasy = (unit, property) => {
+    const prefillData = {
+      title: `${property.title} - Unit ${unit.unit_number}`,
+      description: property.description || '',
+      rent_amount: unit.rent_amount,
+      property_type: property.property_type,
+      address: property.address,
+      state: property.state,
+      city: property.city,
+      lga: property.lga,
+      bedrooms: unit.bedrooms || 1,
+      bathrooms: unit.bathrooms || 1,
+      area: unit.area_sqm || '',
+      amenities: unit.amenities || [],
+      extra_fees: [],
+      unit_id: unit.id,
+      property_id: property.id
+    };
+
+    const encodedData = encodeURIComponent(JSON.stringify(prefillData));
+    navigate(`/post-property?type=estate-firm&estateFirmId=${estateFirmProfileId}&prefill=${encodedData}`);
+  };
 
   const handleConvertListing = (listing) => {
     navigate('/dashboard/estate-firm/my-listings', { state: { highlightListing: listing.id } });
@@ -353,7 +450,6 @@ const handlePostToRentEasy = (unit, property) => {
   const getPropertiesByLandlord = () => {
     const grouped = {};
     
-    // Initialize with all landlords
     landlords.forEach(landlord => {
       grouped[landlord.id] = {
         landlord,
@@ -361,13 +457,11 @@ const handlePostToRentEasy = (unit, property) => {
       };
     });
 
-    // Add unassigned group
     grouped['unassigned'] = {
       landlord: { id: 'unassigned', name: 'Unassigned', phone: '', email: '' },
       properties: []
     };
 
-    // Group properties
     properties.forEach(property => {
       const landlordId = property.landlord_id || 'unassigned';
       if (!grouped[landlordId]) {
@@ -420,9 +514,9 @@ const handlePostToRentEasy = (unit, property) => {
     return <span className="badge badge-secondary">External</span>;
   };
 
-   if (loading) {
-  return <RentEasyLoader message="Loading your Portfolio..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading your Portfolio..." fullScreen />;
+  }
 
   return (
     <div className="portfolio-manager">
@@ -618,19 +712,18 @@ const handlePostToRentEasy = (unit, property) => {
                           </div>
                           <div className="property-actions">
                             <button
-  className="btn-icon"
-  onClick={() => {
-    if (property.is_listing) {
-      // Navigate to My Listings page (where the user can manage the listing)
-      navigate('/dashboard/estate-firm/my-listings');
-    } else {
-      navigate(`/dashboard/estate-firm/properties/${property.id}`);
-    }
-  }}
-  title="View Details"
->
-  <Eye size={16} />
-</button>
+                              className="btn-icon"
+                              onClick={() => {
+                                if (property.is_listing) {
+                                  navigate('/dashboard/estate-firm/my-listings');
+                                } else {
+                                  navigate(`/dashboard/estate-firm/properties/${property.id}`);
+                                }
+                              }}
+                              title="View Details"
+                            >
+                              <Eye size={16} />
+                            </button>
                             <button
                               className="btn-icon"
                               onClick={() => handleEditProperty(property)}
@@ -639,17 +732,17 @@ const handlePostToRentEasy = (unit, property) => {
                               <Edit size={16} />
                             </button>
                             {property.is_listing && (
-                           <button
-                            className="btn-icon success"
-                             onClick={() => {
-                                 setSelectedListingForConvert(property);
-                                 setShowConvertModal(true);
+                              <button
+                                className="btn-icon success"
+                                onClick={() => {
+                                  setSelectedListingForConvert(property);
+                                  setShowConvertModal(true);
                                 }}
-                               title="Convert to Unit"
-                             >
-                                    <FileText size={16} />
+                                title="Convert to Unit"
+                              >
+                                <FileText size={16} />
                               </button>
-                             )}
+                            )}
                             {!property.is_listing && property.vacantCount > 0 && (
                               <button
                                 className="btn-icon warning"
@@ -670,7 +763,6 @@ const handlePostToRentEasy = (unit, property) => {
           })}
         </div>
       ) : (
-        // Flat view (existing grid/list code)
         viewMode === 'grid' ? (
           <div className="properties-grid">
             {filteredProperties.map(property => (
@@ -699,7 +791,7 @@ const handlePostToRentEasy = (unit, property) => {
                       <span className="value">{property.occupiedCount || 0}</span>
                     </div>
                     <div className="detail-row">
-                      <span className="label">Monthly Rent:</span>
+                      <span className="label">Annual Rent:</span>
                       <span className="value highlight">{formatCurrency(property.monthlyRent)}</span>
                     </div>
                     <div className="detail-row">
@@ -795,34 +887,33 @@ const handlePostToRentEasy = (unit, property) => {
         )
       )}
 
-      
-{showPostModal && selectedUnit && selectedProperty && (
-  <PostVacantModal
-    unit={selectedUnit}
-    property={selectedProperty}
-    estateFirmId={estateFirmProfileId}
-    onClose={() => setShowPostModal(false)}
-    onSuccess={() => {
-      loadPortfolioData(); // refresh
-    }}
-  />
-)}
+      {showPostModal && selectedUnit && selectedProperty && (
+        <PostVacantModal
+          unit={selectedUnit}
+          property={selectedProperty}
+          estateFirmId={estateFirmProfileId}
+          onClose={() => setShowPostModal(false)}
+          onSuccess={() => {
+            loadPortfolioData();
+          }}
+        />
+      )}
 
-{showConvertModal && selectedListingForConvert && (
-  <ConvertListingModal
-    listing={selectedListingForConvert}
-    estateFirmId={estateFirmProfileId}
-    onClose={() => {
-      setShowConvertModal(false);
-      setSelectedListingForConvert(null);
-    }}
-    onSuccess={() => {
-      loadPortfolioData(); // refresh
-      setShowConvertModal(false);
-      setSelectedListingForConvert(null);
-    }}
-  />
-)}
+      {showConvertModal && selectedListingForConvert && (
+        <ConvertListingModal
+          listing={selectedListingForConvert}
+          estateFirmId={estateFirmProfileId}
+          onClose={() => {
+            setShowConvertModal(false);
+            setSelectedListingForConvert(null);
+          }}
+          onSuccess={() => {
+            loadPortfolioData();
+            setShowConvertModal(false);
+            setSelectedListingForConvert(null);
+          }}
+        />
+      )}
 
       {/* Empty State */}
       {filteredProperties.length === 0 && (

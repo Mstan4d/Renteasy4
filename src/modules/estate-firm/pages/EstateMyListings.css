@@ -763,3 +763,264 @@
     justify-content: center;
   }
 }
+
+/* Add to EstateMyListings.css */
+
+.listing-card.convertible {
+  cursor: pointer;
+  border: 2px solid #f59e0b;
+  transition: all 0.2s;
+}
+
+.listing-card.convertible:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.2);
+  border-color: #d97706;
+}
+
+.convert-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: #f59e0b;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  z-index: 2;
+}
+
+.status-badge.rented {
+  background: #fef3c7;
+  color: #d97706;
+  border-left: 3px solid #f59e0b;
+}
+
+.status-badge.converted {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.status-badge.active {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.conversion-actions {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fffbeb;
+  border-radius: 8px;
+  border: 1px solid #fde68a;
+}
+
+.btn-convert {
+  width: 100%;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-convert:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+.convert-hint {
+  font-size: 0.7rem;
+  color: #92400e;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.unit-info {
+  margin-top: 12px;
+  padding: 8px;
+  background: #d1fae5;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #059669;
+}
+
+.btn-view-unit {
+  background: none;
+  border: none;
+  color: #059669;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+.btn-view-unit:hover {
+  text-decoration: underline;
+}
+
+/* Mark as Rented Button on Card */
+.mark-rented-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 2;
+  transition: all 0.2s;
+}
+
+.mark-rented-btn:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+/* Mark as Rented Actions in Card Body */
+.mark-rented-actions {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fef3c7;
+  border-radius: 8px;
+  border: 1px solid #fde68a;
+  text-align: center;
+}
+
+.btn-mark-rented {
+  width: 100%;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-mark-rented:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+.mark-hint {
+  font-size: 0.7rem;
+  color: #92400e;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+/* Mark as Rented Modal */
+.mark-rented-modal {
+  background: white;
+  border-radius: 20px;
+  max-width: 450px;
+  width: 100%;
+  animation: slideUp 0.3s ease;
+}
+
+.listing-preview {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.listing-preview h3 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.listing-preview p {
+  margin: 0 0 8px;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.listing-preview .price {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+.warning-message {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fef9e7;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 20px;
+}
+
+.warning-message p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #92400e;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.confirmation-actions button {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Add to EstateMyListings.css */
+.role-banner {
+  background: #e0f2fe;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #0369a1;
+}
+
+.created-by-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #e5e7eb;
+}

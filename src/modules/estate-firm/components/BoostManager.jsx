@@ -14,10 +14,35 @@ const BoostManager = ({ estateFirmData, onBoostSuccess }) => {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [userRole, setUserRole] = useState('principal');
+  const [canBoost, setCanBoost] = useState(true);
 
   useEffect(() => {
     loadBoostData();
   }, []);
+
+  useEffect(() => {
+  const getUserRole = async () => {
+    if (!user) return;
+    try {
+      const { data: roleData } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      const role = roleData?.staff_role || 'principal';
+      setUserRole(role);
+      // Principal and Executive can boost
+      setCanBoost(role === 'principal' || role === 'executive');
+    } catch (err) {
+      console.warn('Could not fetch user role:', err);
+      setCanBoost(true);
+    }
+  };
+  getUserRole();
+}, [user]);
+
 
   const loadBoostData = async () => {
     try {
@@ -259,6 +284,16 @@ const BoostPurchaseModal = ({ show, onHide, boostPackage, onSuccess, user }) => 
     setError(null);
     onHide();
   };
+
+  if (userRole === 'associate') {
+  return (
+    <div className="boost-manager restricted">
+      <Shield size={48} />
+      <h3>Access Restricted</h3>
+      <p>Only Firm Principal and Executives can manage boosts.</p>
+    </div>
+  );
+}
 
   return (
     <Modal show={show} onHide={handleClose} centered size="lg">

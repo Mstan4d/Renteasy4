@@ -6,7 +6,7 @@ import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   Building, Users, Plus, Edit, Trash2, Search,
   Mail, Phone, Banknote, UserCheck, UserX,
-  ChevronRight, X, Save, Eye, Home
+  ChevronRight, X, Save, Eye, Home, Shield
 } from 'lucide-react';
 import './EstateLandlords.css';
 
@@ -17,6 +17,8 @@ const EstateLandlords = () => {
   const [landlords, setLandlords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [userRole, setUserRole] = useState('principal');
+  const [canEdit, setCanEdit] = useState(true);
   
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -38,9 +40,34 @@ const EstateLandlords = () => {
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
+  // Get user role
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!error && roleData) {
+          const role = roleData.staff_role || 'principal';
+          setUserRole(role);
+          setCanEdit(role === 'principal');
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+        setCanEdit(true);
+      }
+    };
+    getUserRole();
+  }, [user]);
+
   // Get estate firm profile ID
   useEffect(() => {
     const getEstateFirmId = async () => {
+      if (!user) return;
       const { data } = await supabase
         .from('estate_firm_profiles')
         .select('id')
@@ -61,52 +88,82 @@ const EstateLandlords = () => {
     }
   }, [estateFirmId]);
 
-  // Inside EstateLandlords.jsx, replace the loadLandlords function:
+  const loadLandlords = async () => {
+    setLoading(true);
+    try {
+      let effectiveFirmId = estateFirmId;
+      
+      if (userRole === 'associate') {
+        const { data: roleData } = await supabase
+          .from('estate_firm_profiles')
+          .select('parent_estate_firm_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (roleData?.parent_estate_firm_id) {
+          effectiveFirmId = roleData.parent_estate_firm_id;
+        }
+      }
+      
+      // Fetch all landlords
+      const { data: allLandlords, error } = await supabase
+        .from('estate_landlords')
+        .select('*')
+        .eq('estate_firm_id', effectiveFirmId)
+        .order('name');
+      
+      if (error) throw error;
+      
+      let landlordsData = allLandlords || [];
+      
+      // Filter for associate
+      if (userRole === 'associate') {
+        const { data: myProperties } = await supabase
+          .from('properties')
+          .select('landlord_id')
+          .eq('estate_firm_id', effectiveFirmId)
+          .eq('created_by_staff_id', user.id)
+          .not('landlord_id', 'is', null);
+        
+        const myLandlordIds = [...new Set(myProperties?.map(p => p.landlord_id).filter(Boolean))];
+        landlordsData = landlordsData.filter(l => myLandlordIds.includes(l.id));
+      }
 
-const loadLandlords = async () => {
-  setLoading(true);
-  try {
-    // 1. Fetch all landlords for this estate firm
-    const { data: landlordsData, error } = await supabase
-      .from('estate_landlords')
-      .select('*')
-      .eq('estate_firm_id', estateFirmId)
-      .order('name');
+      // Get property counts
+      if (landlordsData.length > 0) {
+        const landlordIds = landlordsData.map(l => l.id);
+        
+        let propertiesQuery = supabase
+          .from('properties')
+          .select('landlord_id')
+          .eq('estate_firm_id', effectiveFirmId)
+          .in('landlord_id', landlordIds);
+        
+        if (userRole === 'associate') {
+          propertiesQuery = propertiesQuery.eq('created_by_staff_id', user.id);
+        }
+        
+        const { data: properties } = await propertiesQuery;
+        
+        const counts = {};
+        (properties || []).forEach(p => {
+          counts[p.landlord_id] = (counts[p.landlord_id] || 0) + 1;
+        });
 
-    if (error) throw error;
-
-    // 2. If we have landlords, fetch property counts for each
-    let landlordsWithCounts = landlordsData || [];
-    if (landlordsData && landlordsData.length > 0) {
-      const landlordIds = landlordsData.map(l => l.id);
-
-      // Fetch properties that belong to these landlords
-      const { data: properties } = await supabase
-        .from('properties')
-        .select('landlord_id')
-        .eq('estate_firm_id', estateFirmId)
-        .in('landlord_id', landlordIds);
-
-      // Count properties per landlord
-      const counts = {};
-      (properties || []).forEach(p => {
-        counts[p.landlord_id] = (counts[p.landlord_id] || 0) + 1;
-      });
-
-      // Attach count to each landlord
-      landlordsWithCounts = landlordsData.map(l => ({
-        ...l,
-        property_count: counts[l.id] || 0
-      }));
+        const landlordsWithCounts = landlordsData.map(l => ({
+          ...l,
+          property_count: counts[l.id] || 0
+        }));
+        
+        setLandlords(landlordsWithCounts);
+      } else {
+        setLandlords(landlordsData);
+      }
+    } catch (error) {
+      console.error('Error loading landlords:', error);
+    } finally {
+      setLoading(false);
     }
-
-    setLandlords(landlordsWithCounts);
-  } catch (error) {
-    console.error('Error loading landlords:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const searchRentEasyUsers = async (term) => {
     if (!term.trim()) return;
@@ -130,6 +187,10 @@ const loadLandlords = async () => {
   };
 
   const handleAddLandlord = () => {
+    if (!canEdit) {
+      alert('Only the Firm Principal can add landlords.');
+      return;
+    }
     setEditingLandlord(null);
     setFormData({
       name: '',
@@ -148,6 +209,10 @@ const loadLandlords = async () => {
   };
 
   const handleEditLandlord = (landlord) => {
+    if (!canEdit) {
+      alert('Only the Firm Principal can edit landlords.');
+      return;
+    }
     setEditingLandlord(landlord);
     setFormData({
       name: landlord.name || '',
@@ -164,6 +229,10 @@ const loadLandlords = async () => {
   };
 
   const handleDeleteLandlord = async (landlordId) => {
+    if (!canEdit) {
+      alert('Only the Firm Principal can delete landlords.');
+      return;
+    }
     if (!window.confirm('Are you sure? This will unlink all properties owned by this landlord.')) return;
     
     try {
@@ -197,6 +266,11 @@ const loadLandlords = async () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (!canEdit) {
+      alert('Only the Firm Principal can save landlords.');
+      return;
+    }
+    
     if (!formData.name.trim()) {
       alert('Name is required');
       return;
@@ -221,7 +295,6 @@ const loadLandlords = async () => {
       let error;
       
       if (editingLandlord) {
-        // Update
         const { error: updateError } = await supabase
           .from('estate_landlords')
           .update(landlordData)
@@ -229,7 +302,6 @@ const loadLandlords = async () => {
           .eq('estate_firm_id', estateFirmId);
         error = updateError;
       } else {
-        // Insert
         const { error: insertError } = await supabase
           .from('estate_landlords')
           .insert([landlordData]);
@@ -252,13 +324,27 @@ const loadLandlords = async () => {
     l.phone?.includes(searchTerm)
   );
 
-  
-   if (loading) {
-  return <RentEasyLoader message="Loading your clients..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading..." fullScreen />;
+  }
 
   return (
     <div className="estate-landlords">
+      {/* Role Banners */}
+      {userRole === 'associate' && (
+        <div className="role-banner">
+          <Shield size={16} />
+          <span>Associate View - You can only see landlords linked to properties you manage</span>
+        </div>
+      )}
+      
+      {userRole === 'executive' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>Executive View - You can view all landlords but cannot edit</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="page-header">
         <div>
@@ -266,10 +352,12 @@ const loadLandlords = async () => {
           <p className="subtitle">Manage property owners you work with</p>
         </div>
         
-        <button className="btn btn-primary" onClick={handleAddLandlord}>
-          <Plus size={18} />
-          Add Landlord
-        </button>
+        {canEdit && (
+          <button className="btn btn-primary" onClick={handleAddLandlord}>
+            <Plus size={18} />
+            Add Landlord
+          </button>
+        )}
       </div>
 
       {/* Search Bar */}
@@ -288,11 +376,17 @@ const loadLandlords = async () => {
         <div className="empty-state">
           <Building size={48} />
           <h3>No landlords yet</h3>
-          <p>Add your first landlord to get started</p>
-          <button className="btn btn-primary" onClick={handleAddLandlord}>
-            <Plus size={18} />
-            Add Landlord
-          </button>
+          <p>
+            {userRole === 'associate' 
+              ? 'No landlords linked to your properties. Add properties to see landlords.'
+              : 'Add your first landlord to get started'}
+          </p>
+          {canEdit && (
+            <button className="btn btn-primary" onClick={handleAddLandlord}>
+              <Plus size={18} />
+              Add Landlord
+            </button>
+          )}
         </div>
       ) : (
         <div className="landlords-grid">
@@ -345,21 +439,28 @@ const loadLandlords = async () => {
                 <button 
                   className="btn-icon"
                   onClick={() => navigate(`/dashboard/estate-firm/landlords/${landlord.id}`)}
+                  title="View Details"
                 >
                   <Eye size={16} />
                 </button>
-                <button 
-                  className="btn-icon"
-                  onClick={() => handleEditLandlord(landlord)}
-                >
-                  <Edit size={16} />
-                </button>
-                <button 
-                  className="btn-icon danger"
-                  onClick={() => handleDeleteLandlord(landlord.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                {canEdit && (
+                  <>
+                    <button 
+                      className="btn-icon"
+                      onClick={() => handleEditLandlord(landlord)}
+                      title="Edit"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button 
+                      className="btn-icon danger"
+                      onClick={() => handleDeleteLandlord(landlord.id)}
+                      title="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -367,7 +468,7 @@ const loadLandlords = async () => {
       )}
 
       {/* Add/Edit Modal */}
-      {showModal && (
+      {showModal && canEdit && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">

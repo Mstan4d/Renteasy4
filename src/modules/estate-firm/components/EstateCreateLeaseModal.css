@@ -1,0 +1,90 @@
+/* EstateCreateLeaseModal.css */
+.create-lease-modal {
+  background: white;
+  border-radius: 20px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 20px 20px 0 0;
+  position: sticky;
+  top: 0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: white;
+  font-size: 1.25rem;
+}
+
+.close-btn {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.property-info {
+  background: #f9fafb;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.property-info h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.property-info p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.total-rent-display {
+  background: #f3f4f6;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #059669;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  
+  .create-lease-modal {
+    margin: 1rem;
+  }
+  
+  .modal-header {
+    padding: 1rem;
+  }
+}

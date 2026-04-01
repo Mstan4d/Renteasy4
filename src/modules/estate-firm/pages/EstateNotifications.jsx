@@ -7,7 +7,7 @@ import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { 
   Bell, CheckCircle, Clock, AlertCircle, DollarSign, 
   UserPlus, Home, RefreshCw, Send, FileText, Calendar,
-  Building, Users, Eye, Trash2
+  Building, Users, Eye, Trash2, Shield
 } from 'lucide-react';
 import './EstateNotifications.css';
 
@@ -27,28 +27,74 @@ const EstateNotifications = () => {
     type: 'general'
   });
   const [sending, setSending] = useState(false);
+  const [userRole, setUserRole] = useState('principal');
+  const [isStaff, setIsStaff] = useState(false);
+  const [staffRole, setStaffRole] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  // Get user role
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role, is_staff_account')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!error && roleData) {
+          const role = roleData.staff_role || 'principal';
+          setUserRole(role);
+          setIsStaff(roleData.is_staff_account || false);
+          setStaffRole(role);
+        }
+        
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          setCurrentUserId(userData.user.id);
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+        setUserRole('principal');
+      }
+    };
+    getUserRole();
+  }, [user]);
 
   useEffect(() => {
     if (user) {
       loadNotifications();
       loadTenants();
     }
-  }, [user]);
+  }, [user, userRole]);
+
+  const getEffectiveFirmId = async () => {
+    const { data: profile } = await supabase
+      .from('estate_firm_profiles')
+      .select('id, parent_estate_firm_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    
+    if (isStaff && profile?.parent_estate_firm_id) {
+      return profile.parent_estate_firm_id;
+    }
+    return profile?.id;
+  };
 
   const loadNotifications = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Get estate firm profile ID
-      const { data: profile, error: profileError } = await supabase
-        .from('estate_firm_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-      if (profileError) throw profileError;
+      const effectiveFirmId = await getEffectiveFirmId();
+      
+      if (!effectiveFirmId) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
 
-      // Fetch notifications from estate_firm_notifications
-      const { data, error } = await supabase
+      let query = supabase
         .from('estate_firm_notifications')
         .select(`
           *,
@@ -59,10 +105,43 @@ const EstateNotifications = () => {
             phone
           )
         `)
-        .eq('estate_firm_id', profile.id)
+        .eq('estate_firm_id', effectiveFirmId)
         .order('created_at', { ascending: false });
 
+      // For associates, only show notifications for their tenants
+      if (staffRole === 'associate' && currentUserId) {
+        // First get associate's properties
+        const { data: myProperties } = await supabase
+          .from('properties')
+          .select('id')
+          .eq('estate_firm_id', effectiveFirmId)
+          .eq('created_by_staff_id', currentUserId);
+        
+        const propertyIds = myProperties?.map(p => p.id) || [];
+        
+        if (propertyIds.length > 0) {
+          // Get units from those properties
+          const { data: myUnits } = await supabase
+            .from('units')
+            .select('tenant_id')
+            .in('property_id', propertyIds)
+            .not('tenant_id', 'is', null);
+          
+          const tenantIds = [...new Set(myUnits?.map(u => u.tenant_id).filter(Boolean))];
+          
+          if (tenantIds.length > 0) {
+            query = query.in('tenant_id', tenantIds);
+          } else {
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
+        } else {
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
+      
       setNotifications(data || []);
       setUnreadCount(data?.filter(n => !n.read).length || 0);
     } catch (err) {
@@ -75,43 +154,89 @@ const EstateNotifications = () => {
 
   const loadTenants = async () => {
     try {
-      // Get estate firm profile ID
-      const { data: profile } = await supabase
-        .from('estate_firm_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (profile) {
-        // Get all tenants from units managed by this estate firm
-        const { data: units } = await supabase
-          .from('units')
-          .select(`
-            tenant_id,
-            tenant_name,
-            tenant_email,
-            tenant_phone,
-            property:property_id (title)
-          `)
-          .eq('property.estate_firm_id', profile.id);
-
-        // Deduplicate tenants
-        const uniqueTenants = {};
-        units?.forEach(unit => {
-          if (unit.tenant_id && !uniqueTenants[unit.tenant_id]) {
-            uniqueTenants[unit.tenant_id] = {
-              id: unit.tenant_id,
-              name: unit.tenant_name,
-              email: unit.tenant_email,
-              phone: unit.tenant_phone,
-              property: unit.property?.title
-            };
-          }
-        });
-        setTenants(Object.values(uniqueTenants));
+      const effectiveFirmId = await getEffectiveFirmId();
+      
+      if (!effectiveFirmId) {
+        setTenants([]);
+        return;
       }
+
+      // Get properties based on role
+      let propertiesQuery = supabase
+        .from('properties')
+        .select('id, title')
+        .eq('estate_firm_id', effectiveFirmId);
+      
+      // For associates, only get their properties
+      if (staffRole === 'associate' && currentUserId) {
+        propertiesQuery = propertiesQuery.eq('created_by_staff_id', currentUserId);
+      }
+      
+      const { data: properties, error: propertiesError } = await propertiesQuery;
+      
+      if (propertiesError) {
+        console.error('Error loading properties:', propertiesError);
+        setTenants([]);
+        return;
+      }
+
+      const propertyIds = properties?.map(p => p.id) || [];
+      
+      if (propertyIds.length === 0) {
+        setTenants([]);
+        return;
+      }
+
+      // Get units with tenants
+      let unitsQuery = supabase
+        .from('units')
+        .select(`
+          tenant_id,
+          tenant_name,
+          tenant_email,
+          tenant_phone,
+          property_id
+        `)
+        .in('property_id', propertyIds)
+        .not('tenant_id', 'is', null);
+      
+      // For associates, also filter units by their ownership
+      if (staffRole === 'associate' && currentUserId) {
+        unitsQuery = unitsQuery.eq('created_by_staff_id', currentUserId);
+      }
+      
+      const { data: units, error: unitsError } = await unitsQuery;
+      
+      if (unitsError) {
+        console.error('Error loading units:', unitsError);
+        setTenants([]);
+        return;
+      }
+
+      // Create property map
+      const propertyMap = {};
+      properties.forEach(p => {
+        propertyMap[p.id] = p.title;
+      });
+
+      // Deduplicate tenants
+      const uniqueTenants = {};
+      units?.forEach(unit => {
+        if (unit.tenant_id && !uniqueTenants[unit.tenant_id]) {
+          uniqueTenants[unit.tenant_id] = {
+            id: unit.tenant_id,
+            name: unit.tenant_name,
+            email: unit.tenant_email,
+            phone: unit.tenant_phone,
+            property: propertyMap[unit.property_id]
+          };
+        }
+      });
+      
+      setTenants(Object.values(uniqueTenants));
     } catch (err) {
       console.error('Error loading tenants:', err);
+      setTenants([]);
     }
   };
 
@@ -153,6 +278,12 @@ const EstateNotifications = () => {
   };
 
   const deleteNotification = async (notificationId) => {
+    // Associates cannot delete notifications
+    if (staffRole === 'associate') {
+      alert('Associates cannot delete notifications.');
+      return;
+    }
+    
     if (!window.confirm('Delete this notification?')) return;
     
     try {
@@ -170,6 +301,7 @@ const EstateNotifications = () => {
 
   const sendNotification = async (e) => {
     e.preventDefault();
+    
     if (!sendForm.tenant_id || !sendForm.title || !sendForm.message) {
       alert('Please fill all required fields');
       return;
@@ -177,25 +309,28 @@ const EstateNotifications = () => {
 
     setSending(true);
     try {
-      // Get estate firm profile ID
+      const effectiveFirmId = await getEffectiveFirmId();
+      
+      if (!effectiveFirmId) throw new Error('Profile not found');
+
+      // Get estate firm name
       const { data: profile } = await supabase
         .from('estate_firm_profiles')
-        .select('id, firm_name')
-        .eq('user_id', user.id)
+        .select('firm_name')
+        .eq('id', effectiveFirmId)
         .single();
-
-      if (!profile) throw new Error('Profile not found');
 
       // Insert notification
       const { error } = await supabase
         .from('estate_firm_notifications')
         .insert({
-          estate_firm_id: profile.id,
+          estate_firm_id: effectiveFirmId,
           tenant_id: sendForm.tenant_id,
           title: sendForm.title,
           message: sendForm.message,
           type: sendForm.type,
           read: false,
+          created_by_staff_id: isStaff ? user.id : null,
           created_at: new Date().toISOString()
         });
 
@@ -204,7 +339,7 @@ const EstateNotifications = () => {
       alert('Notification sent successfully!');
       setShowSendModal(false);
       setSendForm({ tenant_id: '', title: '', message: '', type: 'general' });
-      loadNotifications(); // Refresh
+      loadNotifications();
     } catch (err) {
       console.error('Error sending notification:', err);
       alert('Failed to send notification');
@@ -243,17 +378,38 @@ const EstateNotifications = () => {
   if (loading) return <RentEasyLoader message="Loading notifications..." fullScreen />;
   if (error) return <div className="error-state">Error: {error}</div>;
 
+  // Determine if user can send notifications
+  const canSendNotifications = true; // All estate firm users can send to their tenants
+  const canDeleteNotifications = staffRole !== 'associate';
+
   return (
     <div className="estate-notifications">
+      {/* Role Banner */}
+      {staffRole === 'associate' && (
+        <div className="role-banner">
+          <Shield size={16} />
+          <span>Associate View - You can send notifications to your tenants and view notifications from your properties</span>
+        </div>
+      )}
+      
+      {staffRole === 'executive' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>Executive View - You can manage all notifications</span>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h1>Notifications</h1>
           <p>Send and manage notifications to your tenants</p>
         </div>
         <div className="header-actions">
-          <button className="btn-primary" onClick={() => setShowSendModal(true)}>
-            <Send size={18} /> Send Notification
-          </button>
+          {canSendNotifications && (
+            <button className="btn-primary" onClick={() => setShowSendModal(true)}>
+              <Send size={18} /> Send Notification
+            </button>
+          )}
           <button className="btn-outline" onClick={markAllAsRead} disabled={unreadCount === 0}>
             Mark all as read
           </button>
@@ -293,9 +449,11 @@ const EstateNotifications = () => {
           <Bell size={48} />
           <h3>No notifications yet</h3>
           <p>Send notifications to your tenants to keep them updated.</p>
-          <button className="btn-primary" onClick={() => setShowSendModal(true)}>
-            <Send size={18} /> Send First Notification
-          </button>
+          {canSendNotifications && (
+            <button className="btn-primary" onClick={() => setShowSendModal(true)}>
+              <Send size={18} /> Send First Notification
+            </button>
+          )}
         </div>
       ) : (
         <div className="notifications-list">
@@ -327,13 +485,15 @@ const EstateNotifications = () => {
                     <CheckCircle size={16} />
                   </button>
                 )}
-                <button
-                  className="delete-btn"
-                  onClick={() => deleteNotification(notif.id)}
-                  title="Delete"
-                >
-                  <Trash2 size={16} />
-                </button>
+                {canDeleteNotifications && (
+                  <button
+                    className="delete-btn"
+                    onClick={() => deleteNotification(notif.id)}
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -341,7 +501,7 @@ const EstateNotifications = () => {
       )}
 
       {/* Send Notification Modal */}
-      {showSendModal && (
+      {showSendModal && canSendNotifications && (
         <div className="modal-overlay" onClick={() => setShowSendModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -364,6 +524,9 @@ const EstateNotifications = () => {
                       </option>
                     ))}
                   </select>
+                  {staffRole === 'associate' && tenants.length === 0 && (
+                    <small className="warning-text">No tenants found. Add tenants to your properties first.</small>
+                  )}
                 </div>
 
                 <div className="form-group">

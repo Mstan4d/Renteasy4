@@ -1,3 +1,5 @@
+// src/modules/dashboard/pages/tenant/TenantDashboard.jsx - UPDATED with Payouts
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../../shared/lib/supabaseClient';
@@ -7,7 +9,7 @@ import {
   DollarSign, Calendar, CheckCircle, Clock,
   TrendingUp, Users, Receipt, X, Download,
   Filter, ChevronDown, ChevronUp, Copy, Share2,
-  AlertCircle, Info, ExternalLink
+  AlertCircle, Info, ExternalLink, Home, Wallet
 } from 'lucide-react';
 import './TenantDashboard.css';
 
@@ -27,32 +29,95 @@ const TenantDashboard = () => {
   const [earningsDetails, setEarningsDetails] = useState({
     totalEarned: 0,
     pending: 0,
+    paid: 0,
     thisMonth: 0,
     lastMonth: 0,
     transactions: []
   });
   const [earningsLoading, setEarningsLoading] = useState(false);
 
+  // New state for payout notifications
+  const [recentPayouts, setRecentPayouts] = useState([]);
+  const [showPayoutNotification, setShowPayoutNotification] = useState(false);
+  const [lastPayout, setLastPayout] = useState(null);
+
   useEffect(() => {
     if (user) {
       fetchAllData();
+      fetchRecentPayouts();
     }
   }, [user]);
 
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [profRes, walletRes, listingsRes, savedRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('wallets').select('*').eq('user_id', user.id).single(),
-        supabase.from('listings').select('*').eq('poster_id', user.id).limit(3),
-        supabase.from('saved_properties').select('*, listings(*)').eq('user_id', user.id)
-      ]);
+      console.log('Fetching data for user:', user.id);
+      
+      // Fetch profile
+      const { data: profData, error: profError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (profError) console.error('Profile error:', profError);
+      if (profData) {
+        setProfile(profData);
+        console.log('Profile loaded:', profData);
+      }
 
-      if (profRes.data) setProfile(profRes.data);
-      if (walletRes.data) setWallet(walletRes.data);
-      if (listingsRes.data) setMyListings(listingsRes.data);
-      if (savedRes.data) setSavedProperties(savedRes.data);
+      // Fetch wallet/commissions balance
+      const { data: commissionsData, error: commissionsError } = await supabase
+        .from('tenant_commissions')
+        .select('commission_amount, status')
+        .eq('tenant_id', user.id);
+      
+      if (!commissionsError && commissionsData) {
+        const pendingTotal = commissionsData
+          .filter(c => c.status === 'pending' || c.status === 'calculated')
+          .reduce((sum, c) => sum + Number(c.commission_amount || 0), 0);
+        setWallet({ balance: pendingTotal });
+      }
+
+      // Fetch listings - using user_id
+      const { data: listingsData, error: listingsError } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(3);
+      
+      if (listingsError) {
+        console.error('Listings error:', listingsError);
+      } else {
+        setMyListings(listingsData || []);
+        console.log('Listings loaded:', listingsData?.length);
+      }
+
+      // Fetch saved properties
+      const { data: savedData, error: savedError } = await supabase
+        .from('saved_properties')
+        .select(`
+          *,
+          listings:listing_id (
+            id,
+            title,
+            price,
+            images,
+            address,
+            city,
+            state
+          )
+        `)
+        .eq('user_id', user.id)
+        .limit(3);
+      
+      if (savedError) {
+        console.error('Saved properties error:', savedError);
+      } else {
+        setSavedProperties(savedData || []);
+        console.log('Saved properties loaded:', savedData?.length);
+      }
 
     } catch (error) {
       console.error("Dashboard Load Error:", error);
@@ -61,32 +126,100 @@ const TenantDashboard = () => {
     }
   };
 
+  // Fetch recent payouts for the tenant
+  const fetchRecentPayouts = async () => {
+    try {
+      // Fetch recently paid commissions
+      const { data: paidCommissions, error } = await supabase
+        .from('tenant_commissions')
+        .select(`
+          *,
+          listing:listing_id (
+            id,
+            title,
+            price,
+            address
+          )
+        `)
+        .eq('tenant_id', user.id)
+        .eq('status', 'paid')
+        .order('paid_at', { ascending: false })
+        .limit(5);
+      
+      if (!error && paidCommissions) {
+        setRecentPayouts(paidCommissions);
+        
+        // Check if there's a new payout (paid in last 24 hours)
+        const oneDayAgo = new Date();
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+        
+        const newPayout = paidCommissions.find(p => 
+          p.paid_at && new Date(p.paid_at) > oneDayAgo
+        );
+        
+        if (newPayout && (!lastPayout || lastPayout.id !== newPayout.id)) {
+          setLastPayout(newPayout);
+          setShowPayoutNotification(true);
+          
+          // Auto-hide notification after 5 seconds
+          setTimeout(() => {
+            setShowPayoutNotification(false);
+          }, 5000);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching payouts:', error);
+    }
+  };
+
   const fetchEarningsDetails = async () => {
     setEarningsLoading(true);
     try {
-      // Fetch commissions/earnings from Supabase
-      const { data: commissions, error } = await supabase
-        .from('commissions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('user_role', 'tenant')
+      // Fetch from tenant_commissions table
+      const { data: commissions, error: commissionsError } = await supabase
+        .from('tenant_commissions')
+        .select(`
+          *,
+          listing:listing_id (
+            id,
+            title,
+            price,
+            address,
+            city,
+            state,
+            rented_at
+          )
+        `)
+        .eq('tenant_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching earnings:', error);
-        // If commissions table doesn't exist, check transactions table
-        const { data: transactions } = await supabase
-          .from('transactions')
+      if (commissionsError && commissionsError.code !== 'PGRST116') {
+        console.error('Error fetching commissions:', commissionsError);
+      }
+
+      if (commissions && commissions.length > 0) {
+        processEarningsData(commissions);
+      } else {
+        // Try commissions table as fallback
+        const { data: altCommissions, error: altError } = await supabase
+          .from('commissions')
           .select('*')
           .eq('user_id', user.id)
-          .eq('type', 'commission')
+          .eq('user_role', 'tenant')
           .order('created_at', { ascending: false });
 
-        if (transactions) {
-          processTransactions(transactions);
+        if (!altError && altCommissions) {
+          processEarningsData(altCommissions);
+        } else {
+          setEarningsDetails({
+            totalEarned: 0,
+            pending: 0,
+            paid: 0,
+            thisMonth: 0,
+            lastMonth: 0,
+            transactions: []
+          });
         }
-      } else if (commissions) {
-        processCommissions(commissions);
       }
 
     } catch (error) {
@@ -95,8 +228,8 @@ const TenantDashboard = () => {
       setEarningsLoading(false);
     }
   };
-
-  const processCommissions = (commissions) => {
+  
+  const processEarningsData = (commissionsData) => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
@@ -105,27 +238,32 @@ const TenantDashboard = () => {
 
     let totalEarned = 0;
     let pending = 0;
+    let paid = 0;
     let thisMonth = 0;
     let lastMonthTotal = 0;
     const transactions = [];
 
-    commissions.forEach(commission => {
-      const amount = parseFloat(commission.amount) || 0;
+    commissionsData.forEach(commission => {
+      const amount = parseFloat(commission.commission_amount) || 0;
       const commissionDate = new Date(commission.created_at);
       const commissionMonth = commissionDate.getMonth();
       const commissionYear = commissionDate.getFullYear();
+      const paidDate = commission.paid_at ? new Date(commission.paid_at) : null;
 
-      if (commission.status === 'completed') {
+      if (commission.status === 'paid' || commission.status === 'completed') {
         totalEarned += amount;
+        paid += amount;
         
-        if (commissionMonth === currentMonth && commissionYear === currentYear) {
-          thisMonth += amount;
+        // Check if paid this month
+        if (paidDate) {
+          if (paidDate.getMonth() === currentMonth && paidDate.getFullYear() === currentYear) {
+            thisMonth += amount;
+          }
+          if (paidDate.getMonth() === lastMonth && paidDate.getFullYear() === lastMonthYear) {
+            lastMonthTotal += amount;
+          }
         }
-        
-        if (commissionMonth === lastMonth && commissionYear === lastMonthYear) {
-          lastMonthTotal += amount;
-        }
-      } else if (commission.status === 'pending') {
+      } else if (commission.status === 'pending' || commission.status === 'calculated') {
         pending += amount;
       }
 
@@ -134,71 +272,22 @@ const TenantDashboard = () => {
         type: 'Commission',
         amount,
         status: commission.status,
-        date: commission.created_at,
-        property: commission.property_title || 'Property Commission',
-        description: commission.description || `1.5% commission from posting`
+        date: commission.paid_at || commission.created_at,
+        property: commission.listing?.title || commission.property_title || 'Property Commission',
+        description: commission.status === 'paid' 
+          ? `1.5% commission paid for property: ${commission.listing?.title || 'Property'}`
+          : `1.5% commission pending for rented property: ${commission.listing?.title || 'Property'}`,
+        listing: commission.listing
       });
     });
 
     setEarningsDetails({
       totalEarned,
       pending,
+      paid,
       thisMonth,
       lastMonth: lastMonthTotal,
       transactions
-    });
-  };
-
-  const processTransactions = (transactions) => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-
-    let totalEarned = 0;
-    let pending = 0;
-    let thisMonth = 0;
-    let lastMonthTotal = 0;
-    const formattedTransactions = [];
-
-    transactions.forEach(transaction => {
-      const amount = parseFloat(transaction.amount) || 0;
-      const transactionDate = new Date(transaction.created_at);
-      const transactionMonth = transactionDate.getMonth();
-      const transactionYear = transactionDate.getFullYear();
-
-      if (transaction.status === 'completed') {
-        totalEarned += amount;
-        
-        if (transactionMonth === currentMonth && transactionYear === currentYear) {
-          thisMonth += amount;
-        }
-        
-        if (transactionMonth === lastMonth && transactionYear === lastMonthYear) {
-          lastMonthTotal += amount;
-        }
-      } else if (transaction.status === 'pending') {
-        pending += amount;
-      }
-
-      formattedTransactions.push({
-        id: transaction.id,
-        type: transaction.type || 'Commission',
-        amount,
-        status: transaction.status,
-        date: transaction.created_at,
-        property: transaction.reference || 'Property',
-        description: transaction.description || '1.5% posting commission'
-      });
-    });
-
-    setEarningsDetails({
-      totalEarned,
-      pending,
-      thisMonth,
-      lastMonth: lastMonthTotal,
-      transactions: formattedTransactions
     });
   };
 
@@ -212,6 +301,7 @@ const TenantDashboard = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -221,36 +311,74 @@ const TenantDashboard = () => {
 
   const getStatusBadge = (status) => {
     switch(status) {
-      case 'completed': return <span className="status-badge completed">Completed</span>;
-      case 'pending': return <span className="status-badge pending">Pending</span>;
-      case 'failed': return <span className="status-badge failed">Failed</span>;
-      default: return <span className="status-badge">Unknown</span>;
+      case 'paid':
+      case 'completed':
+        return <span className="status-badge paid"><CheckCircle size={12} /> Paid</span>;
+      case 'pending':
+        return <span className="status-badge pending"><Clock size={12} /> Pending</span>;
+      case 'calculated':
+        return <span className="status-badge calculated"><Receipt size={12} /> Calculated</span>;
+      default:
+        return <span className="status-badge">{status}</span>;
     }
   };
 
   if (loading) {
-  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
-}
+    return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+  }
 
   return (
     <div className="tenant-dashboard-content">
+      {/* Payout Notification */}
+      {showPayoutNotification && lastPayout && (
+        <div className="payout-notification">
+          <div className="notification-content">
+            <CheckCircle size={24} className="notification-icon" />
+            <div className="notification-text">
+              <h4>New Payout Received! 🎉</h4>
+              <p>You've received {formatCurrency(lastPayout.commission_amount)} for "{lastPayout.listing?.title || 'your property'}"</p>
+              <small>Commission has been added to your available balance</small>
+            </div>
+            <button 
+              className="notification-close"
+              onClick={() => setShowPayoutNotification(false)}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Dashboard Header */}
       <div className="dashboard-header">
-        <h1>Welcome back, {profile?.name || 'Tenant'}</h1>
+        <h1>Welcome back, {profile?.full_name || profile?.name || 'Tenant'}</h1>
         <p className="subtitle">Here's what's happening with your rentals</p>
       </div>
 
-      {/* Wallet Card */}
+      {/* Wallet Card - Updated with separate paid/pending display */}
       <div className="wallet-card">
         <div className="wallet-info">
-          <span>Referral Earnings (1.5%)</span>
-          <h1>{formatCurrency(wallet.balance)}</h1>
+          <div className="wallet-header">
+            <Wallet size={20} />
+            <span>Commission Earnings (1.5%)</span>
+          </div>
+          <div className="balance-breakdown">
+            <div className="balance-item">
+              <span className="balance-label">Available</span>
+              <h2 className="balance-amount">{formatCurrency(wallet.balance)}</h2>
+            </div>
+            <div className="balance-divider"></div>
+            <div className="balance-item">
+              <span className="balance-label">Total Received</span>
+              <h2 className="balance-amount total">{formatCurrency(earningsDetails.paid)}</h2>
+            </div>
+          </div>
           <p className="commission-note">
-            You earn 1.5% commission for every property you successfully post
+            You earn 1.5% commission for every property you successfully post that gets rented
           </p>
         </div>
         <button className="withdraw-btn" onClick={handleDetailsClick}>
-          <Receipt size={16} /> Details
+          <Receipt size={16} /> View Earnings Details
         </button>
       </div>
 
@@ -274,6 +402,39 @@ const TenantDashboard = () => {
         </div>
       </div>
 
+      {/* Recent Payouts Section */}
+      {recentPayouts.length > 0 && (
+        <section className="section-area recent-payouts">
+          <div className="section-header">
+            <h3>Recent Payouts</h3>
+            <span className="see-all" onClick={handleDetailsClick}>
+              View All
+            </span>
+          </div>
+          <div className="payouts-list">
+            {recentPayouts.slice(0, 3).map(payout => (
+              <div key={payout.id} className="payout-item">
+                <div className="payout-icon">
+                  <CheckCircle size={20} className="paid-icon" />
+                </div>
+                <div className="payout-details">
+                  <div className="payout-title">
+                    {payout.listing?.title || 'Commission Payout'}
+                  </div>
+                  <div className="payout-meta">
+                    <span>Paid on {formatDate(payout.paid_at)}</span>
+                  </div>
+                </div>
+                <div className="payout-amount">
+                  <strong>{formatCurrency(payout.commission_amount)}</strong>
+                  <small>1.5% commission</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* My Active Listings */}
       <section className="section-area">
         <div className="section-header">
@@ -286,20 +447,34 @@ const TenantDashboard = () => {
         {myListings.length > 0 ? (
           myListings.map(item => (
             <div className="property-mini-card" key={item.id} onClick={() => navigate(`/listings/${item.id}`)}>
-              <img src={item.images?.[0] || 'https://via.placeholder.com/100'} alt="property" />
+              <img 
+                src={item.images?.[0] || 'https://via.placeholder.com/100x80?text=Property'} 
+                alt="property" 
+                onError={(e) => {
+                  e.target.src = 'https://via.placeholder.com/100x80?text=Property';
+                }}
+              />
               <div className="details">
-                <h4>{item.title}</h4>
-                <p>₦{item.price?.toLocaleString() || '0'}</p>
+                <h4>{item.title || 'Untitled'}</h4>
+                <p>{formatCurrency(item.price)}</p>
+                <small className="listing-status">
+                  Status: {item.status === 'rented' ? '✅ Rented' : item.status === 'approved' ? 'Active' : item.status === 'pending' ? 'Pending' : item.status}
+                </small>
               </div>
               <div className="potential-earn">
-                <small>Commission</small>
-                <p>₦{((item.price || 0) * 0.015).toLocaleString()}</p>
+                <small>{item.status === 'rented' ? 'Commission Earned' : 'Potential Commission'}</small>
+                <p>{formatCurrency((item.price || 0) * 0.015)}</p>
+                {item.status === 'rented' && (
+                  <span className="earned-badge">Awaiting Payment</span>
+                )}
               </div>
             </div>
           ))
         ) : (
           <div className="empty-card" onClick={() => navigate('/post-property')}>
+            <Home size={32} />
             <p>Post your vacating house to earn 1.5% commission!</p>
+            <button className="btn btn-primary btn-sm">Post Property</button>
           </div>
         )}
       </section>
@@ -316,20 +491,29 @@ const TenantDashboard = () => {
           
           {savedProperties.slice(0, 3).map(item => (
             <div className="property-mini-card" key={item.id} onClick={() => navigate(`/listings/${item.listing_id}`)}>
-              <img src={item.listings?.images?.[0] || 'https://via.placeholder.com/100'} alt="saved" />
+              <img 
+                src={item.listings?.images?.[0] || 'https://via.placeholder.com/100x80?text=Property'} 
+                alt="saved"
+                onError={(e) => {
+                  e.target.src = 'https://via.placeholder.com/100x80?text=Property';
+                }}
+              />
               <div className="details">
                 <h4>{item.listings?.title || 'Property'}</h4>
-                <p>₦{item.listings?.price?.toLocaleString() || '0'}</p>
+                <p>{formatCurrency(item.listings?.price)}</p>
+                <small className="listing-location">
+                  {item.listings?.city || ''} {item.listings?.state || ''}
+                </small>
               </div>
             </div>
           ))}
         </section>
       )}
 
-      {/* Earnings Details Modal */}
+      {/* Earnings Details Modal - Updated with paid/pending breakdown */}
       {showEarningsModal && (
-        <div className="modal-overlay">
-          <div className="earnings-modal">
+        <div className="modal-overlay" onClick={() => setShowEarningsModal(false)}>
+          <div className="earnings-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Earnings Details</h2>
               <button className="close-modal" onClick={() => setShowEarningsModal(false)}>
@@ -345,10 +529,10 @@ const TenantDashboard = () => {
                 </div>
               ) : (
                 <>
-                  {/* Commission Stats */}
+                  {/* Commission Stats - Updated with paid/pending */}
                   <div className="commission-stats">
                     <div className="stat-card">
-                      <div className="stat-icon">
+                      <div className="stat-icon total">
                         <DollarSign size={20} />
                       </div>
                       <div className="stat-info">
@@ -368,22 +552,22 @@ const TenantDashboard = () => {
                     </div>
 
                     <div className="stat-card">
+                      <div className="stat-icon paid">
+                        <CheckCircle size={20} />
+                      </div>
+                      <div className="stat-info">
+                        <p className="stat-label">Paid</p>
+                        <p className="stat-value">{formatCurrency(earningsDetails.paid)}</p>
+                      </div>
+                    </div>
+
+                    <div className="stat-card">
                       <div className="stat-icon">
                         <Calendar size={20} />
                       </div>
                       <div className="stat-info">
                         <p className="stat-label">This Month</p>
                         <p className="stat-value">{formatCurrency(earningsDetails.thisMonth)}</p>
-                      </div>
-                    </div>
-
-                    <div className="stat-card">
-                      <div className="stat-icon">
-                        <TrendingUp size={20} />
-                      </div>
-                      <div className="stat-info">
-                        <p className="stat-label">Last Month</p>
-                        <p className="stat-value">{formatCurrency(earningsDetails.lastMonth)}</p>
                       </div>
                     </div>
                   </div>
@@ -396,10 +580,10 @@ const TenantDashboard = () => {
                     </div>
                     <ul className="commission-list">
                       <li>✅ You post your vacating house on RentEasy</li>
-                      <li>✅ When a tenant books through your listing</li>
+                      <li>✅ When a tenant rents through your listing</li>
                       <li>✅ You earn <strong>1.5% commission</strong> of the total rental amount</li>
-                      <li>✅ Commission is paid after tenant moves in</li>
-                      <li>✅ You can withdraw to your bank account</li>
+                      <li>✅ Commission is paid after admin confirms the rental</li>
+                      <li>✅ Pending commissions become paid after admin verification</li>
                     </ul>
                   </div>
 
@@ -419,15 +603,20 @@ const TenantDashboard = () => {
                             <div className="transaction-main">
                               <div className="transaction-type">
                                 <div className="type-icon">
-                                  <Receipt size={16} />
+                                  {transaction.status === 'paid' ? <CheckCircle size={16} /> : <Clock size={16} />}
                                 </div>
                                 <div>
                                   <h4>{transaction.type}</h4>
                                   <p className="transaction-description">{transaction.description}</p>
+                                  {transaction.listing && (
+                                    <p className="transaction-property">
+                                      <Home size={12} /> {transaction.listing.title}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               <div className="transaction-amount">
-                                <strong className="amount-positive">
+                                <strong className={`amount-${transaction.status === 'paid' ? 'positive' : 'pending'}`}>
                                   {formatCurrency(transaction.amount)}
                                 </strong>
                                 {getStatusBadge(transaction.status)}
@@ -437,9 +626,11 @@ const TenantDashboard = () => {
                               <span className="transaction-date">
                                 <Calendar size={14} /> {formatDate(transaction.date)}
                               </span>
-                              <span className="transaction-reference">
-                                {transaction.property}
-                              </span>
+                              {transaction.status === 'paid' && (
+                                <span className="paid-badge">
+                                  <CheckCircle size={12} /> Commission Paid
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -472,11 +663,6 @@ const TenantDashboard = () => {
               >
                 Close
               </button>
-              {earningsDetails.transactions.length > 0 && (
-                <button className="export-btn">
-                  <Download size={16} /> Export Statement
-                </button>
-              )}
             </div>
           </div>
         </div>

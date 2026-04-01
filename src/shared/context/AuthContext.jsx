@@ -1,5 +1,6 @@
+// src/shared/context/AuthContext.jsx
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { supabase } from '../../shared/lib/supabaseClient'; // Adjust path
+import { supabase } from '../../shared/lib/supabaseClient';
 
 const AuthContext = createContext();
 
@@ -33,8 +34,7 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  // Helper: Fetches profile and sets state
-  // Helper: Fetches profile and sets state
+  // Helper: Fetches profile and sets state with staff detection
   const fetchAndSetUser = async (userid) => {
     try {
       const { data: profile, error } = await supabase
@@ -45,20 +45,44 @@ export const AuthProvider = ({ children }) => {
 
       if (error) throw error;
 
-     const userData = {
-  id: userid,
-  email: profile.email,
-  name: profile.full_name || profile.name,
-  fullName: profile.full_name || profile.name,
-  role: (profile.role || 'tenant').replace('_', '-'), // normalize role
-  avatar_url: profile.avatar_url,
-  is_admin: profile.is_admin || false,
-  isVerified: true
-};
+      // Check if user is staff (has estate_firm_profile with parent)
+      let isStaff = false;
+      let staffRole = null;
+      let parentFirmId = null;
+      
+      // Only check for estate-firm roles
+      if (profile.role === 'estate-firm' || profile.role === 'estate_firm') {
+        const { data: estateProfile, error: estateError } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role, parent_estate_firm_id, is_staff_account')
+          .eq('user_id', userid)
+          .maybeSingle();
+        
+        if (!estateError && estateProfile) {
+          isStaff = estateProfile.is_staff_account || false;
+          staffRole = estateProfile.staff_role;
+          parentFirmId = estateProfile.parent_estate_firm_id;
+        }
+      }
+
+      const userData = {
+        id: userid,
+        email: profile.email,
+        name: profile.full_name || profile.name,
+        fullName: profile.full_name || profile.name,
+        role: (profile.role || 'tenant').replace('_', '-'), // normalize role
+        avatar_url: profile.avatar_url,
+        is_admin: profile.is_admin || false,
+        isVerified: true,
+        // Staff specific fields
+        isStaff: isStaff,
+        staffRole: staffRole,
+        parentFirmId: parentFirmId
+      };
 
       setUser(userData);
       localStorage.setItem('renteasy_user', JSON.stringify(userData));
-      return userData; // Return the data so login can use it immediately
+      return userData;
     } catch (err) {
       console.error('Failed to fetch user profile:', err);
       return null;
@@ -76,7 +100,6 @@ export const AuthProvider = ({ children }) => {
       if (signInError) throw signInError;
 
       // 2. Fetch the profile (Wait for it!)
-      // We call our helper which now returns the data
       const userData = await fetchAndSetUser(data.user.id);
 
       if (!userData) {
@@ -111,6 +134,9 @@ export const AuthProvider = ({ children }) => {
     isTenant: user?.role === 'tenant',
     isLandlord: user?.role === 'landlord',
     isAdmin: user?.role === 'admin',
+    isStaff: user?.isStaff || false,
+    staffRole: user?.staffRole || null,
+    parentFirmId: user?.parentFirmId || null,
     hasRole: (role) => user?.role === role,
   };
 

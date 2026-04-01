@@ -7,7 +7,7 @@ import { supabase } from '../../../shared/lib/supabaseClient';
 import {
   DollarSign, Calendar, CheckCircle, XCircle, Clock,
   Filter, Search, Download, Eye, FileText,
-  ChevronDown, ChevronUp, AlertCircle, ArrowLeft
+  ChevronDown, ChevronUp, AlertCircle, ArrowLeft, Receipt, Shield
 } from 'lucide-react';
 import './RentTracking.css';
 
@@ -19,6 +19,9 @@ const RentTracking = () => {
   const [filteredPayments, setFilteredPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userRole, setUserRole] = useState('principal');
+  const [canConfirm, setCanConfirm] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('all');
@@ -37,92 +40,144 @@ const RentTracking = () => {
   // Properties for filter dropdown
   const [properties, setProperties] = useState([]);
 
+  // Get user role
   useEffect(() => {
-    if (user) loadData();
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!error && roleData) {
+          const role = roleData.staff_role || 'principal';
+          setUserRole(role);
+          // Only Principal and Executive can confirm payments
+          setCanConfirm(role === 'principal' || role === 'executive');
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+        setCanConfirm(true);
+      }
+    };
+    
+    const getCurrentUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        setCurrentUserId(userData.user.id);
+      }
+    };
+    
+    getUserRole();
+    getCurrentUser();
   }, [user]);
 
- const loadData = async () => {
-  setLoading(true);
-  setError(null);
-  try {
-    // 1. Get estate firm profile ID
-    const { data: profile, error: profileError } = await supabase
-      .from('estate_firm_profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
+  useEffect(() => {
+    if (user) loadData();
+  }, [user, userRole]);
 
-    if (profileError) throw profileError;
-    if (!profile) throw new Error('Estate firm profile not found');
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Get estate firm profile
+      const { data: profile, error: profileError } = await supabase
+        .from('estate_firm_profiles')
+        .select('id, staff_role, parent_estate_firm_id')
+        .eq('user_id', user.id)
+        .single();
 
-    // 2. Fetch all properties for this firm
-    const { data: props, error: propsError } = await supabase
-      .from('properties')
-      .select('id, name, address')
-      .eq('estate_firm_id', profile.id);
+      if (profileError) throw profileError;
+      if (!profile) throw new Error('Estate firm profile not found');
 
-    if (propsError) throw propsError;
-    setProperties(props || []);
+      // Determine effective firm ID (parent for staff)
+      let effectiveFirmId = profile.id;
+      if (userRole === 'associate' || userRole === 'executive') {
+        effectiveFirmId = profile.parent_estate_firm_id || profile.id;
+      }
 
-    // 3. Get all units for these properties (only columns that exist)
-    const propertyIds = (props || []).map(p => p.id);
-    let units = [];
-    let unitsMap = {};
-    if (propertyIds.length > 0) {
-      // Select only columns that exist in your units table
-      const { data: unitsData, error: unitsError } = await supabase
-        .from('units')
-        .select('id, unit_number, property_id, tenant_name, tenant_phone')
-        .in('property_id', propertyIds);
-      if (unitsError) throw unitsError;
-      units = unitsData || [];
-      unitsMap = units.reduce((acc, u) => {
-        acc[u.id] = u;
-        return acc;
-      }, {});
+      // 2. Fetch properties with role-based filtering
+      let propertiesQuery = supabase
+        .from('properties')
+        .select('id, name, address')
+        .eq('estate_firm_id', effectiveFirmId);
+      
+      // If associate, only get their properties
+      if (userRole === 'associate') {
+        propertiesQuery = propertiesQuery.eq('created_by_staff_id', currentUserId);
+      }
+      
+      const { data: props, error: propsError } = await propertiesQuery;
+
+      if (propsError) throw propsError;
+      setProperties(props || []);
+
+      // 3. Get all units for these properties
+      const propertyIds = (props || []).map(p => p.id);
+      let units = [];
+      let unitsMap = {};
+      if (propertyIds.length > 0) {
+        let unitsQuery = supabase
+          .from('units')
+          .select('id, unit_number, property_id, tenant_name, tenant_phone, tenant_id')
+          .in('property_id', propertyIds);
+        
+        // If associate, only get their units
+        if (userRole === 'associate') {
+          unitsQuery = unitsQuery.eq('created_by_staff_id', currentUserId);
+        }
+        
+        const { data: unitsData, error: unitsError } = await unitsQuery;
+        if (unitsError) throw unitsError;
+        units = unitsData || [];
+        unitsMap = units.reduce((acc, u) => {
+          acc[u.id] = u;
+          return acc;
+        }, {});
+      }
+
+      // 4. Fetch rent payments
+      const unitIds = units.map(u => u.id);
+      let paymentsData = [];
+      if (unitIds.length > 0) {
+        let paymentsQuery = supabase
+          .from('payments')
+          .select('*')
+          .in('unit_id', unitIds)
+          .eq('payment_type', 'rent')
+          .order('payment_date', { ascending: false });
+        
+        const { data: pays, error: paysError } = await paymentsQuery;
+
+        if (paysError) throw paysError;
+
+        paymentsData = (pays || []).map(payment => {
+          const unit = unitsMap[payment.unit_id];
+          const property = props.find(p => p.id === unit?.property_id);
+          return {
+            ...payment,
+            tenant_name: unit?.tenant_name || 'Unknown',
+            tenant_phone: unit?.tenant_phone || '',
+            tenant_id: unit?.tenant_id,
+            unit_number: unit?.unit_number,
+            property_name: property?.name || 'Unknown Property',
+            property_id: unit?.property_id
+          };
+        });
+      }
+
+      setPayments(paymentsData);
+      applyFilters(paymentsData, statusFilter, propertyFilter, dateRange, searchTerm);
+      calculateStats(paymentsData);
+    } catch (err) {
+      console.error('Error loading rent payments:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-
-    // 4. Fetch rent payments from unified payments table
-    const unitIds = units.map(u => u.id);
-    let paymentsData = [];
-    if (unitIds.length > 0) {
-      const { data: pays, error: paysError } = await supabase
-        .from('payments')
-        .select(`
-          *,
-          unit:unit_id (
-            unit_number,
-            property:property_id (id, name)
-          )
-        `)
-        .in('unit_id', unitIds)
-        .eq('payment_type', 'rent')
-        .order('payment_date', { ascending: false });
-
-      if (paysError) throw paysError;
-
-      paymentsData = (pays || []).map(payment => {
-        const unit = unitsMap[payment.unit_id];
-        return {
-          ...payment,
-          tenant_name: unit?.tenant_name || 'Unknown',
-          tenant_phone: unit?.tenant_phone || '',
-          unit_number: unit?.unit_number,
-          property_name: payment.unit?.property?.name
-        };
-      });
-    }
-
-    setPayments(paymentsData);
-    applyFilters(paymentsData, statusFilter, propertyFilter, dateRange, searchTerm);
-    calculateStats(paymentsData);
-  } catch (err) {
-    console.error('Error loading rent payments:', err);
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const applyFilters = (data, status, property, date, search) => {
     let filtered = [...data];
@@ -132,7 +187,7 @@ const RentTracking = () => {
     }
 
     if (property !== 'all') {
-      filtered = filtered.filter(p => p.unit?.property?.id === property);
+      filtered = filtered.filter(p => p.property_id === property);
     }
 
     if (date.start && date.end) {
@@ -166,7 +221,7 @@ const RentTracking = () => {
       .reduce((sum, p) => sum + (p.amount || 0), 0);
     const today = new Date();
     const overdueCount = data.filter(p =>
-      p.status !== 'confirmed' && new Date(p.payment_date) < today
+      p.status !== 'confirmed' && p.payment_date && new Date(p.payment_date) < today
     ).length;
 
     setStats({ totalDue, totalPaid, pendingAmount, overdueCount });
@@ -191,60 +246,93 @@ const RentTracking = () => {
   };
 
   const handleConfirm = async (payment) => {
-  if (!window.confirm('Confirm this payment?')) return;
-  try {
-    // Update payment status
-    const { error } = await supabase
-      .from('payments')
-      .update({
-        status: 'confirmed',
-        confirmed_by: user.id,
-        confirmed_at: new Date().toISOString()
-      })
-      .eq('id', payment.id);
-    if (error) throw error;
-
-    // Get estate firm profile ID (you can store it once to avoid re‑fetching)
-    const { data: profile, error: profileError } = await supabase
-      .from('estate_firm_profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
-    if (!profileError && profile) {
-      await supabase.from('notifications').insert({
-        user_id: profile.id,
-        type: 'rent_payment',
-        title: 'Payment Confirmed',
-        message: `Payment of ₦${payment.amount?.toLocaleString()} for ${payment.property_name} Unit ${payment.unit_number} has been confirmed.`,
-        link: payment.property_id
-          ? `/dashboard/estate-firm/properties/${payment.property_id}`
-          : '/dashboard/estate-firm/rent-tracking',
-        created_at: new Date().toISOString()
-      });
+    if (!canConfirm) {
+      alert('Only Principal and Executive can confirm payments.');
+      return;
     }
-
-    // Refresh the list
-    loadData();
-  } catch (err) {
-    console.error(err);
-    alert('Failed to confirm payment');
-  }
-};
+    
+    if (!window.confirm('Confirm this payment?')) return;
+    
+    console.log('Confirming payment:', payment);
+    
+    try {
+      const { error } = await supabase
+        .from('payments')
+        .update({
+          status: 'confirmed',
+          confirmed_by: user.id,
+          confirmed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', payment.id);
+      
+      if (error) throw error;
+      
+      console.log('Payment confirmed successfully!');
+      
+      const updatedPayments = payments.map(p => 
+        p.id === payment.id 
+          ? { ...p, status: 'confirmed', confirmed_by: user.id, confirmed_at: new Date().toISOString() }
+          : p
+      );
+      setPayments(updatedPayments);
+      applyFilters(updatedPayments, statusFilter, propertyFilter, dateRange, searchTerm);
+      calculateStats(updatedPayments);
+      
+      alert('Payment confirmed successfully!');
+      
+    } catch (err) {
+      console.error('Error confirming payment:', err);
+      alert(`Failed to confirm payment: ${err.message}`);
+    }
+  };
 
   const handleReject = async (paymentId) => {
-    const reason = prompt('Enter rejection reason (optional)');
+    if (!canConfirm) {
+      alert('Only Principal and Executive can reject payments.');
+      return;
+    }
+    
+    const reason = prompt('Enter rejection reason (optional):');
+    
     try {
       const { error } = await supabase
         .from('payments')
         .update({
           status: 'rejected',
-          notes: reason || 'Rejected by estate firm'
+          notes: reason || 'Rejected by estate firm',
+          updated_at: new Date().toISOString()
         })
         .eq('id', paymentId);
+      
       if (error) throw error;
-      loadData();
+      
+      const updatedPayments = payments.map(p => 
+        p.id === paymentId 
+          ? { ...p, status: 'rejected', notes: reason || 'Rejected by estate firm' }
+          : p
+      );
+      setPayments(updatedPayments);
+      applyFilters(updatedPayments, statusFilter, propertyFilter, dateRange, searchTerm);
+      calculateStats(updatedPayments);
+      
+      const payment = payments.find(p => p.id === paymentId);
+      if (payment?.user_id) {
+        await supabase.from('notifications').insert({
+          user_id: payment.user_id,
+          type: 'payment_rejected',
+          title: 'Payment Rejected',
+          message: `Your rent payment of ${formatCurrency(payment.amount)} was rejected. Reason: ${reason || 'Please contact support'}`,
+          link: '/dashboard/tenant/rent-management',
+          created_at: new Date().toISOString()
+        });
+      }
+      
+      alert('Payment rejected successfully!');
+      
     } catch (err) {
-      alert('Failed to reject payment');
+      console.error('Error rejecting payment:', err);
+      alert(`Failed to reject payment: ${err.message}`);
     }
   };
 
@@ -272,8 +360,8 @@ const RentTracking = () => {
   };
 
   if (loading) {
-  return <RentEasyLoader message="Loading your Payments..." fullScreen />;
-}
+    return <RentEasyLoader message="Loading your Payments..." fullScreen />;
+  }
 
   if (error) {
     return (
@@ -282,7 +370,7 @@ const RentTracking = () => {
           <AlertCircle size={48} />
           <h3>Error Loading Data</h3>
           <p>{error}</p>
-          <button onClick={loadData}>Retry</button>
+          <button onClick={() => loadData()}>Retry</button>
         </div>
       </div>
     );
@@ -290,11 +378,34 @@ const RentTracking = () => {
 
   return (
     <div className="rent-tracking-page">
+      {/* Role Banner */}
+      {userRole === 'associate' && (
+        <div className="role-banner">
+          <Shield size={16} />
+          <span>Associate View - You can only see rent payments from properties you manage</span>
+        </div>
+      )}
+      
+      {userRole === 'executive' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>Executive View - You can view and confirm payments</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="page-header">
         <button className="back-btn" onClick={() => navigate('/dashboard/estate-firm')}>
           <ArrowLeft size={20} /> Back to Dashboard
         </button>
+        <div className="header-actions">
+          <button 
+            className="btn-outline" 
+            onClick={() => navigate('/dashboard/estate-firm/payments')}
+          >
+            <Receipt size={18} /> View All Payments
+          </button>
+        </div>
         <h1>Rent Payments Tracking</h1>
         <p>Monitor and manage all rent payments across your properties</p>
       </div>
@@ -419,7 +530,7 @@ const RentTracking = () => {
                   <td>{getStatusBadge(payment.status)}</td>
                   <td>
                     {payment.receipt_url ? (
-                      <a href={payment.receipt_url} target="_blank" rel="noopener" className="btn-proof">
+                      <a href={payment.receipt_url} target="_blank" rel="noopener noreferrer" className="btn-proof">
                         <Eye size={16} /> View
                       </a>
                     ) : (
@@ -427,7 +538,7 @@ const RentTracking = () => {
                     )}
                   </td>
                   <td>
-                    {payment.status === 'pending' && (
+                    {payment.status === 'pending' && canConfirm && (
                       <div className="action-buttons">
                         <button className="btn-confirm" onClick={() => handleConfirm(payment)}>
                           <CheckCircle size={16} /> Confirm
@@ -437,11 +548,17 @@ const RentTracking = () => {
                         </button>
                       </div>
                     )}
-                    {payment.status === 'confirmed' && (
-                      <span className="action-pending">Confirmed</span>
+                    {payment.status === 'pending' && !canConfirm && (
+                      <span className="action-pending">Awaiting Approval</span>
                     )}
-                  </td>
-                </tr>
+                    {payment.status === 'confirmed' && (
+                      <span className="action-confirmed">Confirmed</span>
+                    )}
+                    {payment.status === 'rejected' && (
+                      <span className="action-rejected">Rejected</span>
+                    )}
+                   </td>
+                 </tr>
               ))
             ) : (
               <tr>

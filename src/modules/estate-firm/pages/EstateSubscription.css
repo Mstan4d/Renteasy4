@@ -250,3 +250,49 @@
     font-size: 0.9rem;
   }
 }
+
+/* Add to EstateSubscription.css */
+.restricted-card {
+  text-align: center;
+  padding: 3rem;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  margin: 2rem auto;
+}
+
+.restricted-card svg {
+  color: #8b5cf6;
+  margin-bottom: 1rem;
+}
+
+.restricted-card h2 {
+  margin-bottom: 0.5rem;
+  color: #111827;
+}
+
+.restricted-card p {
+  color: #6b7280;
+  margin-bottom: 1rem;
+}
+
+.restricted-note {
+  font-size: 0.85rem;
+  background: #fef3c7;
+  padding: 0.5rem;
+  border-radius: 8px;
+  color: #92400e;
+}
+
+.role-banner.executive {
+  background: #fef3c7;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #92400e;
+}

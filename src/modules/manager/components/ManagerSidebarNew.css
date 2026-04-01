@@ -1,0 +1,76 @@
+/* src/modules/manager/components/ManagerSidebarNew.css */
+
+/* Ensure icons don't change on hover */
+.nav-link-icon {
+  width: 24px;
+  text-align: center;
+  display: inline-block;
+  font-size: 1.2rem;
+  transition: none;
+  filter: none;
+}
+
+.nav-link-icon:hover {
+  transform: none;
+  filter: none;
+}
+
+/* Active link styling */
+.nav-link-active {
+  background: #eef2ff !important;
+  color: #4f46e5 !important;
+}
+
+.nav-link-active .nav-link-icon {
+  color: #4f46e5;
+}
+
+/* Notification badge button */
+.notification-badge-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.notification-badge-btn:hover {
+  background: #f1f5f9;
+}
+
+/* Sidebar scrollbar */
+.manager-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.manager-sidebar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.manager-sidebar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+/* Mobile overlay */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .sidebar-overlay.show {
+    display: block;
+  }
+}

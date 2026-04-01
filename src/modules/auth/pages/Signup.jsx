@@ -168,6 +168,46 @@ const handleSubmit = async (e) => {
     setIsLoading(false);
   }
 };
+
+// In your signup component
+const handleSignup = async (email, password, referralCode) => {
+  // 1. Create user
+  const { data: user, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        referred_by: referralCode
+      }
+    }
+  });
+  
+  if (error) throw error;
+  
+  // 2. If referral code exists, track it
+  if (referralCode) {
+    // Find the referrer
+    const { data: referrer } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('referral_code', referralCode)
+      .single();
+    
+    if (referrer) {
+      // Create referral record
+      await supabase
+        .from('tenant_referrals')
+        .insert({
+          referrer_id: referrer.id,
+          referred_user_id: user.user.id,
+          referred_user_name: user.user.email,
+          referred_user_email: user.user.email,
+          status: 'pending',
+          signup_date: new Date().toISOString()
+        });
+    }
+  }
+};
   // Toggle password visibility
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);

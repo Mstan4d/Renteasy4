@@ -4,7 +4,7 @@ import {
   Home, Building, Briefcase, DollarSign, 
   MessageSquare, Receipt, Settings, Users, BarChart,
   FileText, Shield, Upload, LogOut,
-  Menu, X, ChevronDown, Bell, User, UserCircle
+  Menu, X, ChevronDown, Bell, User, UserPlus, UserCircle
 } from 'lucide-react';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
@@ -18,8 +18,30 @@ const EstateHeader = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [userRole, setUserRole] = useState('principal');
   
   const userMenuRef = useRef(null);
+
+  // Fetch user role
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (!error && roleData) {
+          setUserRole(roleData.staff_role || 'principal');
+        }
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+      }
+    };
+    getUserRole();
+  }, [user]);
 
   // Fetch initial unread count and subscribe to new notifications
   useEffect(() => {
@@ -82,28 +104,72 @@ const EstateHeader = () => {
   };
 
   const handlePostService = () => {
+    // Only Principal and Executive can post services
+    if (userRole === 'associate') {
+      alert('Associates cannot post services. Please contact your firm principal.');
+      return;
+    }
     navigate('/dashboard/estate-firm/post-service');
     setMobileMenuOpen(false);
   };
 
   const handleBulkUpload = () => {
+    // Only Principal and Executive can bulk upload
+    if (userRole === 'associate') {
+      alert('Associates cannot use bulk upload. Please contact your firm principal.');
+      return;
+    }
     navigate('/dashboard/estate-firm/bulk-upload');
     setMobileMenuOpen(false);
   };
 
-  const navItems = [
-    { path: '/dashboard/estate-firm', icon: Home, label: 'Overview' },
-    { path: '/dashboard/estate-firm/profile', icon: UserCircle, label: 'Profile' },
-    { path: '/dashboard/estate-firm/properties', icon: Building, label: 'Portfolio' },
-    { path: '/dashboard/estate-firm/services', icon: Briefcase, label: 'Services' },
-    { path: '/dashboard/estate-firm/clients', icon: Users, label: 'Clients' },
-    { path: '/dashboard/estate-firm/analytics', icon: BarChart, label: 'Analytics' },
-    { path: '/dashboard/estate-firm/documents', icon: FileText, label: 'Documents' },
-    { path: '/dashboard/estate-firm/verification', icon: Shield, label: 'Verification' },
-    { path: '/dashboard/messages', icon: MessageSquare, label: 'Messages' },
-    { path: '/dashboard/estate-firm/rent-tracking', icon: Receipt, label: 'Rents' },
-    { path: '/dashboard/estate-firm/settings', icon: Settings, label: 'Settings' },
-  ];
+  // Define navigation items based on role
+  const getNavItems = () => {
+    // Base items - everyone sees
+    const baseItems = [
+      { path: '/dashboard/estate-firm', icon: Home, label: 'Overview' },
+      { path: '/dashboard/estate-firm/profile', icon: UserCircle, label: 'Profile' },
+      { path: '/dashboard/estate-firm/properties', icon: Building, label: 'Portfolio' },
+      { path: '/dashboard/estate-firm/clients', icon: Users, label: 'Clients' },
+      { path: '/dashboard/estate-firm/analytics', icon: BarChart, label: 'Analytics' },
+      { path: '/dashboard/estate-firm/documents', icon: FileText, label: 'Documents' },
+      { path: '/dashboard/messages', icon: MessageSquare, label: 'Messages' },
+      { path: '/dashboard/estate-firm/rent-tracking', icon: Receipt, label: 'Rents' },
+    ];
+    
+    // Items for Principal and Executive (not for Associate)
+    const principalExecutiveItems = [
+      { path: '/dashboard/estate-firm/services', icon: Briefcase, label: 'Services' },
+      { path: '/dashboard/estate-firm/verification', icon: Shield, label: 'Verification' },
+      { path: '/dashboard/estate-firm/settings', icon: Settings, label: 'Settings' },
+    ];
+    
+    // Items only for Principal
+    const principalOnlyItems = [
+      { path: '/dashboard/estate-firm/staff-manager', icon: UserPlus, label: 'Team' },
+    ];
+    
+    if (userRole === 'associate') {
+      return baseItems;
+    } else if (userRole === 'executive') {
+      return [...baseItems, ...principalExecutiveItems];
+    } else {
+      // Principal
+      return [...baseItems, ...principalExecutiveItems, ...principalOnlyItems];
+    }
+  };
+
+  const navItems = getNavItems();
+
+  // Get role badge text
+  const getRoleBadge = () => {
+    switch(userRole) {
+      case 'principal': return '👑 Principal';
+      case 'executive': return '⭐ Executive';
+      case 'associate': return '🤝 Associate';
+      default: return '';
+    }
+  };
 
   return (
     <header className="estate-header">
@@ -118,6 +184,7 @@ const EstateHeader = () => {
           </button>
           <Link to="/dashboard/estate-firm" className="logo">
             <span className="logo-text">RentEasy</span>
+            <span className="role-badge">{getRoleBadge()}</span>
           </Link>
         </div>
 
@@ -144,12 +211,20 @@ const EstateHeader = () => {
           <button className="action-btn" onClick={handlePostProperty} title="Post Property">
             <Building size={20} />
           </button>
-          <button className="action-btn" onClick={handlePostService} title="Post Service">
-            <Briefcase size={20} />
-          </button>
-          <button className="action-btn" onClick={handleBulkUpload} title="Bulk Upload">
-            <Upload size={20} />
-          </button>
+          
+          {/* Only show Post Service for Principal and Executive */}
+          {userRole !== 'associate' && (
+            <button className="action-btn" onClick={handlePostService} title="Post Service">
+              <Briefcase size={20} />
+            </button>
+          )}
+          
+          {/* Only show Bulk Upload for Principal and Executive */}
+          {userRole !== 'associate' && (
+            <button className="action-btn" onClick={handleBulkUpload} title="Bulk Upload">
+              <Upload size={20} />
+            </button>
+          )}
 
           {/* Notifications Bell - navigates to notifications page */}
           <Link 
@@ -215,12 +290,16 @@ const EstateHeader = () => {
             <button className="btn btn-primary" onClick={handlePostProperty}>
               <Building size={18} /> Post Property
             </button>
-            <button className="btn btn-outline" onClick={handlePostService}>
-              <Briefcase size={18} /> Post Service
-            </button>
-            <button className="btn btn-outline" onClick={handleBulkUpload}>
-              <Upload size={18} /> Bulk Upload
-            </button>
+            {userRole !== 'associate' && (
+              <>
+                <button className="btn btn-outline" onClick={handlePostService}>
+                  <Briefcase size={18} /> Post Service
+                </button>
+                <button className="btn btn-outline" onClick={handleBulkUpload}>
+                  <Upload size={18} /> Bulk Upload
+                </button>
+              </>
+            )}
           </div>
         </nav>
       </div>

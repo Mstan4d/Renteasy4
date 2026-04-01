@@ -300,16 +300,6 @@
     flex: 1;
   }
   
-  .loading-spinner {
-    /* Loading spinner */
-    width: 40px;
-    height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #5930e0;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 1rem;
-  }
   
   @keyframes spin {
     0% { transform: rotate(0deg); }
@@ -1244,4 +1234,177 @@
   text-align: center;
   color: #9ca3af;
   font-size: 14px;
+}
+
+/* Mark as Rented Button Container */
+.rented-action-box {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e6f4ea 100%);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  border: 1px solid #d0e2d0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Mark as Rented Button */
+.btn-rented {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(46, 125, 50, 0.3);
+}
+
+.btn-rented:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1b5e20 0%, #0a3b0e 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(46, 125, 50, 0.4);
+}
+
+.btn-rented:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-rented:disabled {
+  background: #9e9e9e;
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* Hint text for the button */
+.rented-hint {
+  font-size: 0.8rem;
+  color: #2e7d32;
+  margin: 0;
+  font-weight: 500;
+  background: rgba(46, 125, 50, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .rented-action-box {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    padding: 1rem;
+  }
+  
+  .btn-rented {
+    justify-content: center;
+    width: 100%;
+  }
+  
+  .rented-hint {
+    text-align: center;
+    justify-content: center;
+  }
+}
+
+/* Animation for button click */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.98);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.btn-rented:active:not(:disabled) {
+  animation: pulse 0.2s ease;
+}
+
+/* Optional: Add a subtle badge effect when property is rented */
+.rented-action-box.rented {
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+  border-color: #81c784;
+}
+
+.rented-action-box.rented .btn-rented {
+  background: #757575;
+  cursor: default;
+}
+
+.rented-action-box.rented .rented-hint {
+  color: #388e3c;
+  font-weight: 600;
+}
+
+/* If you want to add an icon before the hint text */
+.rented-hint::before {
+  content: "💡";
+  font-size: 0.9rem;
+}
+
+/* Dark mode support (if you have dark mode) */
+@media (prefers-color-scheme: dark) {
+  .rented-action-box {
+    background: linear-gradient(135deg, #1a2a1f 0%, #0d2e12 100%);
+    border-color: #2e7d32;
+  }
+  
+  .rented-hint {
+    color: #81c784;
+    background: rgba(129, 199, 132, 0.15);
+  }
+  
+  .btn-rented {
+    background: linear-gradient(135deg, #388e3c 0%, #2e7d32 100%);
+  }
+  
+  .btn-rented:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+  }
+}
+
+/* Add to Messages.css */
+.role-banner {
+  background: #e0f2fe;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #0369a1;
+}
+
+.role-banner.executive {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.chat-restricted-message {
+  background: #fef3c7;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #92400e;
 }

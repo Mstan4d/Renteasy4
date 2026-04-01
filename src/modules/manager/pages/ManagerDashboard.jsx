@@ -48,89 +48,205 @@ const ManagerDashboard = () => {
   };
 
   // ---------- Load proximity notifications (real‑time) ----------
-  useEffect(() => {
-    if (!user) return;
+ // src/modules/manager/pages/ManagerDashboard.jsx (Update the relevant sections)
 
-    const fetchInitialNotifications = async () => {
-      const { data } = await supabase
-        .from('manager_notifications')
+// Update the proximity notifications useEffect
+useEffect(() => {
+  if (!user) return;
+
+  const fetchInitialNotifications = async () => {
+    try {
+      // First get the manager's location and radius
+      const { data: managerProfile } = await supabase
+        .from('profiles')
+        .select('lat, lng, notification_radius_km')
+        .eq('id', user.id)
+        .single();
+
+      if (!managerProfile?.lat || !managerProfile?.lng) {
+        console.log('Manager location not set');
+        return;
+      }
+
+      // Get available listings within radius that are not assigned
+      const { data: availableListings } = await supabase
+        .from('listings')
         .select('*')
-        .eq('manager_id', user.id)
-        .eq('accepted', false)
-        .gt('expires_at', new Date().toISOString());
-      setProximityNotifications(data || []);
-    };
+        .neq('poster_role', 'estate-firm')
+        .is('assigned_manager_id', null)
+        .not('lat', 'is', null)
+        .not('lng', 'is', null);
 
-    fetchInitialNotifications();
+      if (availableListings) {
+        // Calculate distance and filter
+        const withDistance = availableListings.map(listing => {
+          const distance = calculateDistance(
+            managerProfile.lat,
+            managerProfile.lng,
+            listing.lat,
+            listing.lng
+          );
+          return {
+            id: listing.id,
+            listingId: listing.id,
+            title: listing.title,
+            price: listing.price,
+            location: `${listing.city || ''} ${listing.state || ''}`,
+            posterRole: listing.poster_role,
+            commission: (listing.price || 0) * 0.025,
+            distance: `${distance.toFixed(1)}km`,
+            expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            accepted: false
+          };
+        }).filter(l => parseFloat(l.distance) <= (managerProfile.notification_radius_km || 5));
 
-    const channel = supabase
-      .channel('manager_alerts')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'manager_notifications',
-          filter: `manager_id=eq.${user.id}`,
-        },
-        (payload) => {
-          setProximityNotifications((prev) => [payload.new, ...prev]);
+        setProximityNotifications(withDistance);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  fetchInitialNotifications();
+
+  // Real-time subscription for new listings
+  const channel = supabase
+    .channel('new-listings')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'listings'
+      },
+      async (payload) => {
+        const newListing = payload.new;
+        if (newListing.poster_role === 'estate-firm') return;
+        
+        // Get manager location
+        const { data: managerProfile } = await supabase
+          .from('profiles')
+          .select('lat, lng, notification_radius_km')
+          .eq('id', user.id)
+          .single();
+        
+        if (managerProfile?.lat && managerProfile?.lng && newListing.lat && newListing.lng) {
+          const distance = calculateDistance(
+            managerProfile.lat,
+            managerProfile.lng,
+            newListing.lat,
+            newListing.lng
+          );
+          
+          if (distance <= (managerProfile.notification_radius_km || 5)) {
+            const notification = {
+              id: newListing.id,
+              listingId: newListing.id,
+              title: newListing.title,
+              price: newListing.price,
+              location: `${newListing.city || ''} ${newListing.state || ''}`,
+              posterRole: newListing.poster_role,
+              commission: (newListing.price || 0) * 0.025,
+              distance: `${distance.toFixed(1)}km`,
+              expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+              accepted: false
+            };
+            setProximityNotifications(prev => [notification, ...prev]);
+          }
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [user]);
+
+// Add distance calculation helper
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
 
   // ---------- Load all dashboard data ----------
   const loadDashboardData = async () => {
-    setLoading(true);
-    try {
-      // 1. Get manager's assigned chats
+  setLoading(true);
+  try {
+    // 1. Get manager's assigned chats (listings where manager is assigned)
+    const { data: myListings, error: listingsError } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('assigned_manager_id', user.id)
+      .order('assigned_at', { ascending: false });
+
+    if (listingsError) throw listingsError;
+    
+    // Separate into pending and verified
+    const pending = (myListings || []).filter(l => l.verification_status === 'pending_verification');
+    const verified = (myListings || []).filter(l => l.verification_status === 'verified');
+    
+    setPendingVerifications(pending);
+    setVerifiedProperties(verified);
+    
+    // 2. Get chats related to these listings
+    const listingIds = (myListings || []).map(l => l.id);
+    let chatsData = [];
+    if (listingIds.length > 0) {
       const { data: chats, error: chatsError } = await supabase
         .from('chats')
-        .select('*')
-        .or(
-          `participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id},manager_assigned.eq.true`
-        );
-      if (chatsError) throw chatsError;
-      setAssignedChats(chats || []);
-
-      // 2. Get verified properties (listings where manager is assigned and verified)
-      const { data: verified, error: verifiedError } = await supabase
-        .from('listings')
-        .select('*')
-        .eq('assigned_manager_id', user.id)
-        .eq('verification_status', 'verified'); // using new verification_status
-      if (verifiedError) throw verifiedError;
-      setVerifiedProperties(verified || []);
-
-      // 3. NEW: Get listings pending verification (assigned but not yet verified)
-      const { data: pending, error: pendingError } = await supabase
-        .from('listings')
-        .select('*')
-        .eq('assigned_manager_id', user.id)
-        .eq('verification_status', 'pending_verification');
-      if (pendingError) throw pendingError;
-      setPendingVerifications(pending || []);
-
-      // 4. Calculate total earnings (sum of manager_share from commissions)
-      const { data: commissions, error: commError } = await supabase
-        .from('commissions')
-        .select('manager_share')
-        .eq('manager_id', user.id)
-        .eq('status', 'paid');
-      if (commError) throw commError;
+        .select(`
+          *,
+          messages:messages!chat_id (
+            content,
+            created_at,
+            is_system_message
+          )
+        `)
+        .in('listing_id', listingIds);
+      
+      if (!chatsError) chatsData = chats || [];
+    }
+    
+    // Enhance chats with listing details
+    const enhancedChats = chatsData.map(chat => {
+      const listing = myListings?.find(l => l.id === chat.listing_id);
+      return {
+        ...chat,
+        listingTitle: listing?.title || 'Unknown Property',
+        listingPrice: listing?.price || 0,
+        listingStatus: listing?.status || 'unknown',
+        chatType: chat.monitoring_manager_id === user.id ? 'monitoring' : 'direct',
+        messages: chat.messages || []
+      };
+    });
+    
+    setAssignedChats(enhancedChats);
+    
+    // 3. Calculate total earnings
+    const { data: commissions, error: commError } = await supabase
+      .from('commissions')
+      .select('manager_share')
+      .eq('manager_id', user.id)
+      .eq('status', 'paid');
+    
+    if (!commError) {
       const total = (commissions || []).reduce((sum, c) => sum + (c.manager_share || 0), 0);
       setEarnings(total);
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-    } finally {
-      setLoading(false);
     }
-  };
+    
+  } catch (error) {
+    console.error('Error loading dashboard data:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (user) loadDashboardData();

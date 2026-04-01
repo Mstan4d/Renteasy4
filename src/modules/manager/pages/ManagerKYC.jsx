@@ -9,7 +9,7 @@ const ManagerKYC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  // Nigerian states with LGAs (expanded list)
+  // Nigerian states with LGAs
   const nigerianStates = [
     { 
       state: "Lagos", 
@@ -37,7 +37,6 @@ const ManagerKYC = () => {
     }
   ];
 
-  // Nigerian banks
   const nigerianBanks = [
     "Access Bank", "Zenith Bank", "First Bank", "UBA", "GTBank", 
     "Fidelity Bank", "Ecobank", "Union Bank", "Polaris Bank", "Stanbic IBTC",
@@ -48,8 +47,8 @@ const ManagerKYC = () => {
   const [verificationStatus, setVerificationStatus] = useState('not_started');
   const [isLoading, setIsLoading] = useState(true);
   const [step, setStep] = useState(1);
+  const [profileData, setProfileData] = useState(null);
   const [formData, setFormData] = useState({
-    // Personal Information
     fullName: user?.name || '',
     phone: user?.phone || '',
     email: user?.email || '',
@@ -58,16 +57,12 @@ const ManagerKYC = () => {
     state: '',
     lga: '',
     address: '',
-    
-    // ID Verification
     idType: 'national_id',
     idNumber: '',
     idFront: null,
     idBack: null,
     selfie: null,
     proofOfAddress: null,
-    
-    // Bank Details
     bankName: '',
     accountNumber: '',
     accountName: '',
@@ -81,80 +76,96 @@ const ManagerKYC = () => {
       navigate('/login');
       return;
     }
-
     checkKYCStatus();
   }, [user, navigate]);
 
-  const checkKYCStatus = () => {
+  const checkKYCStatus = async () => {
     try {
-      // Check managers storage first
-      const managers = JSON.parse(localStorage.getItem('managers') || '[]');
-      const currentManager = managers.find(m => m.email === user?.email);
+      setIsLoading(true);
       
-      if (currentManager) {
-        const status = currentManager.kycStatus || currentManager.verificationStatus || 'not_started';
+      // Fetch from Supabase profiles table
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('kyc_status, kyc_data, bank_details')
+        .eq('id', user.id)
+        .single();
+      
+      if (error) throw error;
+      
+      setProfileData(data);
+      
+      if (data) {
+        const status = data.kyc_status || 'not_started';
         setVerificationStatus(status);
         
-        // If already approved, redirect to dashboard
+        // If already approved, redirect to dashboard after showing success message
         if (status === 'approved') {
-          navigate('/dashboard/manager');
-          return;
+          setTimeout(() => {
+            navigate('/dashboard/manager');
+          }, 3000);
         }
         
         // If pending, show pending screen
         if (status === 'pending') {
-          setStep(5); // Show pending screen
+          setStep(5);
         }
         
         // If rejected, show rejected screen
         if (status === 'rejected') {
-          setStep(6); // Show rejected screen
+          setStep(6);
         }
         
         // Load existing data if available
-        if (currentManager.kycData || currentManager.verificationData) {
+        if (data.kyc_data) {
           setFormData(prev => ({
             ...prev,
-            ...(currentManager.kycData || currentManager.verificationData)
+            ...data.kyc_data
+          }));
+        }
+        
+        if (data.bank_details) {
+          setFormData(prev => ({
+            ...prev,
+            bankName: data.bank_details.bankName || '',
+            accountNumber: data.bank_details.accountNumber || '',
+            accountName: data.bank_details.accountName || '',
+            bvn: data.bank_details.bvn || ''
           }));
         }
       }
       
-      setIsLoading(false);
     } catch (error) {
       console.error('Error checking KYC status:', error);
+    } finally {
       setIsLoading(false);
     }
   };
 
   const handleFileUpload = (e, field) => {
-  const file = e.target.files[0];
-  if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
 
-  // 1. Validation (Keep this!)
-  if (file.size > 5 * 1024 * 1024) {
-    alert('File size too large. Maximum size is 5MB.');
-    return;
-  }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size too large. Maximum size is 5MB.');
+      return;
+    }
 
-  const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
-  if (!validTypes.includes(file.type)) {
-    alert('Invalid file type. Please upload JPG, PNG, or PDF files.');
-    return;
-  }
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (!validTypes.includes(file.type)) {
+      alert('Invalid file type. Please upload JPG, PNG, or PDF files.');
+      return;
+    }
 
-  // 2. UI Preview (Keep this for the user to see what they uploaded)
-  const previewUrl = URL.createObjectURL(file);
-  
-  setFormData(prev => ({
-    ...prev,
-    [field]: previewUrl,      // This is for the <img> src in the UI
-    [`${field}File`]: file    // THIS IS THE RAW FILE for handleSubmit to upload
-  }));
+    const previewUrl = URL.createObjectURL(file);
+    
+    setFormData(prev => ({
+      ...prev,
+      [field]: previewUrl,
+      [`${field}File`]: file
+    }));
 
-  // 3. Simple UI Progress Simulation (Optional)
-  setUploadProgress(prev => ({ ...prev, [field]: 100 }));
-};
+    setUploadProgress(prev => ({ ...prev, [field]: 100 }));
+  };
 
   const removeFile = (field) => {
     setFormData(prev => ({
@@ -177,14 +188,11 @@ const ManagerKYC = () => {
       case 1:
         return formData.fullName && formData.phone && formData.dateOfBirth && 
                formData.nationality && formData.state && formData.lga && formData.address;
-      
       case 2:
         return formData.idType && formData.idNumber && formData.idFront && 
                formData.selfie && formData.proofOfAddress;
-      
       case 3:
         return formData.bankName && formData.accountNumber && formData.accountName;
-      
       default:
         return true;
     }
@@ -203,74 +211,74 @@ const ManagerKYC = () => {
     }
   };
 
-
-const handleSubmit = async () => {
-  try {
-    setIsLoading(true);
-
-    // 1. Upload files to Supabase Storage first
-    const uploadFile = async (file, folder) => {
-      if (!file) return null;
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${folder}_${Date.now()}.${fileExt}`;
-      const { data, error } = await supabase.storage
-        .from('kyc-documents')
-        .upload(fileName, file);
-      
-      if (error) throw error;
-      // Get Public URL
-      const { data: { publicUrl } } = supabase.storage.from('kyc-documents').getPublicUrl(fileName);
-      return publicUrl;
-    };
-
-    const idFrontUrl = await uploadFile(formData.idFrontFile, 'id_front');
-    const idBackUrl = await uploadFile(formData.idBackFile, 'id_back');
-    const selfieUrl = await uploadFile(formData.selfieFile, 'selfie');
-    const proofUrl = await uploadFile(formData.proofOfAddressFile, 'proof_address');
-
-    // 2. Prepare the payload for the Database
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        kyc_status: 'pending',
-        kyc_data: {
-          fullName: formData.fullName,
-          phone: formData.phone,
-          dob: formData.dateOfBirth,
-          address: formData.address,
-          lga: formData.lga,
-          state: formData.state,
-          idType: formData.idType,
-          idNumber: formData.idNumber,
-          documents: {
-            idFront: idFrontUrl,
-            idBack: idBackUrl,
-            selfie: selfieUrl,
-            proofOfAddress: proofUrl
-          }
-        },
-        bank_details: {
-          bankName: formData.bankName,
-          accountNumber: formData.accountNumber,
-          accountName: formData.accountName,
-          bvn: formData.bvn
-        }
-      })
-      .eq('id', user.id);
-
+  const uploadFile = async (file, folder) => {
+    if (!file) return null;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${folder}_${Date.now()}.${fileExt}`;
+    const { error } = await supabase.storage
+      .from('kyc-documents')
+      .upload(fileName, file);
+    
     if (error) throw error;
+    const { data: { publicUrl } } = supabase.storage.from('kyc-documents').getPublicUrl(fileName);
+    return publicUrl;
+  };
 
-    setVerificationStatus('pending');
-    setStep(5); 
-    alert('KYC submitted successfully! Our team will review it within 24-48 hours.');
+  const handleSubmit = async () => {
+    try {
+      setIsLoading(true);
 
-  } catch (error) {
-    console.error('KYC Submission Error:', error);
-    alert('Error: ' + error.message);
-  } finally {
-    setIsLoading(false);
-  }
-};
+      // Upload files
+      const idFrontUrl = await uploadFile(formData.idFrontFile, 'id_front');
+      const idBackUrl = await uploadFile(formData.idBackFile, 'id_back');
+      const selfieUrl = await uploadFile(formData.selfieFile, 'selfie');
+      const proofUrl = await uploadFile(formData.proofOfAddressFile, 'proof_address');
+
+      // Update profiles table
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          kyc_status: 'pending',
+          kyc_submitted_at: new Date().toISOString(),
+          kyc_data: {
+            fullName: formData.fullName,
+            phone: formData.phone,
+            dob: formData.dateOfBirth,
+            address: formData.address,
+            lga: formData.lga,
+            state: formData.state,
+            idType: formData.idType,
+            idNumber: formData.idNumber,
+            documents: {
+              idFront: idFrontUrl,
+              idBack: idBackUrl,
+              selfie: selfieUrl,
+              proofOfAddress: proofUrl
+            }
+          },
+          bank_details: {
+            bankName: formData.bankName,
+            accountNumber: formData.accountNumber,
+            accountName: formData.accountName,
+            bvn: formData.bvn
+          }
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setVerificationStatus('pending');
+      setStep(5);
+      alert('KYC submitted successfully! Our team will review it within 24-48 hours.');
+
+    } catch (error) {
+      console.error('KYC Submission Error:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const steps = [
     { number: 1, title: 'Personal Info', icon: '👤' },
     { number: 2, title: 'ID Verification', icon: '🆔' },
@@ -287,7 +295,69 @@ const handleSubmit = async () => {
     );
   }
 
-  if (step === 5) { // Pending Review
+  // KYC SUCCESSFUL - Show limited details
+  if (verificationStatus === 'approved') {
+    return (
+      <div className="kyc-success">
+        <div className="success-container">
+          <div className="success-icon">✅</div>
+          <h2>KYC Verification Successful!</h2>
+          <p>Your account has been fully verified. You can now manage properties and receive notifications.</p>
+          
+          <div className="verified-info">
+            <h3>Your Verified Information</h3>
+            <div className="info-grid">
+              <div className="info-item">
+                <span className="info-label">Full Name:</span>
+                <span className="info-value">{profileData?.kyc_data?.fullName || formData.fullName}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Email:</span>
+                <span className="info-value">{user?.email}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Phone:</span>
+                <span className="info-value">{profileData?.kyc_data?.phone || formData.phone}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Bank Account:</span>
+                <span className="info-value">{profileData?.bank_details?.bankName} ••••{profileData?.bank_details?.accountNumber?.slice(-4)}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="success-benefits">
+            <h3>What you can do now:</h3>
+            <ul>
+              <li>✅ Accept proximity notifications for new listings</li>
+              <li>✅ Verify properties and earn 2.5% commission</li>
+              <li>✅ Monitor tenant-landlord conversations</li>
+              <li>✅ Manage multiple properties</li>
+              <li>✅ Withdraw earned commissions</li>
+            </ul>
+          </div>
+          
+          <div className="success-actions">
+            <button 
+              className="btn-primary"
+              onClick={() => navigate('/dashboard/manager')}
+            >
+              Go to Dashboard
+            </button>
+            <button 
+              className="btn-outline"
+              onClick={() => navigate('/dashboard/manager/properties')}
+            >
+              View Properties
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Pending Review Screen
+  if (step === 5) {
     return (
       <div className="kyc-pending">
         <div className="pending-container">
@@ -311,7 +381,8 @@ const handleSubmit = async () => {
     );
   }
 
-  if (step === 6) { // Rejected
+  // Rejected Screen
+  if (step === 6) {
     return (
       <div className="kyc-rejected">
         <div className="rejected-container">
@@ -342,6 +413,7 @@ const handleSubmit = async () => {
     );
   }
 
+  // Main KYC Form (only shown if not submitted yet)
   return (
     <div className="manager-kyc">
       <div className="kyc-container">
@@ -549,14 +621,6 @@ const handleSubmit = async () => {
                         </label>
                       </>
                     )}
-                    {uploadProgress.idFront !== undefined && uploadProgress.idFront < 100 && (
-                      <div className="upload-progress">
-                        <div 
-                          className="progress-bar" 
-                          style={{ width: `${uploadProgress.idFront}%` }}
-                        ></div>
-                      </div>
-                    )}
                   </div>
                 </div>
                 
@@ -594,14 +658,6 @@ const handleSubmit = async () => {
                         </label>
                       </>
                     )}
-                    {uploadProgress.idBack !== undefined && uploadProgress.idBack < 100 && (
-                      <div className="upload-progress">
-                        <div 
-                          className="progress-bar" 
-                          style={{ width: `${uploadProgress.idBack}%` }}
-                        ></div>
-                      </div>
-                    )}
                   </div>
                 </div>
                 
@@ -635,14 +691,6 @@ const handleSubmit = async () => {
                           <small>Hold your ID next to your face</small>
                         </label>
                       </>
-                    )}
-                    {uploadProgress.selfie !== undefined && uploadProgress.selfie < 100 && (
-                      <div className="upload-progress">
-                        <div 
-                          className="progress-bar" 
-                          style={{ width: `${uploadProgress.selfie}%` }}
-                        ></div>
-                      </div>
                     )}
                   </div>
                 </div>
@@ -681,36 +729,6 @@ const handleSubmit = async () => {
                         </label>
                       </>
                     )}
-                    {uploadProgress.proofOfAddress !== undefined && uploadProgress.proofOfAddress < 100 && (
-                      <div className="upload-progress">
-                        <div 
-                          className="progress-bar" 
-                          style={{ width: `${uploadProgress.proofOfAddress}%` }}
-                        ></div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="selfie-example">
-                <h4>Selfie Requirements:</h4>
-                <div className="example-images">
-                  <div className="example good">
-                    <div className="example-icon">✅</div>
-                    <p>Clear face & ID</p>
-                  </div>
-                  <div className="example bad">
-                    <div className="example-icon">❌</div>
-                    <p>Blurry/dark</p>
-                  </div>
-                  <div className="example good">
-                    <div className="example-icon">✅</div>
-                    <p>Good lighting</p>
-                  </div>
-                  <div className="example bad">
-                    <div className="example-icon">❌</div>
-                    <p>ID not visible</p>
                   </div>
                 </div>
               </div>
@@ -763,26 +781,6 @@ const handleSubmit = async () => {
                     placeholder="As it appears on bank account"
                   />
                 </div>
-                
-                <div className="form-group">
-                  <label>BVN (Optional)</label>
-                  <input
-                    type="text"
-                    name="bvn"
-                    value={formData.bvn}
-                    onChange={handleInputChange}
-                    placeholder="11-digit BVN"
-                    maxLength="11"
-                  />
-                </div>
-                
-                <div className="bank-info-note">
-                  <div className="note-icon">ℹ️</div>
-                  <div className="note-content">
-                    <strong>Bank Information Security:</strong>
-                    <p>Your bank details are encrypted and securely stored. They are only used for commission payments. Ensure all details are accurate to avoid payment delays.</p>
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -805,10 +803,6 @@ const handleSubmit = async () => {
                     <span>{formData.phone || 'Not provided'}</span>
                   </div>
                   <div className="review-item">
-                    <span>Date of Birth:</span>
-                    <span>{formData.dateOfBirth || 'Not provided'}</span>
-                  </div>
-                  <div className="review-item">
                     <span>Address:</span>
                     <span>{formData.address || 'Not provided'}</span>
                   </div>
@@ -819,10 +813,6 @@ const handleSubmit = async () => {
                   <div className="review-item">
                     <span>ID Type:</span>
                     <span>{formData.idType ? formData.idType.replace('_', ' ').toUpperCase() : 'Not provided'}</span>
-                  </div>
-                  <div className="review-item">
-                    <span>ID Number:</span>
-                    <span>{formData.idNumber || 'Not provided'}</span>
                   </div>
                   <div className="review-item">
                     <span>Documents:</span>
@@ -844,10 +834,6 @@ const handleSubmit = async () => {
                     <span>Account Number:</span>
                     <span>{formData.accountNumber ? '••••' + formData.accountNumber.slice(-4) : 'Not provided'}</span>
                   </div>
-                  <div className="review-item">
-                    <span>Account Name:</span>
-                    <span>{formData.accountName || 'Not provided'}</span>
-                  </div>
                 </div>
               </div>
               
@@ -859,8 +845,7 @@ const handleSubmit = async () => {
                 />
                 <label htmlFor="terms">
                   I certify that all information provided is accurate and I agree to RentEasy's 
-                  <a href="/terms"> Terms of Service</a> and 
-                  <a href="/privacy"> Privacy Policy</a>. I understand that false information may result in account suspension.
+                  <a href="/terms"> Terms of Service</a>.
                 </label>
               </div>
             </div>
@@ -887,43 +872,7 @@ const handleSubmit = async () => {
               {isLoading ? 'Processing...' : step < 4 ? 'Continue →' : 'Submit Verification'}
             </button>
           </div>
-          
-          {step < 5 && (
-            <p className="form-note">
-              Step {step} of 4 • {validateStep(step) ? '✅ Ready to continue' : '⚠️ Complete all required fields'}
-            </p>
-          )}
         </form>
-        
-        {/* KYC Requirements Info */}
-        {step < 5 && (
-          <div className="kyc-requirements">
-            <h4>📋 KYC Requirements for Managers</h4>
-            <div className="requirements-list">
-              <div className="requirement">
-                <span className="req-icon">✅</span>
-                <div className="req-content">
-                  <strong>Complete all steps</strong>
-                  <p>Personal info, ID verification, and bank details</p>
-                </div>
-              </div>
-              <div className="requirement">
-                <span className="req-icon">✅</span>
-                <div className="req-content">
-                  <strong>Clear documents</strong>
-                  <p>All uploaded documents must be clear and readable</p>
-                </div>
-              </div>
-              <div className="requirement">
-                <span className="req-icon">⚠️</span>
-                <div className="req-content">
-                  <strong>Important</strong>
-                  <p>KYC approval is required before managing properties</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

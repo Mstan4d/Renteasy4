@@ -12,6 +12,31 @@ const AdminPayouts = () => {
     setBacklog(data || []);
   };
 
+  // In AdminPayouts.jsx, add this function to mark tenant commission as paid
+const markTenantCommissionAsPaid = async (commissionId) => {
+  const confirm = window.confirm("Confirm you have paid the 1.5% commission to the tenant?");
+  if (!confirm) return;
+
+  try {
+    const { error } = await supabase
+      .from('tenant_commissions')
+      .update({ 
+        status: 'paid', 
+        paid_at: new Date().toISOString(),
+        paid_by: user.id
+      })
+      .eq('id', commissionId);
+
+    if (error) throw error;
+    
+    alert('Commission marked as paid!');
+    fetchBacklog(); // Refresh the list
+  } catch (error) {
+    console.error('Error marking commission as paid:', error);
+    alert('Failed to mark as paid. Please try again.');
+  }
+};
+
   const markAsPaid = async (chatId) => {
     const confirm = window.confirm("Confirm you have manually transferred the 2.5% to this manager's bank account?");
     if (!confirm) return;

@@ -1,9 +1,10 @@
+// src/modules/estate-firm/pages/DocumentManager.jsx
 import React, { useState, useEffect } from 'react';
 import {
   Home, FileText, Upload, Download, Eye, Trash2, Share2,
   Folder, File, FileImage, FileSpreadsheet, FileArchive,
   Calendar, User, Search, Filter, MoreVertical,
-  CheckCircle, Clock, AlertCircle, Lock, Globe
+  CheckCircle, Clock, AlertCircle, Lock, Globe, Link, UserCheck, Shield
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
@@ -19,22 +20,215 @@ const DocumentManager = () => {
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [occupiedUnits, setOccupiedUnits] = useState([]);
+  const [selectedUnit, setSelectedUnit] = useState(null);
+  const [documentCategory, setDocumentCategory] = useState('lease');
+  const [userRole, setUserRole] = useState('principal');
+  const [canEdit, setCanEdit] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  // Get user role
+ // Add this useEffect after your other useEffects
+useEffect(() => {
+  const getUserRole = async () => {
+    if (!user) return;
+    try {
+      const { data: roleData, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (!error && roleData) {
+        const role = roleData.staff_role || 'principal';
+        setUserRole(role);
+        setCanEdit(role === 'principal' || role === 'executive');
+      }
+      
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        setCurrentUserId(userData.user.id);
+      }
+    } catch (err) {
+      console.warn('Could not fetch user role:', err);
+      setCanEdit(true);
+    }
+  };
+  getUserRole();
+}, [user]);
 
   useEffect(() => {
-    loadDocuments();
-  }, [user]);
+    if (user) {
+      loadDocuments();
+      loadOccupiedUnits();
+    }
+  }, [user, userRole]);
 
+  const loadOccupiedUnits = async () => {
+  try {
+    const { data: profile, error: profileError } = await supabase
+      .from('estate_firm_profiles')
+      .select('id, parent_estate_firm_id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError) {
+      console.error('Error fetching profile:', profileError);
+      return;
+    }
+
+    if (!profile) {
+      console.log('No estate firm profile found');
+      setOccupiedUnits([]);
+      return;
+    }
+
+    // Determine effective firm ID - handle null parent_estate_firm_id
+    let effectiveFirmId = profile.id;
+    if (userRole === 'associate' || userRole === 'executive') {
+      // Only use parent_estate_firm_id if it's not null
+      if (profile.parent_estate_firm_id) {
+        effectiveFirmId = profile.parent_estate_firm_id;
+      }
+    }
+
+    console.log('Effective firm ID:', effectiveFirmId);
+
+    // Get properties
+    let propertiesQuery = supabase
+      .from('properties')
+      .select('id, name, address')
+      .eq('estate_firm_id', effectiveFirmId);
+    
+    // If associate, only get their properties
+    if (userRole === 'associate' && currentUserId) {
+      propertiesQuery = propertiesQuery.eq('created_by_staff_id', currentUserId);
+    }
+    
+    const { data: properties, error: propertiesError } = await propertiesQuery;
+
+    if (propertiesError) {
+      console.error('Error fetching properties:', propertiesError);
+      setOccupiedUnits([]);
+      return;
+    }
+
+    if (!properties || properties.length === 0) {
+      console.log('No properties found');
+      setOccupiedUnits([]);
+      return;
+    }
+
+    const propertyIds = properties.map(p => p.id);
+
+    // Get units
+    let unitsQuery = supabase
+      .from('units')
+      .select(`
+        id,
+        unit_number,
+        rent_amount,
+        property_id,
+        tenant_name,
+        tenant_renteasy_id,
+        tenant_email,
+        tenant_phone
+      `)
+      .in('property_id', propertyIds)
+      .not('tenant_renteasy_id', 'is', null);
+
+    if (userRole === 'associate' && currentUserId) {
+      unitsQuery = unitsQuery.eq('created_by_staff_id', currentUserId);
+    }
+
+    const { data: units, error: unitsError } = await unitsQuery;
+
+    if (unitsError) {
+      console.error('Error fetching units:', unitsError);
+      setOccupiedUnits([]);
+      return;
+    }
+
+    // Merge unit data with property data
+    const unitsWithProperties = (units || []).map(unit => ({
+      ...unit,
+      property: properties.find(p => p.id === unit.property_id)
+    })).filter(unit => unit.property);
+
+    console.log('Occupied units found:', unitsWithProperties.length);
+    setOccupiedUnits(unitsWithProperties);
+    
+  } catch (error) {
+    console.error('Error in loadOccupiedUnits:', error);
+    setOccupiedUnits([]);
+  }
+};
   const loadDocuments = async () => {
     if (!user) return;
     
     try {
       setLoading(true);
       
-      const { data, error } = await supabase
+      // Get effective firm ID for documents
+      let effectiveFirmId = user.id;
+      
+      // Build query
+      let query = supabase
         .from('estate_documents')
-        .select('*, property:listings(title), client:estate_firm_clients(name)')
-        .eq('estate_firm_id', user.id)
-        .order('created_at', { ascending: false });
+        .select(`
+          *,
+          unit:unit_id (
+            id,
+            unit_number,
+            property:property_id (
+              id,
+              name
+            ),
+            tenant_name,
+            tenant_renteasy_id
+          ),
+          property:listings(title)
+        `)
+        .eq('estate_firm_id', effectiveFirmId);
+      
+      // If associate, only show documents from their units
+      if (userRole === 'associate' && currentUserId) {
+        // First get associate's units
+        const { data: profile } = await supabase
+          .from('estate_firm_profiles')
+          .select('parent_estate_firm_id')
+          .eq('user_id', user.id)
+          .single();
+        
+        const effectiveParentFirmId = profile?.parent_estate_firm_id || effectiveFirmId;
+        
+        const { data: myProperties } = await supabase
+          .from('properties')
+          .select('id')
+          .eq('estate_firm_id', effectiveParentFirmId)
+          .eq('created_by_staff_id', currentUserId);
+        
+        const propertyIds = myProperties?.map(p => p.id) || [];
+        
+        if (propertyIds.length > 0) {
+          const { data: myUnits } = await supabase
+            .from('units')
+            .select('id')
+            .in('property_id', propertyIds);
+          
+          const unitIds = myUnits?.map(u => u.id) || [];
+          
+          if (unitIds.length > 0) {
+            query = query.in('unit_id', unitIds);
+          } else {
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
+        } else {
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      }
+      
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 
@@ -48,13 +242,17 @@ const DocumentManager = () => {
   };
 
   const handleFileUpload = async (files) => {
+    if (!canEdit) {
+      alert('Only Principal and Executive can upload documents.');
+      return;
+    }
+    
     if (!user || !files.length) return;
 
     setUploading(true);
     
     try {
       const uploadPromises = Array.from(files).map(async (file) => {
-        // Upload file to Supabase Storage
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
         const filePath = `estate-firm-${user.id}/${fileName}`;
@@ -65,39 +263,101 @@ const DocumentManager = () => {
 
         if (uploadError) throw uploadError;
 
-        // Get public URL
         const { data: urlData } = supabase.storage
           .from('estate-documents')
           .getPublicUrl(filePath);
 
-        // Save document metadata
-        const { data: docData, error: docError } = await supabase
+        const documentTypeMap = {
+          'lease': 'lease_agreement',
+          'valuation': 'valuation_report',
+          'verification': 'verification_document',
+          'invoice': 'invoice',
+          'photos': 'property_photo',
+          'contract': 'contract',
+          'report': 'maintenance_report',
+          'other': 'other'
+        };
+
+        const docData = {
+          estate_firm_id: user.id,
+          name: file.name,
+          file_type: file.type,
+          file_size: file.size,
+          file_url: urlData.publicUrl,
+          category: documentCategory,
+          document_type: documentTypeMap[documentCategory] || 'other',
+          status: 'active',
+          shared: false,
+          created_at: new Date().toISOString()
+        };
+
+        if (documentCategory === 'lease' && selectedUnit) {
+          docData.unit_id = selectedUnit.id;
+        }
+
+        const { data: insertedDoc, error: docError } = await supabase
           .from('estate_documents')
-          .insert({
-            estate_firm_id: user.id,
-            name: file.name,
-            file_type: file.type,
-            file_size: file.size,
-            file_url: urlData.publicUrl,
-            category: 'other',
-            status: 'active',
-            shared: false,
-            created_at: new Date().toISOString()
-          })
+          .insert(docData)
           .select()
           .single();
 
         if (docError) throw docError;
 
-        return docData;
+        if (documentCategory === 'lease' && selectedUnit && insertedDoc) {
+          const unit = occupiedUnits.find(u => u.id === selectedUnit.id);
+          
+          if (unit && unit.tenant_renteasy_id) {
+            const { data: existingLease } = await supabase
+              .from('leases')
+              .select('id')
+              .eq('unit_id', selectedUnit.id)
+              .eq('tenant_id', unit.tenant_renteasy_id)
+              .single();
+
+            if (existingLease) {
+              await supabase
+                .from('leases')
+                .update({
+                  agreement_url: urlData.publicUrl,
+                  agreement_document_id: insertedDoc.id,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingLease.id);
+            } else {
+              await supabase.from('leases').insert({
+                unit_id: selectedUnit.id,
+                property_id: unit.property_id,
+                tenant_id: unit.tenant_renteasy_id,
+                estate_firm_id: user.id,
+                agreement_url: urlData.publicUrl,
+                agreement_document_id: insertedDoc.id,
+                monthly_rent: unit.rent_amount,
+                start_date: new Date().toISOString(),
+                end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString(),
+                status: 'active',
+                created_at: new Date().toISOString()
+              });
+            }
+
+            await supabase.from('notifications').insert({
+              user_id: unit.tenant_renteasy_id,
+              type: 'lease_uploaded',
+              title: 'Lease Agreement Uploaded',
+              message: `Your lease agreement for ${unit.property?.name} Unit ${unit.unit_number} has been uploaded.`,
+              link: '/dashboard/tenant/leases',
+              created_at: new Date().toISOString()
+            });
+          }
+        }
+
+        return insertedDoc;
       });
 
       await Promise.all(uploadPromises);
-      
-      // Refresh documents list
       await loadDocuments();
+      setSelectedUnit(null);
+      setDocumentCategory('lease');
       
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'document',
@@ -111,19 +371,23 @@ const DocumentManager = () => {
 
     } catch (error) {
       console.error('Error uploading files:', error);
-      alert('Failed to upload documents. Please try again.');
+      alert(`Failed to upload documents: ${error.message || 'Please try again.'}`);
     } finally {
       setUploading(false);
     }
   };
 
   const handleDelete = async (docId) => {
+    if (!canEdit) {
+      alert('Only Principal and Executive can delete documents.');
+      return;
+    }
+    
     if (!window.confirm('Are you sure you want to delete this document?')) return;
 
     try {
       const doc = documents.find(d => d.id === docId);
       
-      // Delete from storage
       if (doc.file_url) {
         const filePath = doc.file_url.split('/').pop();
         await supabase.storage
@@ -131,7 +395,6 @@ const DocumentManager = () => {
           .remove([`estate-firm-${user.id}/${filePath}`]);
       }
 
-      // Delete from database
       const { error } = await supabase
         .from('estate_documents')
         .delete()
@@ -139,11 +402,9 @@ const DocumentManager = () => {
 
       if (error) throw error;
 
-      // Update state
       setDocuments(documents.filter(doc => doc.id !== docId));
       setSelectedDocs(selectedDocs.filter(id => id !== docId));
 
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'document',
@@ -159,12 +420,16 @@ const DocumentManager = () => {
   };
 
   const handleBulkDelete = async () => {
+    if (!canEdit) {
+      alert('Only Principal and Executive can delete documents.');
+      return;
+    }
+    
     if (!window.confirm(`Delete ${selectedDocs.length} selected documents?`)) return;
 
     try {
       const docsToDelete = documents.filter(doc => selectedDocs.includes(doc.id));
       
-      // Delete from storage
       const deletePromises = docsToDelete.map(async (doc) => {
         if (doc.file_url) {
           const filePath = doc.file_url.split('/').pop();
@@ -176,7 +441,6 @@ const DocumentManager = () => {
 
       await Promise.all(deletePromises);
 
-      // Delete from database
       const { error } = await supabase
         .from('estate_documents')
         .delete()
@@ -184,11 +448,9 @@ const DocumentManager = () => {
 
       if (error) throw error;
 
-      // Update state
       setDocuments(documents.filter(doc => !selectedDocs.includes(doc.id)));
       setSelectedDocs([]);
 
-      // Log activity
       await supabase.from('activities').insert({
         user_id: user.id,
         type: 'document',
@@ -204,6 +466,11 @@ const DocumentManager = () => {
   };
 
   const handleShare = async (docId) => {
+    if (!canEdit) {
+      alert('Only Principal and Executive can share documents.');
+      return;
+    }
+    
     try {
       const { error } = await supabase
         .from('estate_documents')
@@ -229,26 +496,29 @@ const DocumentManager = () => {
   };
 
   const getFileIcon = (type) => {
-    if (type.includes('pdf')) return <FileText size={20} color="#ef4444" />;
-    if (type.includes('word') || type.includes('document')) return <FileText size={20} color="#2563eb" />;
-    if (type.includes('image')) return <FileImage size={20} color="#10b981" />;
-    if (type.includes('spreadsheet') || type.includes('excel')) return <FileSpreadsheet size={20} color="#059669" />;
-    if (type.includes('zip') || type.includes('compressed')) return <FileArchive size={20} color="#f59e0b" />;
+    if (type?.includes('pdf')) return <FileText size={20} color="#ef4444" />;
+    if (type?.includes('word') || type?.includes('document')) return <FileText size={20} color="#2563eb" />;
+    if (type?.includes('image')) return <FileImage size={20} color="#10b981" />;
+    if (type?.includes('spreadsheet') || type?.includes('excel')) return <FileSpreadsheet size={20} color="#059669" />;
+    if (type?.includes('zip') || type?.includes('compressed')) return <FileArchive size={20} color="#f59e0b" />;
     return <File size={20} color="#6b7280" />;
   };
 
-  const getCategoryColor = (category) => {
+  const getCategoryColor = (documentType) => {
     const colors = {
-      'lease': '#3b82f6',
-      'valuation': '#10b981',
-      'verification': '#8b5cf6',
+      'lease_agreement': '#3b82f6',
+      'valuation_report': '#10b981',
+      'verification_document': '#8b5cf6',
       'invoice': '#f59e0b',
-      'photos': '#ef4444',
+      'property_photo': '#ef4444',
       'contract': '#ec4899',
-      'report': '#6366f1',
+      'maintenance_report': '#6366f1',
+      'receipt': '#059669',
+      'utility_bill': '#d97706',
+      'reminder': '#f97316',
       'other': '#6b7280'
     };
-    return colors[category] || '#6b7280';
+    return colors[documentType] || '#6b7280';
   };
 
   const getStatusIcon = (status) => {
@@ -261,7 +531,7 @@ const DocumentManager = () => {
   };
 
   const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
+    if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -274,8 +544,8 @@ const DocumentManager = () => {
     const query = searchQuery.toLowerCase();
     return (
       doc.name.toLowerCase().includes(query) ||
-      (doc.property?.title || '').toLowerCase().includes(query) ||
-      (doc.client?.name || '').toLowerCase().includes(query) ||
+      (doc.unit?.property?.name || '').toLowerCase().includes(query) ||
+      (doc.unit?.tenant_name || '').toLowerCase().includes(query) ||
       doc.category.toLowerCase().includes(query)
     );
   }).filter(doc => {
@@ -283,19 +553,33 @@ const DocumentManager = () => {
     if (filter === 'shared') return doc.shared;
     if (filter === 'active') return doc.status === 'active';
     if (filter === 'expired') return doc.status === 'expired';
-    if (filter === filter) return doc.category === filter;
+    if (filter === 'lease') return doc.category === 'lease';
     return true;
   });
 
   const totalSize = documents.reduce((sum, doc) => sum + (doc.file_size || 0), 0);
 
-  
-   if (loading) {
-  return <RentEasyLoader message="Loading your Documents..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading your Documents..." fullScreen />;
+  }
 
   return (
     <div className="document-manager">
+      {/* Role Banner */}
+      {userRole === 'associate' && (
+        <div className="role-banner">
+          <Shield size={16} />
+          <span>Associate View - You can only view documents from properties you manage</span>
+        </div>
+      )}
+      
+      {userRole === 'executive' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>Executive View - You can upload and manage documents</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="dm-header">
         <div>
@@ -306,13 +590,15 @@ const DocumentManager = () => {
         </div>
         
         <div className="dm-actions">
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowUploadModal(true)}
-          >
-            <Upload size={18} />
-            Upload Documents
-          </button>
+          {canEdit && (
+            <button 
+              className="btn btn-primary"
+              onClick={() => setShowUploadModal(true)}
+            >
+              <Upload size={18} />
+              Upload Documents
+            </button>
+          )}
           <button className="btn btn-outline">
             <Folder size={18} />
             Create Folder
@@ -327,6 +613,16 @@ const DocumentManager = () => {
           <div className="stat-info">
             <span className="stat-value">{documents.length}</span>
             <span className="stat-label">Total Documents</span>
+          </div>
+        </div>
+        
+        <div className="stat-card">
+          <UserCheck size={24} />
+          <div className="stat-info">
+            <span className="stat-value">
+              {documents.filter(d => d.category === 'lease').length}
+            </span>
+            <span className="stat-label">Lease Agreements</span>
           </div>
         </div>
         
@@ -349,16 +645,6 @@ const DocumentManager = () => {
             <span className="stat-label">Active</span>
           </div>
         </div>
-        
-        <div className="stat-card">
-          <AlertCircle size={24} />
-          <div className="stat-info">
-            <span className="stat-value">
-              {documents.filter(d => d.status === 'expired').length}
-            </span>
-            <span className="stat-label">Expired</span>
-          </div>
-        </div>
       </div>
 
       {/* Controls */}
@@ -367,7 +653,7 @@ const DocumentManager = () => {
           <Search size={18} />
           <input
             type="text"
-            placeholder="Search documents..."
+            placeholder="Search documents by name, property, or tenant..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
@@ -380,7 +666,13 @@ const DocumentManager = () => {
               className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
               onClick={() => setFilter('all')}
             >
-              All Documents
+              All
+            </button>
+            <button 
+              className={`filter-tab ${filter === 'lease' ? 'active' : ''}`}
+              onClick={() => setFilter('lease')}
+            >
+              Leases
             </button>
             <button 
               className={`filter-tab ${filter === 'shared' ? 'active' : ''}`}
@@ -393,12 +685,6 @@ const DocumentManager = () => {
               onClick={() => setFilter('active')}
             >
               Active
-            </button>
-            <button 
-              className={`filter-tab ${filter === 'expired' ? 'active' : ''}`}
-              onClick={() => setFilter('expired')}
-            >
-              Expired
             </button>
           </div>
           
@@ -419,8 +705,8 @@ const DocumentManager = () => {
         </div>
       </div>
 
-      {/* Selection Bar */}
-      {selectedDocs.length > 0 && (
+      {/* Selection Bar - Only show if can edit */}
+      {selectedDocs.length > 0 && canEdit && (
         <div className="selection-bar">
           <div className="selection-info">
             <CheckCircle size={16} />
@@ -453,17 +739,19 @@ const DocumentManager = () => {
             <div key={doc.id} className="document-card">
               <div className="doc-header">
                 <div className="doc-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={selectedDocs.includes(doc.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedDocs([...selectedDocs, doc.id]);
-                      } else {
-                        setSelectedDocs(selectedDocs.filter(id => id !== doc.id));
-                      }
-                    }}
-                  />
+                  {canEdit && (
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.includes(doc.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedDocs([...selectedDocs, doc.id]);
+                        } else {
+                          setSelectedDocs(selectedDocs.filter(id => id !== doc.id));
+                        }
+                      }}
+                    />
+                  )}
                 </div>
                 
                 <div className="doc-actions">
@@ -481,21 +769,25 @@ const DocumentManager = () => {
                   >
                     <Download size={14} />
                   </button>
-                  <button 
-                    className="doc-action-btn"
-                    onClick={() => handleShare(doc.id)}
-                    title="Share"
-                    disabled={doc.shared}
-                  >
-                    <Share2 size={14} />
-                  </button>
-                  <button 
-                    className="doc-action-btn"
-                    onClick={() => handleDelete(doc.id)}
-                    title="Delete"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {canEdit && (
+                    <>
+                      <button 
+                        className="doc-action-btn"
+                        onClick={() => handleShare(doc.id)}
+                        title="Share"
+                        disabled={doc.shared}
+                      >
+                        <Share2 size={14} />
+                      </button>
+                      <button 
+                        className="doc-action-btn"
+                        onClick={() => handleDelete(doc.id)}
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -519,11 +811,21 @@ const DocumentManager = () => {
                     <span 
                       className="category-tag"
                       style={{ 
-                        backgroundColor: `${getCategoryColor(doc.category)}20`, 
-                        color: getCategoryColor(doc.category) 
+                        backgroundColor: `${getCategoryColor(doc.document_type)}20`, 
+                        color: getCategoryColor(doc.document_type) 
                       }}
                     >
-                      {doc.category}
+                      {doc.document_type === 'lease_agreement' ? '📄 Lease Agreement' :
+                       doc.document_type === 'valuation_report' ? '🏠 Valuation Report' :
+                       doc.document_type === 'verification_document' ? '✅ Verification' :
+                       doc.document_type === 'invoice' ? '💰 Invoice' :
+                       doc.document_type === 'property_photo' ? '📸 Property Photo' :
+                       doc.document_type === 'contract' ? '📑 Contract' :
+                       doc.document_type === 'maintenance_report' ? '🔧 Maintenance' :
+                       doc.document_type === 'receipt' ? '🧾 Receipt' :
+                       doc.document_type === 'utility_bill' ? '💡 Utility Bill' :
+                       doc.document_type === 'reminder' ? '⏰ Reminder' :
+                       doc.document_type}
                     </span>
                     <span className="doc-status">
                       {getStatusIcon(doc.status)}
@@ -534,16 +836,24 @@ const DocumentManager = () => {
               </div>
 
               <div className="doc-footer">
-                {doc.property?.title && (
+                {doc.unit?.property?.name && (
                   <div className="doc-property">
                     <Home size={12} />
-                    <span>{doc.property.title}</span>
+                    <span>{doc.unit.property.name} - Unit {doc.unit.unit_number}</span>
                   </div>
                 )}
-                {doc.client?.name && (
+                {doc.unit?.tenant_name && (
                   <div className="doc-client">
                     <User size={12} />
-                    <span>{doc.client.name}</span>
+                    <span>Tenant: {doc.unit.tenant_name}</span>
+                  </div>
+                )}
+                {doc.category === 'lease' && doc.unit?.tenant_renteasy_id && (
+                  <div className="doc-permissions">
+                    <span className="permission-tag shared">
+                      <UserCheck size={10} />
+                      Linked to Tenant
+                    </span>
                   </div>
                 )}
                 <div className="doc-permissions">
@@ -567,23 +877,25 @@ const DocumentManager = () => {
             <FileText size={48} />
             <h3>No documents found</h3>
             <p>Upload your first document to get started</p>
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowUploadModal(true)}
-            >
-              <Upload size={18} />
-              Upload Documents
-            </button>
+            {canEdit && (
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowUploadModal(true)}
+              >
+                <Upload size={18} />
+                Upload Documents
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Upload Modal */}
-      {showUploadModal && (
+      {/* Upload Modal - Only show if can edit */}
+      {showUploadModal && canEdit && (
         <div className="upload-modal-overlay" onClick={() => setShowUploadModal(false)}>
           <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Upload Documents</h3>
+              <h3>Upload Document</h3>
               <button 
                 className="modal-close"
                 onClick={() => setShowUploadModal(false)}
@@ -593,6 +905,51 @@ const DocumentManager = () => {
             </div>
             
             <div className="modal-body">
+              {/* Document Category Selection */}
+              <div className="form-group">
+                <label>Document Type</label>
+                <select 
+                  value={documentCategory} 
+                  onChange={(e) => setDocumentCategory(e.target.value)}
+                  className="category-select"
+                >
+                  <option value="lease">📄 Lease Agreement</option>
+                  <option value="valuation">🏠 Valuation Report</option>
+                  <option value="invoice">💰 Invoice</option>
+                  <option value="contract">📑 Contract</option>
+                  <option value="report">📊 Report</option>
+                  <option value="other">📁 Other</option>
+                </select>
+              </div>
+
+              {/* Unit Selection - Only for Lease Agreements */}
+              {documentCategory === 'lease' && (
+                <div className="form-group">
+                  <label>Select Occupied Unit</label>
+                  <select 
+                    value={selectedUnit?.id || ''} 
+                    onChange={(e) => {
+                      const unit = occupiedUnits.find(u => u.id === e.target.value);
+                      setSelectedUnit(unit || null);
+                    }}
+                    className="unit-select"
+                  >
+                    <option value="">-- Select Unit --</option>
+                    {occupiedUnits.map(unit => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.property?.name} - Unit {unit.unit_number} (Tenant: {unit.tenant_name || 'Unknown'})
+                      </option>
+                    ))}
+                  </select>
+                  {occupiedUnits.length === 0 && (
+                    <small className="warning-text">
+                      No occupied units found. Please add tenants to units first.
+                    </small>
+                  )}
+                </div>
+              )}
+
+              {/* File Upload Zone */}
               <div className="upload-zone">
                 <Upload size={48} />
                 <p>Drag & drop files here</p>
@@ -603,12 +960,18 @@ const DocumentManager = () => {
                   onChange={(e) => handleFileUpload(e.target.files)}
                   className="file-input"
                   id="file-upload"
-                  disabled={uploading}
+                  disabled={uploading || (documentCategory === 'lease' && !selectedUnit)}
                 />
                 <label htmlFor="file-upload" className="btn btn-outline">
                   Browse Files
                 </label>
                 <small>Supports PDF, DOC, JPG, PNG, XLSX up to 50MB</small>
+                {documentCategory === 'lease' && !selectedUnit && (
+                  <div className="error-message">
+                    <AlertCircle size={14} />
+                    <span>Please select a unit before uploading lease agreement</span>
+                  </div>
+                )}
               </div>
               
               {uploading && (

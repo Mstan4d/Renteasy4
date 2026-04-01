@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import { Shield } from 'lucide-react';
 import './ChatListPage.css';
 
 const ChatListPage = () => {
@@ -13,6 +14,33 @@ const ChatListPage = () => {
   const [loading, setLoading] = useState(true);
   const [listingsCache, setListingsCache] = useState({});
   const [userProfiles, setUserProfiles] = useState({});
+  const [userRole, setUserRole] = useState(null);
+  const [isStaff, setIsStaff] = useState(false);
+  const [staffRole, setStaffRole] = useState(null);
+
+  // Get user role on mount
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+      try {
+        const { data: roleData } = await supabase
+          .from('estate_firm_profiles')
+          .select('staff_role, is_staff_account')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (roleData) {
+          setIsStaff(roleData.is_staff_account || false);
+          setStaffRole(roleData.staff_role);
+        }
+        setUserRole(user.role);
+      } catch (err) {
+        console.warn('Could not fetch user role:', err);
+        setUserRole(user.role);
+      }
+    };
+    getUserRole();
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -26,12 +54,61 @@ const ChatListPage = () => {
     try {
       setLoading(true);
 
-      // Fetch chats where user is participant1, participant2, or monitoring_manager
-      const { data: chatsData, error } = await supabase
+      // Build base query
+      let query = supabase
         .from('chats')
         .select('*')
-        .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id}`)
         .order('updated_at', { ascending: false });
+
+      // Role-based filtering
+      if (user.role === 'estate-firm' && isStaff && staffRole === 'associate') {
+        // Associates: only see chats from listings they created
+        // First get all listings created by this associate
+        const { data: myListings } = await supabase
+          .from('listings')
+          .select('id')
+          .eq('created_by_staff_id', user.id);
+        
+        const myListingIds = myListings?.map(l => l.id) || [];
+        
+        if (myListingIds.length > 0) {
+          query = query.in('listing_id', myListingIds);
+        } else {
+          // No listings created, return empty
+          setChats([]);
+          setLoading(false);
+          return;
+        }
+      } else if (user.role === 'estate-firm' && isStaff && staffRole === 'executive') {
+        // Executives: see all chats for the firm
+        // Get the main firm ID first
+        const { data: firmData } = await supabase
+          .from('estate_firm_profiles')
+          .select('parent_estate_firm_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        const firmId = firmData?.parent_estate_firm_id;
+        
+        if (firmId) {
+          // Get all listings for this firm
+          const { data: firmListings } = await supabase
+            .from('listings')
+            .select('id')
+            .eq('estate_firm_id', firmId);
+          
+          const firmListingIds = firmListings?.map(l => l.id) || [];
+          
+          if (firmListingIds.length > 0) {
+            query = query.in('listing_id', firmListingIds);
+          }
+        }
+      } else {
+        // Principal or non-staff: see all chats where they are participant
+        query = query.or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id}`);
+      }
+
+      const { data: chatsData, error } = await query;
 
       if (error) throw error;
 
@@ -48,7 +125,7 @@ const ChatListPage = () => {
       if (listingIds.length > 0) {
         const { data: listingsData, error: listingsError } = await supabase
           .from('listings')
-          .select('id, title, images, poster_role')
+          .select('id, title, images, poster_role, created_by_staff_id')
           .in('id', listingIds);
 
         if (!listingsError && listingsData) {
@@ -85,7 +162,7 @@ const ChatListPage = () => {
         chatsData.map(async (chat) => {
           const { data: lastMsg } = await supabase
             .from('messages')
-            .select('content, created_at, is_system, sender_id')
+            .select('content, created_at, is_system_message, sender_id')
             .eq('chat_id', chat.id)
             .order('created_at', { ascending: false })
             .limit(1)
@@ -111,7 +188,6 @@ const ChatListPage = () => {
   };
 
   const getOtherParticipantName = (chat) => {
-    // Determine who the other participant is (not the current user)
     if (chat.participant1_id === user.id) {
       const other = userProfiles[chat.participant2_id];
       return other?.full_name || 'User';
@@ -123,22 +199,21 @@ const ChatListPage = () => {
     return 'System';
   };
 
- const getChatPreview = (chat) => {
-  if (!chat.lastMessage) return 'No messages yet';
-  const isOwn = chat.lastMessage.sender_id === user.id;
-  const content = chat.lastMessage.is_system ? 'System message' : chat.lastMessage.content;
-  
-  // For system messages, customize the preview
-  if (chat.lastMessage.is_system && content.includes('You\'ve contacted')) {
-    if (chat.participant2_id === user.id) {
-      return 'A tenant has contacted you';
+  const getChatPreview = (chat) => {
+    if (!chat.lastMessage) return 'No messages yet';
+    const isOwn = chat.lastMessage.sender_id === user.id;
+    const content = chat.lastMessage.is_system_message ? 'System message' : chat.lastMessage.content;
+    
+    if (chat.lastMessage.is_system_message && content.includes('You\'ve contacted')) {
+      if (chat.participant2_id === user.id) {
+        return 'A tenant has contacted you';
+      }
+      return content;
     }
-    return content;
-  }
-  
-  const sender = isOwn ? 'You: ' : `${getOtherParticipantName(chat)}: `;
-  return `${sender}${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
-};
+    
+    const sender = isOwn ? 'You: ' : `${getOtherParticipantName(chat)}: `;
+    return `${sender}${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
+  };
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -167,12 +242,27 @@ const ChatListPage = () => {
     return '💬';
   };
 
- if (loading) {
-  return <RentEasyLoader message="Loading Messages..." fullScreen />;
-}
+  if (loading) {
+    return <RentEasyLoader message="Loading Messages..." fullScreen />;
+  }
 
   return (
     <div className="chat-list-page">
+      {/* Role Banner for Associates */}
+      {user.role === 'estate-firm' && isStaff && staffRole === 'associate' && (
+        <div className="role-banner">
+          <Shield size={16} />
+          <span>Associate View - You can only see conversations from your listings</span>
+        </div>
+      )}
+      
+      {user.role === 'estate-firm' && isStaff && staffRole === 'executive' && (
+        <div className="role-banner executive">
+          <Shield size={16} />
+          <span>Executive View - You can see all conversations for your firm</span>
+        </div>
+      )}
+
       <header className="messages-header">
         <h2>Your Conversations</h2>
         <button 
@@ -188,7 +278,11 @@ const ChatListPage = () => {
           <div className="empty-chats">
             <div className="empty-icon">💬</div>
             <h3>No conversations yet</h3>
-            <p>Start a conversation by contacting a listing</p>
+            <p>
+              {user.role === 'estate-firm' && isStaff && staffRole === 'associate'
+                ? 'When tenants contact your listings, conversations will appear here.'
+                : 'Start a conversation by contacting a listing'}
+            </p>
             <button onClick={() => navigate('/listings')} className="btn primary">
               Browse Listings to Start Chat
             </button>

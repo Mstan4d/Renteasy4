@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import { getUserRole } from '../../../shared/utils/roleHelpers';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { 
   Building, Users, DollarSign, FileText, 
@@ -55,7 +56,9 @@ const EstateDashboard = () => {
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [showPaymentProofModal, setShowPaymentProofModal] = useState(false);
-  
+  const [userRole, setUserRole] = useState('principal');
+  const [isStaff, setIsStaff] = useState(false);
+  const [hasBankDetails, setHasBankDetails] = useState(false);
   const [dashboardStats, setDashboardStats] = useState({
     totalProperties: 0,
     managedProperties: 0,
@@ -90,9 +93,145 @@ const EstateDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [estateFirmProfileId, setEstateFirmProfileId] = useState(null); // Store profile ID separately
 
-  // Load estate firm data from Supabase
-  const loadEstateFirmData = async () => {
+  // Helper functions for activities
+  const getActivityTitle = (activity) => {
+    switch(activity.activity_type) {
+      case 'unit_added': return 'New Unit Added';
+      case 'tenant_added': return 'Tenant Added';
+      case 'tenant_removed': return 'Tenant Removed';
+      case 'rent_paid': return 'Rent Payment Recorded';
+      case 'payment_confirmed': return 'Payment Confirmed';
+      case 'maintenance_request': return 'Maintenance Request';
+      case 'listing_created': return 'New Listing Created';
+      case 'listing_converted': return 'Listing Converted';
+      default: return activity.activity_type || 'Activity';
+    }
+  };
+
+  const getActivityIcon = (type) => {
+    switch(type) {
+      case 'unit_added': return <Home size={16} />;
+      case 'tenant_added': return <UserPlus size={16} />;
+      case 'tenant_removed': return <XCircle size={16} />;
+      case 'rent_paid': return <DollarSign size={16} />;
+      case 'payment_confirmed': return <CheckCircle size={16} />;
+      case 'listing_created': return <Tag size={16} />;
+      case 'listing_converted': return <FileText size={16} />;
+      default: return <Bell size={16} />;
+    }
+  };
+
+  // Fetch recent activities - FIXED VERSION
+  const fetchRecentActivities = async (estateFirmId) => {
+    if (!estateFirmId) {
+      console.log('No estate firm ID available for fetching activities');
+      return;
+    }
+
+    try {
+      console.log('Fetching recent activities for estate firm ID:', estateFirmId);
+      
+      // Get all properties for this estate firm first
+      const { data: properties, error: propertiesError } = await supabase
+        .from('properties')
+        .select('id, title')
+        .eq('estate_firm_id', estateFirmId);
+
+      if (propertiesError) {
+        console.error('Error fetching properties:', propertiesError);
+        return;
+      }
+
+      const propertyIds = properties?.map(p => p.id) || [];
+      
+      if (propertyIds.length === 0) {
+        console.log('No properties found for activities');
+        setRecentActivities([]);
+        return;
+      }
+
+      // Fetch recent property activities
+      const { data: propertyActivities, error: activitiesError } = await supabase
+        .from('property_activities')
+        .select(`
+          *,
+          unit:unit_id (
+            unit_number
+          )
+        `)
+        .in('property_id', propertyIds)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (activitiesError) {
+        console.error('Error fetching property activities:', activitiesError);
+      }
+
+      // Fetch recent payments
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from('payments')
+        .select(`
+          *,
+          unit:unit_id (
+            unit_number,
+            tenant:tenant_id (full_name),
+            property:property_id (title)
+          )
+        `)
+        .in('unit.property_id', propertyIds)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (paymentsError) {
+        console.error('Error fetching payments:', paymentsError);
+      }
+
+      // Combine and format activities
+      const activities = [];
+
+      // Add property activities
+      (propertyActivities || []).forEach(act => {
+        const property = properties.find(p => p.id === act.property_id);
+        activities.push({
+          id: `prop_${act.id}`,
+          type: act.activity_type,
+          title: getActivityTitle(act),
+          description: act.description || `${act.activity_type} on ${property?.title || 'property'}${act.unit?.unit_number ? ` Unit ${act.unit.unit_number}` : ''}`,
+          time: act.created_at,
+          icon: getActivityIcon(act.activity_type),
+          link: `/dashboard/estate-firm/properties/${act.property_id}`
+        });
+      });
+
+      // Add payment activities
+      (paymentsData || []).forEach(payment => {
+        activities.push({
+          id: `pay_${payment.id}`,
+          type: 'payment',
+          title: `Rent Payment Received`,
+          description: `₦${payment.amount?.toLocaleString()} from ${payment.unit?.tenant?.full_name || 'Tenant'} for ${payment.unit?.property?.title || 'property'}${payment.unit?.unit_number ? ` Unit ${payment.unit.unit_number}` : ''}`,
+          time: payment.created_at,
+          icon: <DollarSign size={16} />,
+          link: '/dashboard/estate-firm/rent-tracking'
+        });
+      });
+
+      // Sort by time (most recent first)
+      activities.sort((a, b) => new Date(b.time) - new Date(a.time));
+      setRecentActivities(activities.slice(0, 10));
+      
+      console.log('Activities loaded:', activities.length);
+
+    } catch (error) {
+      console.error('Error fetching recent activities:', error);
+      setRecentActivities([]);
+    }
+  };
+
+  // Load estate firm data
+const loadEstateFirmData = async () => {
   if (!user) {
     setLoading(false);
     return;
@@ -102,6 +241,27 @@ const EstateDashboard = () => {
     setLoading(true);
     setError(null);
     console.log('Loading estate dashboard data for user:', user.id);
+
+    // Get user role first
+    let userRole = 'principal';
+    let isStaff = false;
+    let parentFirmId = null;
+    
+    try {
+      const { data: roleData, error: roleError } = await supabase
+        .from('estate_firm_profiles')
+        .select('staff_role, is_staff_account, parent_estate_firm_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (!roleError && roleData) {
+        userRole = roleData.staff_role || 'principal';
+        isStaff = roleData.is_staff_account || false;
+        parentFirmId = roleData.parent_estate_firm_id;
+      }
+    } catch (err) {
+      console.warn('Could not fetch user role:', err);
+    }
 
     // 1. Get or create estate firm profile
     let estateFirmProfile = null;
@@ -139,13 +299,21 @@ const EstateDashboard = () => {
       } else {
         estateFirmProfile = data;
       }
+      
       console.log('Estate firm profile:', estateFirmProfile);
+      console.log('User role:', userRole);
+      
+      setEstateFirmProfileId(estateFirmProfile.id);
     } catch (err) {
       console.error('Error with estate firm profile:', err);
       setError('Failed to load estate firm profile');
       setLoading(false);
       return;
     }
+
+    // Determine which firm ID to use for queries
+    const effectiveFirmId = parentFirmId || estateFirmProfile.id;
+    console.log('Using effective firm ID:', effectiveFirmId);
 
     // 2. Get active subscription
     let activeSubscription = null;
@@ -168,22 +336,42 @@ const EstateDashboard = () => {
     const hasActiveSubscription = !!activeSubscription;
     const subscriptionExpiry = activeSubscription?.expires_at || null;
 
-    // 3. Fetch all properties for this firm
-    const { data: properties } = await supabase
+    // 3. Fetch properties for this firm (with role-based filtering)
+    let propertiesQuery = supabase
       .from('properties')
-      .select('id')
-      .eq('estate_firm_id', estateFirmProfile.id);
+      .select('*')
+      .eq('estate_firm_id', effectiveFirmId);
+    
+    // If associate, only show their own properties
+    if (userRole === 'associate') {
+      propertiesQuery = propertiesQuery.eq('created_by_staff_id', user.id);
+    }
+    
+    const { data: properties, error: propertiesError } = await propertiesQuery;
+    
+    if (propertiesError) {
+      console.error('Error fetching properties:', propertiesError);
+    }
+    
     const propertyIds = properties?.map(p => p.id) || [];
     console.log('Properties found:', propertyIds.length);
+    setAllProperties(properties || []);
 
     // 4. Fetch units for these properties
     let units = [];
     if (propertyIds.length) {
-      const { data: unitsData } = await supabase
+      let unitsQuery = supabase
         .from('units')
         .select('*')
         .in('property_id', propertyIds);
-      units = unitsData || [];
+      
+      // If associate, only show their own units
+      if (userRole === 'associate') {
+        unitsQuery = unitsQuery.eq('created_by_staff_id', user.id);
+      }
+      
+      const { data: unitsData, error: unitsError } = await unitsQuery;
+      if (!unitsError) units = unitsData || [];
       console.log('Units found:', units.length);
     }
 
@@ -191,12 +379,12 @@ const EstateDashboard = () => {
     const unitIds = units.map(u => u.id);
     let payments = [];
     if (unitIds.length) {
-      const { data: pays } = await supabase
+      const { data: pays, error: paysError } = await supabase
         .from('payments')
         .select('*')
         .in('unit_id', unitIds)
         .eq('payment_type', 'rent');
-      payments = pays || [];
+      if (!paysError) payments = pays || [];
       console.log('Payments found:', payments.length);
     }
 
@@ -207,59 +395,74 @@ const EstateDashboard = () => {
     const vacantUnits = totalUnits - occupiedUnits;
     const monthlyRevenue = payments
       .filter(p => p.status === 'confirmed')
-      .reduce((sum, p) => sum + (p.amount / 12), 0); // assume yearly rent
+      .reduce((sum, p) => sum + (p.amount / 12), 0);
 
-    // 7. Get landlord count (from estate_landlords)
-    let landlordCount = 0;
+    // 7. Get landlord count (filtered for associate)
+    let landlordCountNum = 0;
     try {
-      // ... after fetching landlord count
-const { count } = await supabase
-  .from('estate_landlords')
-  .select('*', { count: 'exact', head: true })
-  .eq('estate_firm_id', estateFirmProfile.id);
-const landlordCount = count || 0;
-setLandlordCount(landlordCount);               // ✅ add this
-      console.log('Landlord count:', landlordCount);
+      if (userRole === 'associate') {
+        // For associate: count unique landlords from their properties
+        const landlordIds = [...new Set(properties?.map(p => p.landlord_id).filter(Boolean))];
+        landlordCountNum = landlordIds.length;
+      } else {
+        const { count, error: countError } = await supabase
+          .from('estate_landlords')
+          .select('*', { count: 'exact', head: true })
+          .eq('estate_firm_id', effectiveFirmId);
+        
+        if (!countError) landlordCountNum = count || 0;
+      }
+      console.log('Landlord count:', landlordCountNum);
+      setLandlordCount(landlordCountNum);
     } catch (err) {
       console.warn('Error loading landlord count:', err);
     }
 
-    // 8. Get listings data for conversion alerts
+    // 8. Get listings data (with role-based filtering)
     let listings = [];
+    let activeRentEasyListings = 0;
+    let rentedNotConverted = 0;
     try {
-      const { data } = await supabase
+      let listingsQuery = supabase
         .from('listings')
         .select('*')
-        .eq('estate_firm_id', estateFirmProfile.id);
-      listings = data || [];
+        .eq('estate_firm_id', effectiveFirmId);
+      
+      // If associate, only show their own listings
+      if (userRole === 'associate') {
+        listingsQuery = listingsQuery.eq('created_by_staff_id', user.id);
+      }
+      
+      const { data, error: listingsError } = await listingsQuery;
+      if (!listingsError) {
+        listings = data || [];
+        activeRentEasyListings = listings.filter(l => l.status === 'pending' || l.status === 'approved').length;
+        rentedNotConverted = listings.filter(l => l.status === 'rented' && !l.unit_id).length;
+      }
       console.log('Listings found:', listings.length);
+      setActiveListings(activeRentEasyListings);
+      setPendingConversions(rentedNotConverted);
     } catch (err) {
       console.warn('Error loading listings:', err);
     }
-    
-// ... after fetching listings
-const activeRentEasyListings = listings.filter(l => l.status === 'pending' || l.status === 'approved').length;
-const rentedNotConverted = listings.filter(l => l.status === 'rented' && !l.unit_id).length;
-setActiveListings(activeRentEasyListings);     // ✅ add this
-setPendingConversions(rentedNotConverted);     // ✅ add this
 
     // 9. Update state
     setEstateFirmData({
-      id: estateFirmProfile.id,
-      isVerified: estateFirmProfile.verification_status === 'verified',
-      verificationStatus: estateFirmProfile.verification_status || 'not_started',
-      freePostsRemaining: estateFirmProfile.free_posts_remaining || 10,
-      hasActiveSubscription,
-      subscriptionEndDate: subscriptionExpiry,
-      subscriptionType: activeSubscription?.plan_type || 'inactive',
-      isInMarketplace: true,
-      marketplaceBoost: estateFirmProfile.boost_status === 'boosted',
-      boostStatus: estateFirmProfile.boost_status || 'none',
-      boostExpiry: estateFirmProfile.boost_expiry,
-      businessName: estateFirmProfile.firm_name || 'Estate Firm',
-      rating: estateFirmProfile.rating || 0,
-      totalReviews: estateFirmProfile.total_reviews || 0
-    });
+  id: estateFirmProfile.id,
+  isVerified: estateFirmProfile.verification_status === 'verified',
+  verificationStatus: estateFirmProfile.verification_status || 'not_started',
+  freePostsRemaining: estateFirmProfile.free_posts_remaining || 10,
+  hasActiveSubscription,
+  subscriptionEndDate: subscriptionExpiry,
+  subscriptionType: activeSubscription?.plan_type || 'inactive',
+  isInMarketplace: true,
+  marketplaceBoost: estateFirmProfile.boost_status === 'boosted',
+  boostStatus: estateFirmProfile.boost_status || 'none',
+  boostExpiry: estateFirmProfile.boost_expiry,
+  businessName: estateFirmProfile.firm_name || 'Estate Firm',
+  rating: estateFirmProfile.rating || 0,
+  totalReviews: 0  // Set to 0 or calculate from reviews table
+});
 
     setDashboardStats({
       totalProperties,
@@ -273,7 +476,7 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
       pendingPayments: payments.filter(p => p.status === 'pending').length,
       maintenanceRequests: 0,
       expiringLeases: 0,
-      totalClients: landlordCount,
+      totalClients: landlordCountNum,
       portfolioValue: monthlyRevenue * 12,
       postsThisMonth: 0,
       commissionSaved: 0,
@@ -284,8 +487,45 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
       responseRate: 70
     });
 
-    // 10. Critical alerts (same as before)
-    // ... (keep existing alerts code)
+    // Fetch recent activities using the estate firm ID
+    await fetchRecentActivities(effectiveFirmId);
+
+    // Critical alerts
+    const alerts = [];
+    if (vacantUnits > 0 && totalUnits > 0) {
+      alerts.push({
+        id: 1,
+        priority: 'medium',
+        message: `${vacantUnits} unit(s) are currently vacant. Post them on RentEasy to find tenants faster.`,
+        link: '/dashboard/estate-firm/portfolio'
+      });
+    }
+    if (rentedNotConverted > 0) {
+      alerts.push({
+        id: 2,
+        priority: 'high',
+        message: `${rentedNotConverted} rented listing(s) need to be converted to units. Complete the conversion to add tenant details.`,
+        link: '/dashboard/estate-firm/my-listings'
+      });
+    }
+    if (estateFirmProfile.verification_status !== 'verified' && estateFirmProfile.verification_status !== 'pending') {
+      alerts.push({
+        id: 3,
+        priority: 'high',
+        message: 'Your estate firm is not verified. Complete KYC verification to build trust with tenants.',
+        link: '/dashboard/estate-firm/verification'
+      });
+    }
+    if (!hasBankDetails) {
+      alerts.push({
+        id: 4,
+        priority: 'high',
+        message: 'Bank details missing. Add your bank account to receive rent payments.',
+        link: '/dashboard/estate-firm/settings'
+      });
+    }
+    setCriticalAlerts(alerts);
+
   } catch (err) {
     console.error('Error loading dashboard data:', err);
     setError('Failed to load dashboard data.');
@@ -293,7 +533,6 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
     setLoading(false);
   }
 };
-
   useEffect(() => {
     loadEstateFirmData();
   }, [user, refreshKey]);
@@ -301,6 +540,64 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1);
   };
+
+  // Add this to listen for bank details updates from settings
+useEffect(() => {
+  const handleStorageChange = () => {
+    checkBankDetails();
+  };
+  
+  window.addEventListener('storage', handleStorageChange);
+  
+  return () => {
+    window.removeEventListener('storage', handleStorageChange);
+  };
+}, []);
+
+ // In EstateDashboard.jsx, update the checkBankDetails function:
+
+const checkBankDetails = async () => {
+  try {
+    // Check the logged-in user's own bank details
+    const { data: profile, error } = await supabase
+      .from('estate_firm_profiles')
+      .select('bank_details')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error checking bank details:', error);
+      setHasBankDetails(false);
+      return;
+    }
+
+    const hasDetails = profile?.bank_details?.bank_name && 
+                       profile?.bank_details?.account_number && 
+                       profile?.bank_details?.account_name;
+    
+    console.log('Bank details check for user', user.id, ':', { hasDetails, bank_details: profile?.bank_details });
+    setHasBankDetails(hasDetails || false);
+  } catch (error) {
+    console.error('Error checking bank details:', error);
+    setHasBankDetails(false);
+  }
+};
+  useEffect(() => {
+    if (user) {
+      checkBankDetails();
+    }
+  }, [user]);
+
+  useEffect(() => {
+  const loadUserRole = async () => {
+    if (user) {
+      const { role, isStaff: staff } = await getUserRole(user.id);
+      setUserRole(role);
+      setIsStaff(staff);
+    }
+  };
+  loadUserRole();
+}, [user]);
 
   const canPostProperty = () => {
     if (estateFirmData.hasActiveSubscription) return true;
@@ -330,6 +627,21 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
 
   const handleSubscriptionSuccess = () => {
     loadEstateFirmData();
+  };
+
+  const formatRelativeTime = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString();
   };
 
   const handleApplyVerification = async () => {
@@ -519,8 +831,8 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
   ];
 
   if (loading) {
-  return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
-}
+    return <RentEasyLoader message="Loading your dashboard..." fullScreen />;
+  }
 
   if (error) {
     return (
@@ -602,6 +914,20 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
         </div>
       )}
 
+      
+{!hasBankDetails && (
+  <div className="warning-card">
+    <AlertCircle size={24} />
+    <div>
+      <h4>Bank Details Missing</h4>
+      <p>Add your bank details to receive rent payments from tenants.</p>
+      <button onClick={() => navigate('/dashboard/estate-firm/settings', { state: { activeTab: 'payment' } })}>
+        Add Now
+      </button>
+    </div>
+  </div>
+)}
+      
       {/* Navigation Cards Grid */}
       <div className="nav-cards-grid">
         {navCards.map((card, index) => (
@@ -682,92 +1008,108 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
           </div>
         </div>
 
-        {/* Recent Activity & Quick Actions */}
-        <div className="dashboard-bottom">
-          <div className="recent-activity">
-            <h3>Recent Activity</h3>
-            {recentActivities.length === 0 ? (
-              <div className="empty-activities">
-                <p>No recent activities</p>
-              </div>
-            ) : (
-              <div className="activity-list">
-                {/* Activity items would go here */}
-              </div>
-            )}
-          </div>
-
-          <div className="quick-actions-card">
-            <h3>Quick Actions</h3>
-            <div className="action-buttons">
-              <button className="action-btn" onClick={() => handleAddProperty('rent-easy')}>
-                <PlusCircle size={18} />
-                Post Property
-              </button>
-              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/add-external-property')}>
-                <Building size={18} />
-                Add External
-              </button>
-              <button className="action-btn" onClick={() => setShowVerificationModal(true)}>
-                <ShieldCheck size={18} />
-                Get Verified
-              </button>
-              <button className="action-btn" onClick={() => setShowBoostModal(true)}>
-                <Zap size={18} />
-                Boost Profile
-              </button>
-              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/reports')}>
-                <BarChart3 size={18} />
-                View Reports
-              </button>
-              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/landlords')}>
-                <Users size={18} />
-                Landlords
-              </button>
-              <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/my-listings')}>
-                <Tag size={18} />
-                My Listings
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Subscription Status */}
-        <div className="subscription-status-card">
-          <h3>Subscription Status</h3>
-          {estateFirmData.hasActiveSubscription ? (
-            <div className="subscription-active">
-              <div className="subscription-header">
-                <Crown size={24} className="text-warning" />
-                <div>
-                  <strong>Premium Subscription Active</strong>
-                  <p>Expires: {new Date(estateFirmData.subscriptionEndDate).toLocaleDateString()}</p>
-                </div>
-              </div>
-              <div className="subscription-badges">
-                <span className="badge bg-success">0% Commission</span>
-                <span className="badge bg-primary">Unlimited Posts</span>
-              </div>
+        {/* Recent Activity */}
+        <div className="recent-activity">
+          <h3>Recent Activity</h3>
+          {recentActivities.length === 0 ? (
+            <div className="empty-activities">
+              <Bell size={32} className="empty-icon" />
+              <p>No recent activities yet</p>
+              <small>Activities will appear here when you add properties or receive payments</small>
             </div>
           ) : (
-            <div className="subscription-free">
-              <div className="subscription-header">
-                <Tag size={24} className="text-muted" />
-                <div>
-                  <strong>Free Plan</strong>
-                  <p>{estateFirmData.freePostsRemaining} free posts remaining</p>
+            <div className="activity-list">
+              {recentActivities.map(activity => (
+                <div key={activity.id} className="activity-item" onClick={() => activity.link && navigate(activity.link)}>
+                  <div className="activity-icon">
+                    {activity.icon}
+                  </div>
+                  <div className="activity-details">
+                    <div className="activity-title">{activity.title}</div>
+                    <div className="activity-description">{activity.description}</div>
+                    <div className="activity-time">
+                      {formatRelativeTime(activity.time)}
+                    </div>
+                  </div>
+                  <div className="activity-arrow">
+                    <ChevronRight size={16} />
+                  </div>
                 </div>
-              </div>
-              <button 
-                className="btn btn-warning btn-sm"
-                onClick={() => setShowSubscriptionModal(true)}
-              >
-                <Crown size={14} />
-                Upgrade Now
-              </button>
+              ))}
             </div>
           )}
         </div>
+
+        <div className="quick-actions-card">
+          <h3>Quick Actions</h3>
+          <div className="action-buttons">
+            <button className="action-btn" onClick={() => handleAddProperty('rent-easy')}>
+              <PlusCircle size={18} />
+              Post Property
+            </button>
+            <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/add-external-property')}>
+              <Building size={18} />
+              Add External
+            </button>
+            <button className="action-btn" onClick={() => setShowVerificationModal(true)}>
+              <ShieldCheck size={18} />
+              Get Verified
+            </button>
+            <button className="action-btn" onClick={() => setShowBoostModal(true)}>
+              <Zap size={18} />
+              Boost Profile
+            </button>
+            <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/reports')}>
+              <BarChart3 size={18} />
+              View Reports
+            </button>
+            <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/landlords')}>
+              <Users size={18} />
+              Landlords
+            </button>
+            <button className="action-btn" onClick={() => navigate('/dashboard/estate-firm/my-listings')}>
+              <Tag size={18} />
+              My Listings
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Subscription Status */}
+      <div className="subscription-status-card">
+        <h3>Subscription Status</h3>
+        {estateFirmData.hasActiveSubscription ? (
+          <div className="subscription-active">
+            <div className="subscription-header">
+              <Crown size={24} className="text-warning" />
+              <div>
+                <strong>Premium Subscription Active</strong>
+                <p>Expires: {new Date(estateFirmData.subscriptionEndDate).toLocaleDateString()}</p>
+              </div>
+            </div>
+            <div className="subscription-badges">
+              <span className="badge bg-success">0% Commission</span>
+              <span className="badge bg-primary">Unlimited Posts</span>
+            </div>
+          </div>
+        ) : (
+          <div className="subscription-free">
+            <div className="subscription-header">
+              <Tag size={24} className="text-muted" />
+              <div>
+                <strong>Free Plan</strong>
+                <p>{estateFirmData.freePostsRemaining} free posts remaining</p>
+              </div>
+            </div>
+            <button 
+              className="btn btn-warning btn-sm"
+              onClick={() => setShowSubscriptionModal(true)}
+            >
+              <Crown size={14} />
+              Upgrade Now
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -906,14 +1248,18 @@ setPendingConversions(rentedNotConverted);     // ✅ add this
             </ul>
           </div>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowVerificationModal(false)}>
-            Later
-          </Button>
-          <Button variant="success" onClick={handleApplyVerification}>
-            Start Verification
-          </Button>
-        </Modal.Footer>
+        
+<Modal.Footer>
+  <Button variant="secondary" onClick={() => setShowVerificationModal(false)}>
+    Later
+  </Button>
+  <Button variant="success" onClick={() => {
+    setShowVerificationModal(false);
+    navigate('/dashboard/estate-firm/verification');
+  }}>
+    Start Verification
+  </Button>
+</Modal.Footer>
       </Modal>
     </div>
   );

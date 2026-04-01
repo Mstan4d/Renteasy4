@@ -13,13 +13,15 @@ const ManagerVerificationPage = () => {
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Form fields
+  // Form fields - using column names that exist
   const [landlordPhone, setLandlordPhone] = useState('');
   const [priceConfirmed, setPriceConfirmed] = useState(true);
   const [newPrice, setNewPrice] = useState('');
   const [notes, setNotes] = useState('');
   const [images, setImages] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
   const [uploadingImages, setUploadingImages] = useState(false);
 
   useEffect(() => {
@@ -29,6 +31,16 @@ const ManagerVerificationPage = () => {
     }
     fetchListing();
   }, [listingId, user, navigate]);
+
+  // Create image previews
+  useEffect(() => {
+    const previews = images.map(file => URL.createObjectURL(file));
+    setImagePreviews(previews);
+    
+    return () => {
+      previews.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [images]);
 
   const fetchListing = async () => {
     try {
@@ -42,7 +54,7 @@ const ManagerVerificationPage = () => {
       if (error) throw error;
       setListing(data);
 
-      // Prefill landlord phone if already provided by tenant
+      // Prefill landlord phone if already provided
       if (data.landlord_phone) setLandlordPhone(data.landlord_phone);
     } catch (error) {
       console.error('Error fetching listing:', error);
@@ -53,10 +65,44 @@ const ManagerVerificationPage = () => {
     }
   };
 
+  const uploadImages = async () => {
+    if (images.length === 0) return [];
+    
+    const uploadedUrls = [];
+    setUploadingImages(true);
+    
+    // Try to use property-images bucket (more likely to exist)
+    const bucketName = 'property-images';
+    
+    for (let i = 0; i < images.length; i++) {
+      const file = images[i];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `verifications/${listingId}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(fileName, file);
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
+      }
+      
+      const { data: urlData } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(fileName);
+      
+      uploadedUrls.push(urlData.publicUrl);
+      setUploadProgress(((i + 1) / images.length) * 100);
+    }
+    
+    setUploadingImages(false);
+    return uploadedUrls;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Basic validation
     if (!landlordPhone.trim()) {
       alert('Landlord phone number is required');
       return;
@@ -65,37 +111,29 @@ const ManagerVerificationPage = () => {
     setSubmitting(true);
 
     try {
-      // Upload images (if any)
-      const imageUrls = [];
-      if (images.length > 0) {
-        setUploadingImages(true);
-        for (const file of images) {
-          const fileName = `verifications/${listingId}/${Date.now()}_${file.name}`;
-          const { error: uploadError } = await supabase.storage
-            .from('listing-verifications')
-            .upload(fileName, file);
-          if (uploadError) throw uploadError;
+      // Upload images
+      const imageUrls = await uploadImages();
 
-          const { data: urlData } = supabase.storage
-            .from('listing-verifications')
-            .getPublicUrl(fileName);
-          imageUrls.push(urlData.publicUrl);
-        }
-        setUploadingImages(false);
-      }
-
-      // Update listing
+      // Prepare updates with only columns that exist
       const updates = {
         landlord_phone: landlordPhone,
-        price_confirmed: priceConfirmed,
         verification_notes: notes,
         verification_images: imageUrls,
         verification_status: 'pending_admin',
         verification_submitted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
+      
+      // Only add price_confirmed and price if they exist
+      if (typeof priceConfirmed !== 'undefined') {
+        updates.price_confirmed = priceConfirmed;
+      }
+      
       if (!priceConfirmed && newPrice) {
         updates.price = parseFloat(newPrice);
       }
+
+      console.log('Updating listing with:', updates);
 
       const { error: updateError } = await supabase
         .from('listings')
@@ -116,94 +154,162 @@ const ManagerVerificationPage = () => {
           chat_id: chat.id,
           sender_id: '00000000-0000-0000-0000-000000000000',
           sender_role: 'system',
-          content: `✅ Manager submitted verification. Awaiting admin confirmation.`,
-          is_system: true,
+          content: `✅ Verification submitted for "${listing?.title}". Awaiting admin confirmation.`,
+          is_system_message: true,
+          created_at: new Date().toISOString()
         }]);
       }
 
-      alert('Verification submitted successfully. Admin will contact landlord.');
+      alert('Verification submitted successfully! Admin will review and confirm.');
       navigate('/dashboard/manager');
     } catch (error) {
       console.error('Error submitting verification:', error);
-      alert('Failed to submit verification. Please try again.');
+      alert(`Failed to submit verification: ${error.message || 'Please try again.'}`);
     } finally {
       setSubmitting(false);
+      setUploadProgress(0);
     }
   };
 
-  if (loading) return <div className="loading">Loading listing details...</div>;
-  if (!listing) return <div className="error">Listing not found</div>;
+  if (loading) return (
+    <div className="loading-container">
+      <div className="loading-spinner"></div>
+      <p>Loading listing details...</p>
+    </div>
+  );
+  
+  if (!listing) return (
+    <div className="error-container">
+      <h2>Listing Not Found</h2>
+      <button onClick={() => navigate('/dashboard/manager')}>Back to Dashboard</button>
+    </div>
+  );
 
   return (
     <div className="manager-verification-page">
-      <h1>Verify Property</h1>
+      <div className="page-header">
+        <h1>🏠 Verify Property</h1>
+        <p>Complete this verification to confirm property details</p>
+      </div>
+
       <div className="listing-summary">
         <h2>{listing.title}</h2>
-        <p><strong>Address:</strong> {listing.address}</p>
-        <p><strong>Current Rent:</strong> ₦{listing.price?.toLocaleString()}/year</p>
-        {listing.landlord_phone && (
-          <p><strong>Landlord Phone (provided by poster):</strong> {listing.landlord_phone}</p>
-        )}
+        <div className="summary-grid">
+          <div className="summary-item">
+            <span className="label">Address:</span>
+            <span className="value">{listing.address}</span>
+          </div>
+          <div className="summary-item">
+            <span className="label">Current Rent:</span>
+            <span className="value price">₦{listing.price?.toLocaleString()}/year</span>
+          </div>
+          {listing.landlord_phone && (
+            <div className="summary-item">
+              <span className="label">Landlord Phone (provided):</span>
+              <span className="value">{listing.landlord_phone}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="verification-form">
-        <div className="form-group">
-          <label htmlFor="landlordPhone">Landlord's Phone Number *</label>
-          <input
-            type="tel"
-            id="landlordPhone"
-            value={landlordPhone}
-            onChange={(e) => setLandlordPhone(e.target.value)}
-            placeholder="e.g., 08012345678"
-            required
-          />
-        </div>
-
-        <div className="form-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={priceConfirmed}
-              onChange={(e) => setPriceConfirmed(e.target.checked)}
-            />
-            Rent price is correct
-          </label>
-        </div>
-
-        {!priceConfirmed && (
+        <div className="form-section">
+          <h3>Contact Information</h3>
           <div className="form-group">
-            <label htmlFor="newPrice">Correct Rent Amount (₦/year)</label>
+            <label htmlFor="landlordPhone">Landlord's Phone Number *</label>
             <input
-              type="number"
-              id="newPrice"
-              value={newPrice}
-              onChange={(e) => setNewPrice(e.target.value)}
-              placeholder="e.g., 1800000"
-              required={!priceConfirmed}
+              type="tel"
+              id="landlordPhone"
+              value={landlordPhone}
+              onChange={(e) => setLandlordPhone(e.target.value)}
+              placeholder="e.g., 08012345678"
+              required
+            />
+            <small>This will be used to confirm verification</small>
+          </div>
+        </div>
+
+        <div className="form-section">
+          <h3>Pricing Verification</h3>
+          <div className="checkbox-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={priceConfirmed}
+                onChange={(e) => setPriceConfirmed(e.target.checked)}
+              />
+              <span>Rent price is correct</span>
+            </label>
+          </div>
+
+          {!priceConfirmed && (
+            <div className="form-group">
+              <label htmlFor="newPrice">Correct Rent Amount (₦/year)</label>
+              <input
+                type="number"
+                id="newPrice"
+                value={newPrice}
+                onChange={(e) => setNewPrice(e.target.value)}
+                placeholder="e.g., 1800000"
+                required={!priceConfirmed}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="form-section">
+          <h3>Additional Details</h3>
+          <div className="form-group">
+            <label htmlFor="notes">Notes / Observations</label>
+            <textarea
+              id="notes"
+              rows="4"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Any observations, caretaker name, condition notes, etc."
             />
           </div>
-        )}
-
-        <div className="form-group">
-          <label htmlFor="notes">Additional Notes</label>
-          <textarea
-            id="notes"
-            rows="4"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Any observations, caretaker name, etc."
-          />
         </div>
 
-        <div className="form-group">
-          <label>Upload Photos (optional)</label>
-          <input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={(e) => setImages(Array.from(e.target.files))}
-          />
-          <small>You can upload multiple photos of the property.</small>
+        <div className="form-section">
+          <h3>Verification Photos</h3>
+          <div className="file-upload-area">
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={(e) => setImages(Array.from(e.target.files))}
+              id="verification-images"
+              style={{ display: 'none' }}
+            />
+            <label htmlFor="verification-images" className="upload-label">
+              <span className="upload-icon">📸</span>
+              <span>Click to upload photos</span>
+              <small>Upload photos of the property (optional)</small>
+            </label>
+            {imagePreviews.length > 0 && (
+              <div className="image-previews">
+                {imagePreviews.map((preview, idx) => (
+                  <div key={idx} className="preview-item">
+                    <img src={preview} alt={`Preview ${idx + 1}`} />
+                    <button 
+                      type="button" 
+                      className="remove-image"
+                      onClick={() => setImages(prev => prev.filter((_, i) => i !== idx))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {uploadingImages && (
+            <div className="upload-progress">
+              <div className="progress-bar" style={{ width: `${uploadProgress}%` }}></div>
+              <span>Uploading images... {Math.round(uploadProgress)}%</span>
+            </div>
+          )}
         </div>
 
         <div className="form-actions">

@@ -146,6 +146,8 @@ const EstateEditProperty = lazy(() => import('../modules/estate-firm/pages/Estat
 const EstateSubscription = lazy(() => import('../modules/estate-firm/pages/EstateSubscription'));
 const EstateLandlordDetail = lazy(() => import('../modules/estate-firm/pages/EstateLandlordDetail'));
 const EstateNotifications = lazy(() => import('../modules/estate-firm/pages/EstateNotifications'));
+const StaffManager = lazy(() => import('../modules/estate-firm/components/StaffManager'));
+
 
 
 // === SUPER ADMIN IMPORTS ===
@@ -217,29 +219,39 @@ const ListingDetailsPage = lazy(() => import('../modules/listings/pages/ListingD
 const ServiceDetailsPage = lazy(() => import('../modules/marketplace/pages/ServiceDetailsPage'));
 const ProviderReviews = lazy(() => import('../modules/reviews/pages/ProviderReviews'));
 const WriteReview = lazy(() => import('../modules/reviews/pages/WriteReview'));
-
+const AcceptInvite = lazy(() => import('../modules/auth/pages/AcceptInvite'));
 
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* =================== PUBLIC ROUTES =================== */}
-      <Route element={<PublicLayout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-      </Route>
-      
-      <Route path="/auth/callback" element={<AuthCallback />} />
+      {/* =================== PUBLIC AUTH ROUTES =================== */}
+<Route element={<PublicLayout />}>
+  <Route path="/" element={<Home />} />
+  <Route path="/login" element={<Login />} />
+  <Route path="/signup" element={<Signup />} />
+</Route>
 
-      {/* Public Super Admin Login Route */}
-      <Route 
-        path="/super-admin/login" 
-        element={
-          <Suspense fallback={<SuperAdminLoading />}>
-            <SuperAdminLogin />
-          </Suspense>
-        }
-      />
+<Route path="/auth/callback" element={<AuthCallback />} />
+
+{/* Add AcceptInvite as a public route */}
+<Route 
+  path="/accept-invite/:token" 
+  element={
+    <Suspense fallback={<DashboardLoading />}>
+      <AcceptInvite />
+    </Suspense>
+  } 
+/>
+
+{/* Public Super Admin Login Route */}
+<Route 
+  path="/super-admin/login" 
+  element={
+    <Suspense fallback={<SuperAdminLoading />}>
+      <SuperAdminLogin />
+    </Suspense>
+  }
+/>
 
       {/* =================== SUPER ADMIN ROUTES =================== */}
       <Route 
@@ -483,7 +495,8 @@ const AppRoutes = () => {
         <Route path="landlords/:landlordId" element={<EstateLandlordDetail />} />
         <Route path="notifications" element={<EstateNotifications />} />
         <Route path="subscription" element={<EstateSubscription />} />
-      </Route>
+        <Route path="staff-manager" element={<StaffManager />} />
+        </Route>
 
       {/* =================== STANDALONE POST PROPERTY =================== */}
       <Route 

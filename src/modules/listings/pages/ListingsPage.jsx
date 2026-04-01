@@ -15,7 +15,7 @@ import { locationService } from '../../../shared/services/locationService';
 import { 
   Search, Filter, Bell, Shield, UserCheck, Building, Home, 
   AlertCircle, Clock, CheckCircle, MapPin, MessageSquare, 
-  ChevronDown, ChevronUp, DollarSign, Navigation
+  ChevronDown, ChevronUp, DollarSign, Navigation, Link
 } from 'lucide-react';
 import './ListingsPage.css';
 
@@ -31,7 +31,7 @@ const ListingsPage = () => {
   const [listings, setListings] = useState([]);
   const [filteredListings, setFilteredListings] = useState([]);
   const [selectedListing, setSelectedListing] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [IsLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
     total: 0,
     verified: 0,
@@ -56,7 +56,7 @@ const ListingsPage = () => {
   const [boostedUserIds, setBoostedUserIds] = useState([]);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-
+  const [tenantListings, setTenantListings] = useState([]);
   // Filter States
   const [filters, setFilters] = useState({
     state: '',
@@ -165,7 +165,7 @@ const ListingsPage = () => {
       } else if (filters.status === 'rejected') {
         baseQuery = baseQuery.eq('status', 'rejected');
       } else {
-        baseQuery = baseQuery.neq('status', 'rented');
+        baseQuery = baseQuery.not('status', 'eq', 'rented');
       }
       if (filters.verifiedOnly) {
         baseQuery = baseQuery.eq('verified', true).eq('status', 'approved');
@@ -265,9 +265,10 @@ if (!posterRole) {
           posterAvatar,
           userVerified,
           images: listing.images || listing.image_urls || [],
-        };
-
-        
+          video_url: listing.video_url || null,           // Single video URL
+          video_urls: listing.video_urls || [],           // Multiple video URLs
+          has_video: !!(listing.video_url || (listing.video_urls && listing.video_urls.length > 0)) 
+        };  
       });
 
       // Location and boost sorting
@@ -307,6 +308,14 @@ if (!posterRole) {
       setIsLoading(false);
     }
   };
+
+  // After loading listings, filter tenant listings
+useEffect(() => {
+  if (listings.length > 0) {
+    const tenants = listings.filter(l => l.posterRole === 'tenant');
+    setTenantListings(tenants);
+  }
+}, [listings]);
 
   const calculateStats = (listingsData) => {
     const total = listingsData.length;
@@ -497,7 +506,7 @@ if (!posterRole) {
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
   // Loading skeleton
-  if (isLoading) {
+  if (IsLoading) {
   return (
     <div className="listings-page">
       <Header />
@@ -530,6 +539,31 @@ if (!posterRole) {
             </div>
           </div>
         </div>
+
+        
+{tenantListings.length > 0 && (
+  <div className="horizontal-scroll-section">
+    <div className="section-header">
+      <h2 className="section-title">Latest from Outgoing Tenants</h2>
+      <Link to="/listings?filter=tenant" className="view-all-link">
+        View all →
+      </Link>
+    </div>
+    <div className="scroll-container">
+      {tenantListings.slice(0, 10).map(listing => (
+        <div key={listing.id} className="scroll-item">
+          <ListingCard
+            listing={listing}
+            onViewDetails={() => handleViewDetails(listing)}
+            onContact={() => handleContact(listing)}
+            onVerify={() => handleVerify(listing.id)}
+            userRole={user?.role}
+          />
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 
         {/* Top Control Bar */}
         <div className="top-control-bar">

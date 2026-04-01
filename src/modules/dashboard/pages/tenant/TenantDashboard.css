@@ -934,3 +934,288 @@
     background: var(--gray-600);
   }
 }
+
+/* Add to existing TenantDashboard.css */
+
+/* Payout Notification */
+.payout-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  animation: slideInRight 0.3s ease;
+  max-width: 380px;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.notification-content {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+  color: white;
+}
+
+.notification-icon {
+  flex-shrink: 0;
+}
+
+.notification-text {
+  flex: 1;
+}
+
+.notification-text h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+}
+
+.notification-text p {
+  font-size: 0.8rem;
+  margin: 0 0 0.25rem 0;
+  opacity: 0.95;
+}
+
+.notification-text small {
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.notification-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Updated Wallet Card */
+.wallet-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.wallet-header svg {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.balance-breakdown {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.balance-item {
+  flex: 1;
+}
+
+.balance-label {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  display: block;
+}
+
+.balance-amount {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0.25rem 0 0;
+}
+
+.balance-amount.total {
+  font-size: 1.5rem;
+  opacity: 0.9;
+}
+
+.balance-divider {
+  width: 1px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Recent Payouts Section */
+.recent-payouts {
+  background: linear-gradient(135deg, #fef9c3 0%, #fde68a 100%);
+}
+
+.payouts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.payout-item {
+  background: white;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: all 0.2s ease;
+  border: 1px solid #e5e7eb;
+}
+
+.payout-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.payout-icon {
+  width: 40px;
+  height: 40px;
+  background: #dcfce7;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.paid-icon {
+  color: #10b981;
+}
+
+.payout-details {
+  flex: 1;
+}
+
+.payout-title {
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.25rem;
+}
+
+.payout-meta {
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+
+.payout-amount {
+  text-align: right;
+}
+
+.payout-amount strong {
+  font-size: 1rem;
+  color: #059669;
+  display: block;
+}
+
+.payout-amount small {
+  font-size: 0.65rem;
+  color: #6b7280;
+}
+
+/* Earned Badge */
+.earned-badge {
+  font-size: 0.6rem;
+  background: #fef3c7;
+  color: #d97706;
+  padding: 0.125rem 0.375rem;
+  border-radius: 10px;
+  display: inline-block;
+  margin-top: 0.25rem;
+}
+
+/* Transaction Property */
+.transaction-property {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+/* Amount Styles */
+.amount-positive {
+  color: #10b981;
+}
+
+.amount-pending {
+  color: #f59e0b;
+}
+
+.paid-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  color: #10b981;
+  background: #dcfce7;
+  padding: 0.125rem 0.375rem;
+  border-radius: 10px;
+}
+
+/* Dark Mode Updates */
+@media (prefers-color-scheme: dark) {
+  .recent-payouts {
+    background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
+  }
+  
+  .payout-item {
+    background: #1f2937;
+    border-color: #374151;
+  }
+  
+  .payout-title {
+    color: #f9fafb;
+  }
+  
+  .paid-badge {
+    background: #374151;
+  }
+  
+  .earned-badge {
+    background: #78350f;
+    color: #fbbf24;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .payout-notification {
+    left: 20px;
+    right: 20px;
+    max-width: none;
+  }
+  
+  .balance-breakdown {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .balance-divider {
+    display: none;
+  }
+  
+  .payout-item {
+    flex-wrap: wrap;
+  }
+  
+  .payout-amount {
+    width: 100%;
+    text-align: left;
+    margin-top: 0.5rem;
+  }
+}

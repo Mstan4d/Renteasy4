@@ -273,3 +273,21 @@
     width: 100%;
   }
 }
+
+/* Add to DocumentManager.css */
+.role-banner {
+  background: #e0f2fe;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #0369a1;
+}
+
+.role-banner.executive {
+  background: #fef3c7;
+  color: #92400e;
+}

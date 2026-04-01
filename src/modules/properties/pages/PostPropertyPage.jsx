@@ -10,6 +10,7 @@ import ImagesStep from '../components/steps/ImagesStep';
 import ConfirmationStep from '../components/steps/ConfirmationStep';
 import CommissionNotice from '../components/CommissionNotice';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import { getCoordinatesFromAddress } from '../../../shared/utils/geocoding';
 import './PostProperty.css';
 
 const PostPropertyPage = () => {
@@ -132,6 +133,56 @@ useEffect(() => {
     loadEstateFirmData();
   }
 }, [profile, user, searchParams]);
+
+// Add this state for prefill data
+const [prefillData, setPrefillData] = useState(null);
+const [prefillLoaded, setPrefillLoaded] = useState(false);
+
+// Load prefill data from URL on mount
+useEffect(() => {
+  const prefillParam = searchParams.get('prefill');
+  if (prefillParam) {
+    try {
+      const decoded = JSON.parse(decodeURIComponent(prefillParam));
+      setPrefillData(decoded);
+      console.log('Prefill data loaded:', decoded);
+    } catch (error) {
+      console.error('Error parsing prefill data:', error);
+    }
+  }
+}, [searchParams]);
+
+// Apply prefill data to form when available
+useEffect(() => {
+  if (prefillData && !prefillLoaded && profile) {
+    console.log('Applying prefill data to form:', prefillData);
+    
+    setFormData(prev => ({
+      ...prev,
+      title: prefillData.title || prev.title,
+      description: prefillData.description || prev.description,
+      rent_amount: prefillData.rent_amount || prev.rent_amount,
+      property_type: prefillData.property_type || prev.property_type,
+      address: prefillData.address || prev.address,
+      state: prefillData.state || prev.state,
+      city: prefillData.city || prev.city,
+      lga: prefillData.lga || prev.lga,
+      bedrooms: prefillData.bedrooms || prev.bedrooms,
+      bathrooms: prefillData.bathrooms || prev.bathrooms,
+      area: prefillData.area || prev.area,
+      amenities: prefillData.amenities || prev.amenities,
+      extra_fees: prefillData.extra_fees || prev.extra_fees
+    }));
+    
+    setPrefillLoaded(true);
+    
+    // Show a message to the user
+    setTimeout(() => {
+      alert('Property details from your unit have been pre-filled. Please review and add images before posting.');
+    }, 500);
+  }
+}, [prefillData, prefillLoaded, profile]);
+
   // Initial form data
   const [formData, setFormData] = useState({
     // Basic Info
@@ -187,6 +238,28 @@ useEffect(() => {
       }));
     }
   }, [user, profile]);
+
+  // Add this useEffect in PostPropertyPage.jsx
+useEffect(() => {
+  const checkVerification = async () => {
+    if (profile?.role === 'estate-firm') {
+      const { data } = await supabase
+        .from('profiles')
+        .select('kyc_status, is_kyc_verified')
+        .eq('id', user.id)
+        .single();
+      
+      if (data?.kyc_status !== 'approved' && !data?.is_kyc_verified) {
+        alert('Please complete business verification to post properties.');
+        navigate('/dashboard/estate-firm/verification');
+      }
+    }
+  };
+  
+  if (user && profile) {
+    checkVerification();
+  }
+}, [user, profile]);
   
 
   // Step navigation
@@ -302,7 +375,7 @@ useEffect(() => {
   };
 
   // Upload images to Supabase Storage
- // In PostPropertyPage.jsx, update the uploadImages function
+
 const uploadImages = async (listingId) => {
   const uploadedUrls = [];
   
@@ -368,59 +441,115 @@ const debugFormData = () => {
 };
 console.log( 'estateFirmId:', estateFirmId);
 
- const submitListing = async () => {
-  if (!validateCurrentStep()) return;
+ // In PostPropertyPage.jsx, update the submitListing function
 
+const submitListing = async () => {
+  // FIRST: Get currentProfile
   const currentProfile = profile || localProfile;
+  
   if (!currentProfile) {
     alert('User profile not found. Please try refreshing the page.');
     return;
   }
 
-  // For estate firms, ensure we have the latest estate_firm_id and free posts
-let finalEstateFirmId = estateFirmId;
-let currentFreePosts = freePostsRemaining;
-let currentHasSubscription = hasSubscription;
-
-if (currentProfile.role === 'estate-firm') {
-  try {
-    // Always fetch fresh data for accuracy
-    const { data, error } = await supabase
-      .from('estate_firm_profiles')
-      .select('id, free_posts_remaining, subscription_status')
-      .eq(finalEstateFirmId ? 'id' : 'user_id', finalEstateFirmId || user.id)
+  // SECOND: Check if estate firm is verified
+  if (currentProfile.role === 'estate-firm') {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('kyc_status, is_kyc_verified')
+      .eq('id', user.id)
       .single();
-
-    if (error) throw error;
-
-    if (data) {
-      finalEstateFirmId = data.id;
-      currentFreePosts = data.free_posts_remaining;
-      currentHasSubscription = data.subscription_status === 'active';
-      // Update state for later use
-      setEstateFirmId(data.id);
-      setFreePostsRemaining(data.free_posts_remaining);
-      setHasSubscription(currentHasSubscription);
-    } else {
-      alert('Estate firm profile not found. Please complete your profile first.');
+    
+    if (profileData?.kyc_status !== 'approved' && !profileData?.is_kyc_verified) {
+      alert('Your estate firm must be verified before you can post properties. Please complete the verification process.');
+      navigate('/dashboard/estate-firm/verification');
       return;
     }
-  } catch (err) {
-    console.error('Error fetching estate firm data:', err);
-    alert('Failed to load estate firm profile. Please try again.');
-    return;
+  }
+  
+  // THIRD: Validate current step
+  if (!validateCurrentStep()) return;
+
+  // FOURTH: Get staff context for created_by tracking
+  let createdByStaffId = null;
+  let effectiveEstateFirmId = estateFirmId;
+  let userStaffRole = null;
+  
+  if (currentProfile.role === 'estate-firm') {
+    const { data: staffData } = await supabase
+      .from('estate_firm_profiles')
+      .select('staff_role, parent_estate_firm_id, is_staff_account')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    
+    if (staffData?.is_staff_account) {
+      createdByStaffId = user.id;
+      userStaffRole = staffData.staff_role;
+      if (staffData.parent_estate_firm_id) {
+        effectiveEstateFirmId = staffData.parent_estate_firm_id;
+      }
+    }
   }
 
-  // Check free posts using the fresh values
-  if (!currentHasSubscription && currentFreePosts <= 0) {
-    alert('You have no free posts remaining. Please subscribe to continue posting.');
-    navigate('/dashboard/estate-firm');
-    return;
+  // FIFTH: For estate firms, ensure we have the latest estate_firm_id and free posts
+  let finalEstateFirmId = effectiveEstateFirmId;
+  let currentFreePosts = freePostsRemaining;
+  let currentHasSubscription = hasSubscription;
+
+  if (currentProfile.role === 'estate-firm') {
+    try {
+      const { data, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('id, free_posts_remaining, subscription_status')
+        .eq(finalEstateFirmId ? 'id' : 'user_id', finalEstateFirmId || user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        finalEstateFirmId = data.id;
+        currentFreePosts = data.free_posts_remaining;
+        currentHasSubscription = data.subscription_status === 'active';
+        setEstateFirmId(data.id);
+        setFreePostsRemaining(data.free_posts_remaining);
+        setHasSubscription(currentHasSubscription);
+      } else {
+        alert('Estate firm profile not found. Please complete your profile first.');
+        return;
+      }
+    } catch (err) {
+      console.error('Error fetching estate firm data:', err);
+      alert('Failed to load estate firm profile. Please try again.');
+      return;
+    }
+
+    if (!currentHasSubscription && currentFreePosts <= 0) {
+      alert('You have no free posts remaining. Please subscribe to continue posting.');
+      navigate('/dashboard/estate-firm');
+      return;
+    }
   }
-}
+
+  // In the submitListing function, add coordinates before inserting
+const submitListing = async () => {
+  // ... existing validation code ...
+
+  // Get coordinates from address
+  let coordinates = null;
+  try {
+    coordinates = await getCoordinatesFromAddress(
+      formData.address,
+      formData.city,
+      formData.state,
+       formData.lga
+    );
+    console.log('Coordinates obtained:', coordinates);
+  } catch (error) {
+    console.error('Error getting coordinates:', error);
+  }
+
   const commission = calculateCommission();
 
-  // Show commission confirmation for non-estate firms
   if (!commission.isEstateFirm) {
     const confirmMessage = `COMMISSION BREAKDOWN (Annual Rent: ₦${commission.annualRent.toLocaleString()})\n\n` +
       `Total Commission: 7.5% = ₦${commission.totalCommission.toLocaleString()}\n\n` +
@@ -439,7 +568,6 @@ if (currentProfile.role === 'estate-firm') {
 
   try {
     const listingData = {
-      // Basic Info
       title: formData.title.trim(),
       description: formData.description.trim(),
       price: parseFloat(formData.rent_amount) || 0,
@@ -473,17 +601,20 @@ if (currentProfile.role === 'estate-firm') {
       images: [],
       landlord_phone: formData.landlord_phone || null,
       verification_status: currentProfile.role === 'estate-firm' ? 'verified' : 'pending_manager',
-      extra_fees: formData.extra_fees || [],  // <-- important!
+      extra_fees: formData.extra_fees || [],
+      lat: coordinates?.lat || null,
+      lng: coordinates?.lng || null,
+      created_by_staff_id: createdByStaffId,
+      updated_by_staff_id: createdByStaffId
     };
 
-    // Add estate firm ID if applicable
     if (currentProfile.role === 'estate-firm' && finalEstateFirmId) {
       listingData.estate_firm_id = finalEstateFirmId;
     }
 
     console.log('📤 Submitting to Supabase:', listingData);
+    console.log('Created by staff ID:', createdByStaffId);
 
-    // Insert listing
     const { data: listing, error: listingError } = await supabase
       .from('listings')
       .insert([listingData])
@@ -508,93 +639,87 @@ if (currentProfile.role === 'estate-firm') {
       }
     }
 
-// Upload videos
-let videoUrls = [];
-if (formData.videos?.length > 0) {
-  console.log('🎬 Uploading videos...');
-  for (const video of formData.videos) {
-    try {
-      if (video.file) {
-        const fileExt = video.file.name.split('.').pop();
-        const fileName = `video_${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-        const filePath = `listings/${listing.id}/${fileName}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('property-images')
-          .upload(filePath, video.file);
-        
-        if (uploadError) {
-          console.error('Video upload error:', uploadError);
-          continue;
+    // Upload videos
+    let videoUrls = [];
+    if (formData.videos?.length > 0) {
+      console.log('🎬 Uploading videos...');
+      for (const video of formData.videos) {
+        try {
+          if (video.file) {
+            const fileExt = video.file.name.split('.').pop();
+            const fileName = `video_${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+            const filePath = `listings/${listing.id}/${fileName}`;
+            
+            const { error: uploadError } = await supabase.storage
+              .from('property-images')
+              .upload(filePath, video.file);
+            
+            if (uploadError) {
+              console.error('Video upload error:', uploadError);
+              continue;
+            }
+            
+            const { data: urlData } = supabase.storage
+              .from('property-images')
+              .getPublicUrl(filePath);
+            
+            if (urlData.publicUrl) {
+              videoUrls.push(urlData.publicUrl);
+              console.log('✅ Video uploaded:', urlData.publicUrl);
+            }
+          } else if (video.url) {
+            videoUrls.push(video.url);
+          }
+        } catch (error) {
+          console.error('❌ Error uploading video:', error);
         }
-        
-        const { data: urlData } = supabase.storage
-          .from('property-images')
-          .getPublicUrl(filePath);
-        
-        if (urlData.publicUrl) {
-          videoUrls.push(urlData.publicUrl);
-          console.log('✅ Video uploaded:', urlData.publicUrl);
-        }
-      } else if (video.url) {
-        videoUrls.push(video.url);
       }
-    } catch (error) {
-      console.error('❌ Error uploading video:', error);
     }
-  }
-}
 
-// Update listing with video URLs
-if (videoUrls.length > 0) {
-  const { error: videoError } = await supabase
-    .from('listings')
-    .update({ 
-      video_urls: videoUrls,
-      video_url: videoUrls[0] // first video as primary
-    })
-    .eq('id', listing.id);
-  if (videoError) console.error('⚠️ Could not save video URLs:', videoError);
-  else console.log(`✅ ${videoUrls.length} videos uploaded`);
-}
+    if (videoUrls.length > 0) {
+      const { error: videoError } = await supabase
+        .from('listings')
+        .update({ 
+          video_urls: videoUrls,
+          video_url: videoUrls[0]
+        })
+        .eq('id', listing.id);
+      if (videoError) console.error('⚠️ Could not save video URLs:', videoError);
+      else console.log(`✅ ${videoUrls.length} videos uploaded`);
+    }
 
-    // Decrement free posts for estate firms (if applicable) – atomic operation
-if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentFreePosts > 0) {
-  // Use RPC for atomic decrement (must be created in Supabase first)
-  const { error: rpcError } = await supabase.rpc('decrement_free_posts', { firm_id: finalEstateFirmId });
-  if (rpcError) {
-    console.error('Error decrementing free posts via RPC:', rpcError);
-  } else {
-    // Update local state to reflect new count
-    setFreePostsRemaining(prev => prev - 1);
-  }
-}
+    // Decrement free posts
+    if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentFreePosts > 0) {
+      const { error: rpcError } = await supabase.rpc('decrement_free_posts', { firm_id: finalEstateFirmId });
+      if (rpcError) {
+        console.error('Error decrementing free posts:', rpcError);
+      } else {
+        setFreePostsRemaining(prev => prev - 1);
+      }
+    }
 
-    // Notify nearby managers (if not estate firm)
+    // Notify nearby managers
     if (currentProfile.role !== 'estate-firm' && formData.coordinates?.lat && formData.coordinates?.lng) {
       await notifyNearbyManagers(listing.id, formData.coordinates);
     }
 
-    // Success message
     const successMessage = currentProfile.role === 'estate-firm'
       ? `🏢 Estate Firm Listing Posted!\n\n✅ 0% Commission (Subscription Model)\n📝 ${formData.title}\n📍 ${formData.address}, ${formData.city}\n💰 ₦${commission.annualRent.toLocaleString()}/year\n\n✅ Your listing is NOW LIVE with "Pending" status`
       : `✅ Property Listed Successfully!\n\n📝 ${formData.title}\n📍 ${formData.address}, ${formData.city}\n💰 ₦${commission.annualRent.toLocaleString()}/year (₦${commission.monthlyEquivalent.toLocaleString()}/month)\n\n💰 You earn ₦${commission.posterCommission.toLocaleString()} when rented!\n\n✅ Your listing is NOW LIVE with "Pending" status`;
 
     alert(successMessage);
 
-    
-  if (currentProfile.role === 'estate-firm' && finalEstateFirmId) {
-  await supabase.from('notifications').insert({
-    user_id: finalEstateFirmId,
-    type: 'property_listed',
-    title: 'Property Listed',
-    message: `Your listing "${formData.title}" has been posted to RentEasy.`,
-    link: '/dashboard/estate-firm/my-listings',
-    created_at: new Date().toISOString()
-  });
-}
+    if (currentProfile.role === 'estate-firm' && finalEstateFirmId) {
+      await supabase.from('notifications').insert({
+        user_id: finalEstateFirmId,
+        type: 'property_listed',
+        title: 'Property Listed',
+        message: `Your listing "${formData.title}" has been posted to RentEasy.`,
+        link: '/dashboard/estate-firm/my-listings',
+        created_at: new Date().toISOString()
+      });
+    }
 
-    // Navigate to dashboard
     setTimeout(() => {
       const roleDashboard = {
         'tenant': '/dashboard/tenant',
@@ -613,7 +738,6 @@ if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentF
     setIsSubmitting(false);
   }
 };
-
   // Notify nearby managers (Business Rule)
   const notifyNearbyManagers = async (listingId, coordinates) => {
     try {
