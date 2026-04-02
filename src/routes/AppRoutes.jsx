@@ -86,7 +86,7 @@ const ManagerSetup = lazy(() => import('../modules/manager/pages/ManagerSetup'))
 const ManagerNotifications = lazy(() => import('../modules/manager/pages/ManagerNotifications'));
 const ManagerChats = lazy(() => import('../modules/manager/pages/ManagerChats'));
 const ManagerProperties = lazy(() => import('../modules/manager/pages/ManagerProperties'));
-const ManagerPayments = lazy(() => import('../modules/manager/pages/ManagerPayments'));
+//const ManagerPayments = lazy(() => import('../modules/manager/pages/ManagerPayments'));
 const ManagerKYC = lazy(() => import('../modules/manager/pages/ManagerKYC'));
 const ManagerRadius = lazy(() => import('../modules/manager/pages/ManagerRadius'));
 const ManagerChatMonitoring = lazy(() => import('../modules/manager/components/ManagerChatMonitoring'));
@@ -176,8 +176,8 @@ const AdminStates = lazy(() => import('../modules/super-admin/pages/AdminStates'
 const ProviderDashboard = lazy(() => import('../modules/providers/pages/ProviderDashboard'));
 const ProviderProfile = lazy(() => import('../modules/providers/pages/ProviderProfile'));
 const ProviderServices = lazy(() => import('../modules/providers/pages/ProviderServices'));
-const ProviderSubscription = lazy(() => import('../modules/providers/pages/ProviderSubscription'));
-const ProviderSubscribe = lazy(() => import('../modules/providers/pages/ProviderSubscribe'));
+//const ProviderSubscription = lazy(() => import('../modules/providers/pages/ProviderSubscription'));
+//const ProviderSubscribe = lazy(() => import('../modules/providers/pages/ProviderSubscribe'));
 const ProviderBilling = lazy(() => import('../modules/providers/pages/ProviderBilling'));
 const ProviderLeads = lazy(() => import('../modules/providers/pages/ProviderLeads'));
 const ProviderBookings = lazy(() => import('../modules/providers/pages/ProviderBookings'));
@@ -389,7 +389,7 @@ const AppRoutes = () => {
         <Route path="notifications" element={<ManagerNotifications />} />
         <Route path="chats" element={<ManagerChats />} />
         <Route path="properties" element={<ManagerProperties />} />
-        <Route path="payments" element={<ManagerPayments />} />
+        {/*<Route path="payments" element={<ManagerPayments />} />*/}
         <Route path="kyc" element={<ManagerKYC />} />
         <Route path="radius" element={<ManagerRadius />} />
         <Route path="commission" element={<ManagerCommission />} />
@@ -414,8 +414,8 @@ const AppRoutes = () => {
         <Route index element={<ProviderDashboard />} />
         <Route path="profile" element={<ProviderProfile />} />
         <Route path="marketplace-profile" element={<ProviderMarketplaceProfile />} />
-        <Route path="subscription" element={<ProviderSubscription />} />
-        <Route path="subscribe" element={<ProviderSubscribe />} />
+       {/* <Route path="subscription" element={<ProviderSubscription />} />
+        <Route path="subscribe" element={<ProviderSubscribe />} /> */}
         <Route path="billing" element={<ProviderBilling />} />
         <Route path="leads" element={<ProviderLeads />} />
         <Route path="bookings" element={<ProviderBookings />} />
