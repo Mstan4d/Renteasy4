@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-
+import { paymentService } from '@shared/lib/paymentService.js';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { Eye, EyeOff, Upload, FileText, CheckCircle, XCircle, Clock, Download, CreditCard, Banknote, TrendingUp, Home } from 'lucide-react';
 import './ManagerPayments.css';
@@ -98,16 +98,6 @@ const ManagerPayments = () => {
       setLoading(false);
     }
   };
-
-  // Mock paymentService to avoid import error
-const paymentService = {
-  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
-  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
-  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
-  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
-  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
-};
 
   const loadBankDetails = async () => {
     const { data, error } = await supabase
