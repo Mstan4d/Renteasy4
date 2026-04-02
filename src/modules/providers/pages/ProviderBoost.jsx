@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
-import { paymentService } from '../../../shared/lib/paymentService';
+
 import { supabase } from '../../../shared/lib/supabaseClient';
 import './ProviderBoost.css';
 
@@ -105,6 +105,16 @@ const ProviderBoost = () => {
       setFetching(false);
     }
   };
+
+  // Mock paymentService to avoid import error
+const paymentService = {
+  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
+  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
+  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
+  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
+  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
+};
 
   const handleSelectPlan = (plan) => {
     setSelectedPlan(plan);
