@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
 import { Zap, Check, X, CreditCard, Upload } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { paymentService } from '../../../shared/lib/paymentService';
+import { paymentService } from '@shared/lib/paymentService.js';
 import { useAuth } from '../../../shared/context/AuthContext';
 
 const BoostModal = ({ show, onHide, onBoostSuccess }) => {
