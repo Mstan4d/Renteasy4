@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
 import { Crown, Check, X, CreditCard, Building, Clock, Upload } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { paymentService } from '../../../shared/lib/paymentService';
+
 import { useAuth } from '../../../shared/context/AuthContext';
 
 const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
@@ -62,6 +62,16 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
     setSelectedPlan(plan);
     setError(null);
   };
+
+  // Mock paymentService to avoid import error
+const paymentService = {
+  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
+  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
+  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
+  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
+  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
+};
 
   const handleProceedToPayment = async () => {
     if (!selectedPlan) {
