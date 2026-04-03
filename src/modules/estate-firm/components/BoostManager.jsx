@@ -2,9 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Row, Col, Badge, Alert, Modal, Form } from 'react-bootstrap';
 import { Zap, TrendingUp, Clock, Crown, Check, CreditCard, Upload, X } from 'lucide-react';
-import { paymentService } from '@shared/lib/paymentService.js';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { paymentService } from '@shared/lib/paymentService';
 
 const BoostManager = ({ estateFirmData, onBoostSuccess }) => {
   const { user } = useAuth();

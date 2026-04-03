@@ -5,6 +5,7 @@ import { useAuth } from '../../../shared/context/AuthContext';
 import { useManager } from '../../../shared/context/ManagerContext';
 import { listingsService } from '../../../shared/services/listingsService';
 import { messagesService } from '../../../shared/services/messagesService';
+import Header from '../../../shared/components/Header';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import ListingDetails from '../components/ListingDetails';
 import './ListingDetailsPage.css';
@@ -282,6 +283,7 @@ if (IsLoading) {
 
   return (
     <div className="listing-details-page">
+       <Header />
       {loadingAction && (
         <div className="action-loading-overlay">
           <div className="loading-spinner"></div>

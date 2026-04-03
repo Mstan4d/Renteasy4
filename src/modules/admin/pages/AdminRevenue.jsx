@@ -2,103 +2,208 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import {
   DollarSign, TrendingUp, TrendingDown, BarChart3,
-  PieChart, Calendar, Download, Filter, RefreshCw,
+  Calendar, Download, Filter, RefreshCw,
   Home, Users, Building, CreditCard, Target, Percent,
-  CheckCircle, XCircle
+  CheckCircle, XCircle, Crown, Zap
 } from 'lucide-react';
 import './AdminRevenue.css';
 
 const AdminRevenue = () => {
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
   const [revenueData, setRevenueData] = useState({
     labels: [],
     datasets: [
-      { label: 'Revenue', data: [] },
-      { label: 'Commission', data: [] }
+      { label: 'Rent Commission (3.5%)', data: [], color: '#3b82f6' },
+      { label: 'Subscriptions', data: [], color: '#8b5cf6' },
+      { label: 'Boosts', data: [], color: '#f59e0b' }
     ]
   });
   const [timeRange, setTimeRange] = useState('month');
   const [loading, setLoading] = useState(true);
+  const [revenueTarget, setRevenueTarget] = useState(10000000);
   const [stats, setStats] = useState({
     totalRevenue: 0,
-    commission: 0,
+    commissionRevenue: 0,
+    subscriptionRevenue: 0,
+    boostRevenue: 0,
     growth: 0,
-    target: 10000000, // ₦10M target
-    transactions: 0,
-    avgTransaction: 0
+    target: 10000000,
+    completedRentals: 0,
+    activeSubscriptions: 0,
+    activeBoosts: 0
   });
   const [pendingCommissions, setPendingCommissions] = useState([]);
   const [pendingLoading, setPendingLoading] = useState(false);
 
   // Load revenue data and pending commissions
   useEffect(() => {
-    loadRevenueData();
-    loadPendingCommissions();
-  }, []);
+    if (authUser?.role === 'super-admin' || authUser?.role === 'admin') {
+      loadRevenueTarget();
+      loadRevenueData();
+      loadPendingCommissions();
+    }
+  }, [timeRange]);
+
+  const loadRevenueTarget = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'revenue_target')
+        .maybeSingle();
+      if (!error && data) {
+        const target = parseFloat(data.value);
+        setRevenueTarget(target);
+        setStats(prev => ({ ...prev, target }));
+      }
+    } catch (err) {
+      console.warn('Could not load revenue target', err);
+    }
+  };
 
   const loadRevenueData = async () => {
     setLoading(true);
     try {
-      // Fetch real data from view (last 30 days)
-      const { data, error } = await supabase
-        .from('admin_revenue_stats')
-        .select('*')
-        .limit(30);
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const labels = data.map(d => new Date(d.day).toLocaleDateString('en-NG', {
-          day: 'numeric',
-          month: 'short'
-        })).reverse();
-
-        const revenueValues = data.map(d => d.daily_rent_volume).reverse();
-        const commissionValues = data.map(d => d.daily_commission).reverse();
-
-        setRevenueData({
-          labels,
-          datasets: [
-            { label: 'Revenue', data: revenueValues },
-            { label: 'Commission', data: commissionValues }
-          ]
-        });
-
-        // Calculate totals
-        const totalRevenue = revenueValues.reduce((a, b) => a + b, 0);
-        const totalCommission = commissionValues.reduce((a, b) => a + b, 0);
-        const totalTransactions = data.reduce((a, b) => a + b.transaction_count, 0);
-
-        // Calculate growth (compare with previous 30 days)
-        const prevData = await supabase
-          .from('admin_revenue_stats')
-          .select('daily_rent_volume')
-          .limit(30)
-          .range(30, 59); // next 30 days
-
-        const prevTotal = prevData.data?.reduce((a, b) => a + b.daily_rent_volume, 0) || 0;
-        const growth = prevTotal ? ((totalRevenue - prevTotal) / prevTotal) * 100 : 0;
-
-        setStats({
-          totalRevenue,
-          commission: totalCommission,
-          growth,
-          target: 10000000,
-          transactions: totalTransactions,
-          avgTransaction: totalTransactions ? totalRevenue / totalTransactions : 0
-        });
-      } else {
-        // No data – set empty
-        setRevenueData({
-          labels: [],
-          datasets: [
-            { label: 'Revenue', data: [] },
-            { label: 'Commission', data: [] }
-          ]
-        });
+      const now = new Date();
+      let startDate;
+      switch (timeRange) {
+        case 'week':
+          startDate = new Date(now.setDate(now.getDate() - 7));
+          break;
+        case 'month':
+          startDate = new Date(now.setMonth(now.getMonth() - 1));
+          break;
+        case 'quarter':
+          startDate = new Date(now.setMonth(now.getMonth() - 3));
+          break;
+        case 'year':
+          startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+          break;
+        default:
+          startDate = new Date(now.setMonth(now.getMonth() - 1));
       }
+      const startISO = startDate.toISOString();
+
+      // 1. Completed commissions (platform share)
+      const { data: commissions, error: commError } = await supabase
+        .from('commissions')
+        .select('created_at, platform_share')
+        .eq('status', 'paid')
+        .gte('created_at', startISO)
+        .order('created_at', { ascending: true });
+      if (commError) throw commError;
+
+      // 2. Completed subscription payments
+      const { data: subscriptions, error: subError } = await supabase
+        .from('transactions')
+        .select('created_at, amount')
+        .eq('type', 'subscription')
+        .eq('status', 'completed')
+        .gte('created_at', startISO)
+        .order('created_at', { ascending: true });
+      if (subError) throw subError;
+
+      // 3. Completed boost payments
+      const { data: boosts, error: boostError } = await supabase
+        .from('transactions')
+        .select('created_at, amount')
+        .eq('type', 'boost')
+        .eq('status', 'completed')
+        .gte('created_at', startISO)
+        .order('created_at', { ascending: true });
+      if (boostError) throw boostError;
+
+      // Group by day
+      const dailyMap = new Map(); // key: YYYY-MM-DD, value: { commission, subscription, boost }
+      const addToDay = (dateStr, type, amount) => {
+        if (!dailyMap.has(dateStr)) {
+          dailyMap.set(dateStr, { commission: 0, subscription: 0, boost: 0 });
+        }
+        const entry = dailyMap.get(dateStr);
+        entry[type] += amount;
+      };
+
+      commissions.forEach(c => {
+        const day = c.created_at.split('T')[0];
+        addToDay(day, 'commission', c.platform_share || 0);
+      });
+      subscriptions.forEach(s => {
+        const day = s.created_at.split('T')[0];
+        addToDay(day, 'subscription', s.amount || 0);
+      });
+      boosts.forEach(b => {
+        const day = b.created_at.split('T')[0];
+        addToDay(day, 'boost', b.amount || 0);
+      });
+
+      const sortedDays = Array.from(dailyMap.keys()).sort();
+      const labels = sortedDays.map(d => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }));
+      const commissionData = sortedDays.map(d => dailyMap.get(d).commission);
+      const subscriptionData = sortedDays.map(d => dailyMap.get(d).subscription);
+      const boostData = sortedDays.map(d => dailyMap.get(d).boost);
+
+      setRevenueData({
+        labels,
+        datasets: [
+          { label: 'Rent Commission (3.5%)', data: commissionData, color: '#3b82f6' },
+          { label: 'Subscriptions', data: subscriptionData, color: '#8b5cf6' },
+          { label: 'Boosts', data: boostData, color: '#f59e0b' }
+        ]
+      });
+
+      // Calculate totals
+      const totalCommission = commissionData.reduce((a, b) => a + b, 0);
+      const totalSubscription = subscriptionData.reduce((a, b) => a + b, 0);
+      const totalBoost = boostData.reduce((a, b) => a + b, 0);
+      const totalRevenue = totalCommission + totalSubscription + totalBoost;
+      const completedRentals = commissions.length;
+      const activeSubscriptions = subscriptions.length;
+      const activeBoosts = boosts.length;
+
+      // Calculate growth (compare with previous period)
+      const prevStartDate = new Date(startDate);
+      prevStartDate.setDate(prevStartDate.getDate() - (timeRange === 'week' ? 7 : timeRange === 'month' ? 30 : timeRange === 'quarter' ? 90 : 365));
+      const prevStartISO = prevStartDate.toISOString();
+      const { data: prevCommissions } = await supabase
+        .from('commissions')
+        .select('platform_share')
+        .eq('status', 'paid')
+        .gte('created_at', prevStartISO)
+        .lt('created_at', startISO);
+      const prevCommissionTotal = prevCommissions?.reduce((s, c) => s + (c.platform_share || 0), 0) || 0;
+      const { data: prevSubscriptions } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('type', 'subscription')
+        .eq('status', 'completed')
+        .gte('created_at', prevStartISO)
+        .lt('created_at', startISO);
+      const prevSubscriptionTotal = prevSubscriptions?.reduce((s, t) => s + (t.amount || 0), 0) || 0;
+      const { data: prevBoosts } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('type', 'boost')
+        .eq('status', 'completed')
+        .gte('created_at', prevStartISO)
+        .lt('created_at', startISO);
+      const prevBoostTotal = prevBoosts?.reduce((s, t) => s + (t.amount || 0), 0) || 0;
+      const prevTotal = prevCommissionTotal + prevSubscriptionTotal + prevBoostTotal;
+      const growth = prevTotal ? ((totalRevenue - prevTotal) / prevTotal) * 100 : 0;
+
+      setStats({
+        totalRevenue,
+        commissionRevenue: totalCommission,
+        subscriptionRevenue: totalSubscription,
+        boostRevenue: totalBoost,
+        growth,
+        target: revenueTarget,
+        completedRentals,
+        activeSubscriptions,
+        activeBoosts
+      });
     } catch (error) {
       console.error('Error loading revenue data:', error);
     } finally {
@@ -114,16 +219,13 @@ const AdminRevenue = () => {
         .select(`
           id,
           rental_amount,
-          manager_share,
-          referrer_share,
           platform_share,
           created_at,
           listing:listings!listing_id (id, title),
           manager:manager_id (full_name, email)
         `)
-        .eq('status', 'pending')
+        .eq('status', 'verified')
         .order('created_at', { ascending: false });
-
       if (error) throw error;
       setPendingCommissions(data || []);
     } catch (error) {
@@ -134,32 +236,16 @@ const AdminRevenue = () => {
   };
 
   const confirmRental = async (commissionId) => {
-    if (!window.confirm('Confirm this rental and update revenue?')) return;
-
+    if (!window.confirm('Confirm this rental? Platform commission (3.5%) will be added to revenue.')) return;
     try {
-      // Update commission status to confirmed
       const { error } = await supabase
         .from('commissions')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString()
-        })
+        .update({ status: 'paid', paid_at: new Date().toISOString() })
         .eq('id', commissionId);
-
       if (error) throw error;
-
-      // Optionally update listing status (if not already rented)
-      const commission = pendingCommissions.find(c => c.id === commissionId);
-      if (commission?.listing?.id) {
-        await supabase
-          .from('listings')
-          .update({ status: 'rented', rented_at: new Date().toISOString() })
-          .eq('id', commission.listing.id);
-      }
-
-      alert('Commission confirmed!');
-      loadRevenueData(); // refresh charts
-      loadPendingCommissions(); // remove from pending list
+      alert('Commission confirmed and added to revenue!');
+      loadRevenueData();
+      loadPendingCommissions();
     } catch (error) {
       console.error('Error confirming rental:', error);
       alert('Failed to confirm.');
@@ -171,72 +257,47 @@ const AdminRevenue = () => {
       generated: new Date().toISOString(),
       timeRange,
       stats,
-      sources: getRevenueSources(),
-      performers: getTopPerformers()
+      dailyData: revenueData.labels.map((label, i) => ({
+        date: label,
+        commission: revenueData.datasets[0].data[i],
+        subscription: revenueData.datasets[1].data[i],
+        boost: revenueData.datasets[2].data[i]
+      }))
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `revenue_report_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  // Static helpers (can later be replaced with real data)
-  const getRevenueSources = () => [
-    { name: 'Rent Payments', value: 65, color: '#3b82f6', icon: <Home size={16} /> },
-    { name: 'Service Fees', value: 20, color: '#10b981', icon: <Building size={16} /> },
-    { name: 'Commissions', value: 10, color: '#8b5cf6', icon: <Percent size={16} /> },
-    { name: 'Other', value: 5, color: '#f59e0b', icon: <CreditCard size={16} /> }
-  ];
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
 
-  const getTopPerformers = () => [
-    { id: 1, name: 'Lagos Mainland', revenue: 4500000, growth: 25, listings: 120 },
-    { id: 2, name: 'Abuja Central', revenue: 3800000, growth: 18, listings: 95 },
-    { id: 3, name: 'Port Harcourt', revenue: 3200000, growth: 12, listings: 78 },
-    { id: 4, name: 'Ibadan Metro', revenue: 2800000, growth: 8, listings: 65 },
-    { id: 5, name: 'Enugu City', revenue: 2100000, growth: 15, listings: 52 }
-  ];
-
-  const formatCurrency = (amount) => `₦${amount.toLocaleString()}`;
-
-  if (loading) {
-    return (
-      <div className="admin-revenue loading">
-        <div className="loading-spinner"></div>
-        <p>Loading revenue data...</p>
-      </div>
-    );
-  }
+  if (loading) return <RentEasyLoader message="Loading revenue data..." fullScreen />;
 
   return (
     <div className="admin-revenue">
       <div className="revenue-header">
         <div className="header-left">
           <h1><DollarSign size={28} /> Revenue Dashboard</h1>
-          <p>Track and analyze platform revenue performance</p>
+          <p>Track RentEasy income from rentals, subscriptions, and boosts</p>
         </div>
         <div className="header-right">
           <div className="time-selector">
             <Calendar size={18} />
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-              className="time-select"
-            >
+            <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)} className="time-select">
               <option value="week">Last 7 Days</option>
-              <option value="month">This Month</option>
-              <option value="quarter">This Quarter</option>
-              <option value="year">This Year</option>
+              <option value="month">Last 30 Days</option>
+              <option value="quarter">Last 90 Days</option>
+              <option value="year">Last 365 Days</option>
             </select>
           </div>
           <button className="btn-export" onClick={exportRevenueReport}>
             <Download size={18} /> Export Report
           </button>
-          <button className="btn-refresh" onClick={loadRevenueData}>
+          <button className="btn-refresh" onClick={() => { loadRevenueData(); loadPendingCommissions(); }}>
             <RefreshCw size={18} />
           </button>
         </div>
@@ -254,127 +315,91 @@ const AdminRevenue = () => {
               <span className={stats.growth > 0 ? 'positive' : 'negative'}>
                 {Math.abs(stats.growth).toFixed(1)}%
               </span>
-              <small>vs last period</small>
+              <small>vs previous period</small>
             </div>
           </div>
         </div>
         <div className="main-stat-card commission">
           <div className="stat-icon"><Percent size={32} /></div>
           <div className="stat-content">
-            <h2>{formatCurrency(stats.commission)}</h2>
-            <p>Platform Commission</p>
-            <div className="commission-rate">
-              <span className="rate">7.5%</span>
-              <small>of total revenue</small>
-            </div>
+            <h2>{formatCurrency(stats.commissionRevenue)}</h2>
+            <p>Rent Commission (3.5%)</p>
+            <small>{stats.completedRentals} completed rentals</small>
           </div>
         </div>
-        <div className="main-stat-card transactions">
-          <div className="stat-icon"><CreditCard size={32} /></div>
+        <div className="main-stat-card subscription">
+          <div className="stat-icon"><Crown size={32} /></div>
           <div className="stat-content">
-            <h2>{stats.transactions.toLocaleString()}</h2>
-            <p>Total Transactions</p>
-            <div className="avg-transaction">
-              <span className="avg">{formatCurrency(stats.avgTransaction)}</span>
-              <small>average per transaction</small>
-            </div>
+            <h2>{formatCurrency(stats.subscriptionRevenue)}</h2>
+            <p>Subscriptions</p>
+            <small>{stats.activeSubscriptions} active subscriptions</small>
+          </div>
+        </div>
+        <div className="main-stat-card boost">
+          <div className="stat-icon"><Zap size={32} /></div>
+          <div className="stat-content">
+            <h2>{formatCurrency(stats.boostRevenue)}</h2>
+            <p>Boosts</p>
+            <small>{stats.activeBoosts} boosts purchased</small>
           </div>
         </div>
         <div className="main-stat-card target">
           <div className="stat-icon"><Target size={32} /></div>
           <div className="stat-content">
             <h2>{formatCurrency(stats.target)}</h2>
-            <p>Revenue Target</p>
+            <p>Revenue Target (Super Admin)</p>
             <div className="target-progress">
               <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${(stats.totalRevenue / stats.target) * 100}%` }}
-                ></div>
+                <div className="progress-fill" style={{ width: `${Math.min(100, (stats.totalRevenue / stats.target) * 100)}%` }}></div>
               </div>
-              <span className="progress-text">
-                {Math.round((stats.totalRevenue / stats.target) * 100)}%
-              </span>
+              <span className="progress-text">{Math.round((stats.totalRevenue / stats.target) * 100)}%</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Charts Section (keep as is, but use revenueData) */}
+      {/* Chart Section */}
       <div className="revenue-charts">
         <div className="chart-card revenue-trend">
           <div className="chart-header">
-            <h3><BarChart3 size={20} /> Revenue Trend</h3>
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-              className="chart-select"
-            >
-              <option value="week">Weekly</option>
-              <option value="month">Monthly</option>
-              <option value="quarter">Quarterly</option>
-              <option value="year">Yearly</option>
-            </select>
+            <h3><BarChart3 size={20} /> Daily Revenue Breakdown</h3>
           </div>
           <div className="chart-container">
-            {/* Simulated chart using revenueData – same as before but use real data */}
             <div className="simulated-chart">
               <div className="chart-bars">
-                {revenueData.datasets[0].data.map((value, index) => {
-                  const maxVal = Math.max(...revenueData.datasets[0].data, 1);
-                  const revenueHeight = (value / maxVal) * 100;
-                  const commissionValue = revenueData.datasets[1].data[index] || 0;
-                  const commissionHeight = (commissionValue / maxVal) * 100;
+                {revenueData.labels.map((label, index) => {
+                  const maxVal = Math.max(
+                    ...revenueData.datasets[0].data,
+                    ...revenueData.datasets[1].data,
+                    ...revenueData.datasets[2].data,
+                    1
+                  );
+                  const commissionHeight = (revenueData.datasets[0].data[index] / maxVal) * 100;
+                  const subHeight = (revenueData.datasets[1].data[index] / maxVal) * 100;
+                  const boostHeight = (revenueData.datasets[2].data[index] / maxVal) * 100;
                   return (
                     <div key={index} className="chart-bar-group">
                       <div className="bar-container">
-                        <div
-                          className="bar revenue-bar"
-                          style={{ height: `${revenueHeight}%` }}
-                          title={formatCurrency(value)}
-                        >
-                          <span className="bar-value">{formatCurrency(value)}</span>
+                        <div className="bar commission-bar" style={{ height: `${commissionHeight}%`, backgroundColor: revenueData.datasets[0].color }} title={`Commission: ${formatCurrency(revenueData.datasets[0].data[index])}`}>
+                          {commissionHeight > 15 && <span className="bar-value">{formatCurrency(revenueData.datasets[0].data[index])}</span>}
                         </div>
-                        <div
-                          className="bar commission-bar"
-                          style={{ height: `${commissionHeight}%` }}
-                        ></div>
+                        <div className="bar subscription-bar" style={{ height: `${subHeight}%`, backgroundColor: revenueData.datasets[1].color }} title={`Subscription: ${formatCurrency(revenueData.datasets[1].data[index])}`}>
+                          {subHeight > 15 && <span className="bar-value">{formatCurrency(revenueData.datasets[1].data[index])}</span>}
+                        </div>
+                        <div className="bar boost-bar" style={{ height: `${boostHeight}%`, backgroundColor: revenueData.datasets[2].color }} title={`Boost: ${formatCurrency(revenueData.datasets[2].data[index])}`}>
+                          {boostHeight > 15 && <span className="bar-value">{formatCurrency(revenueData.datasets[2].data[index])}</span>}
+                        </div>
                       </div>
-                      <div className="bar-label">{revenueData.labels[index]}</div>
+                      <div className="bar-label">{label}</div>
                     </div>
                   );
                 })}
               </div>
               <div className="chart-legend">
-                <div className="legend-item"><span className="legend-color revenue"></span>Revenue</div>
-                <div className="legend-item"><span className="legend-color commission"></span>Commission (7.5%)</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="chart-card revenue-sources">
-          <div className="chart-header">
-            <h3><PieChart size={20} /> Revenue Sources</h3>
-          </div>
-          <div className="chart-container">
-            <div className="pie-chart-container">
-              <div className="pie-chart">
-                {/* Static pie chart remains – could be replaced with real data later */}
-              </div>
-              <div className="sources-list">
-                {getRevenueSources().map(source => (
-                  <div key={source.name} className="source-item">
-                    <div className="source-info">
-                      <span className="source-icon">{source.icon}</span>
-                      <span className="source-name">{source.name}</span>
-                    </div>
-                    <div className="source-stats">
-                      <span className="source-percentage">{source.value}%</span>
-                      <span className="source-value">
-                        {formatCurrency((stats.totalRevenue * source.value) / 100)}
-                      </span>
-                    </div>
+                {revenueData.datasets.map(ds => (
+                  <div key={ds.label} className="legend-item">
+                    <span className="legend-color" style={{ backgroundColor: ds.color }}></span>
+                    {ds.label}
                   </div>
                 ))}
               </div>
@@ -383,13 +408,13 @@ const AdminRevenue = () => {
         </div>
       </div>
 
-      {/* Pending Commissions Section (NEW) */}
+      {/* Pending Rentals to Confirm */}
       <div className="pending-commissions">
         <h3><CheckCircle size={20} /> Pending Rentals to Confirm</h3>
         {pendingLoading ? (
           <div className="loading-small">Loading...</div>
         ) : pendingCommissions.length === 0 ? (
-          <div className="empty-state">No pending commissions.</div>
+          <div className="empty-state">No pending rentals. All commissions are processed.</div>
         ) : (
           <div className="pending-list">
             {pendingCommissions.map(comm => (
@@ -398,13 +423,13 @@ const AdminRevenue = () => {
                   <strong>{comm.listing?.title || 'Unknown Listing'}</strong>
                   <div className="pending-details">
                     <span>Rental: {formatCurrency(comm.rental_amount)}</span>
-                    <span>Commission: {formatCurrency(comm.platform_share)} (7.5%)</span>
+                    <span>Platform Commission (3.5%): {formatCurrency(comm.platform_share)}</span>
                     <span>Manager: {comm.manager?.full_name || 'N/A'}</span>
                   </div>
-                  <small>Submitted: {new Date(comm.created_at).toLocaleDateString()}</small>
+                  <small>Verified on: {new Date(comm.created_at).toLocaleDateString()}</small>
                 </div>
                 <button className="btn-confirm" onClick={() => confirmRental(comm.id)}>
-                  <CheckCircle size={16} /> Confirm Rental
+                  <CheckCircle size={16} /> Confirm & Add Revenue
                 </button>
               </div>
             ))}
@@ -412,79 +437,35 @@ const AdminRevenue = () => {
         )}
       </div>
 
-      {/* Performance Section (unchanged) */}
-      <div className="performance-section">
-        <div className="top-performers">
-          <h3><TrendingUp size={20} /> Top Performing Locations</h3>
-          <div className="performers-list">
-            {getTopPerformers().map(location => (
-              <div key={location.id} className="performer-card">
-                <div className="performer-rank">{location.id}</div>
-                <div className="performer-info">
-                  <h4>{location.name}</h4>
-                  <div className="performer-stats">
-                    <span className="revenue">{formatCurrency(location.revenue)}</span>
-                    <span className={`growth ${location.growth > 0 ? 'positive' : 'negative'}`}>
-                      {location.growth > 0 ? '+' : ''}{location.growth}%
-                    </span>
-                    <span className="listings">{location.listings} listings</span>
-                  </div>
-                </div>
-                <div className="performer-actions">
-                  <button className="btn-view">View Details</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="revenue-insights">
-          <h3><BarChart3 size={20} /> Key Insights</h3>
-          <div className="insights-list">
-            <div className="insight-card positive">
-              <div className="insight-icon"><TrendingUp size={24} /></div>
-              <div className="insight-content">
-                <h4>Revenue Growth</h4>
-                <p>Revenue has grown by {Math.abs(stats.growth).toFixed(1)}% compared to last period</p>
-              </div>
-            </div>
-            <div className="insight-card info">
-              <div className="insight-icon"><Users size={24} /></div>
-              <div className="insight-content">
-                <h4>User Engagement</h4>
-                <p>High‑value users contribute to 70% of total revenue</p>
-              </div>
-            </div>
-            <div className="insight-card warning">
-              <div className="insight-icon"><Target size={24} /></div>
-              <div className="insight-content">
-                <h4>Target Progress</h4>
-                <p>{Math.round((stats.totalRevenue / stats.target) * 100)}% of monthly target achieved</p>
-              </div>
-            </div>
-            <div className="insight-card success">
-              <div className="insight-icon"><Building size={24} /></div>
-              <div className="insight-content">
-                <h4>Commission Efficiency</h4>
-                <p>Commission collection rate stands at 95% across all transactions</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Quick Actions */}
       <div className="revenue-actions">
         <button className="action-card" onClick={exportRevenueReport}>
           <Download size={20} /> Download Detailed Report
         </button>
+        {authUser?.role === 'super-admin' && (
+          <button className="action-card" onClick={async () => {
+            const newTarget = prompt('Enter new revenue target (₦):', stats.target);
+            if (newTarget && !isNaN(parseFloat(newTarget))) {
+              const { error } = await supabase
+                .from('system_settings')
+                .upsert({ key: 'revenue_target', value: newTarget.toString() }, { onConflict: 'key' });
+              if (!error) {
+                setRevenueTarget(parseFloat(newTarget));
+                setStats(prev => ({ ...prev, target: parseFloat(newTarget) }));
+                alert('Target updated!');
+              } else {
+                alert('Failed to update target');
+              }
+            }
+          }}>
+            <Target size={20} /> Set Revenue Target
+          </button>
+        )}
         <button className="action-card">
-          <Calendar size={20} /> Schedule Revenue Review
+          <Calendar size={20} /> Schedule Review
         </button>
         <button className="action-card">
           <Filter size={20} /> Advanced Filters
-        </button>
-        <button className="action-card">
-          <DollarSign size={20} /> Forecast Next Period
         </button>
       </div>
     </div>

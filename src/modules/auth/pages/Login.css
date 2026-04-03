@@ -1,304 +1,311 @@
 /* src/modules/auth/pages/Login.css */
 
-/* =================== ROOT CONTAINER =================== */
+/* Light mode variables */
+:root {
+  --login-bg: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  --login-card-bg: white;
+  --login-text-primary: #333;
+  --login-text-secondary: #666;
+  --login-border: #e0e0e0;
+  --login-input-bg: white;
+  --login-input-border: #e0e0e0;
+  --login-button-bg: #007bff;
+  --login-button-hover: #0056b3;
+  --login-google-button-bg: white;
+  --login-google-button-hover: #f8f9fa;
+  --login-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  --login-overlay: rgba(0, 0, 0, 0.4);
+}
+
+/* Dark mode */
+.dark {
+  --login-bg: #0f172a;
+  --login-card-bg: #1e293b;
+  --login-text-primary: #f1f5f9;
+  --login-text-secondary: #94a3b8;
+  --login-border: #334155;
+  --login-input-bg: #334155;
+  --login-input-border: #475569;
+  --login-button-bg: #3b82f6;
+  --login-button-hover: #2563eb;
+  --login-google-button-bg: #334155;
+  --login-google-button-hover: #475569;
+  --login-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  --login-overlay: rgba(0, 0, 0, 0.6);
+}
+
+/* Page container with video background */
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.login-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.bg-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bg-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--login-overlay);
+}
+
 .login-container {
-    /* Center the login card vertically and horizontally */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 1rem;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  }
-  
-  /* =================== LOGIN CARD =================== */
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 450px;
+  padding: 1rem;
+}
+
+.login-card {
+  background: var(--login-card-bg);
+  border-radius: 1rem;
+  box-shadow: var(--login-shadow);
+  padding: 2.5rem;
+  transition: box-shadow 0.2s; /* no transform to prevent movement */
+}
+
+/* Typography */
+.login-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--login-text-primary);
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.login-subtitle {
+  font-size: 1rem;
+  color: var(--login-text-secondary);
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+/* Error alert */
+.error-alert {
+  background: #fee;
+  border: 1px solid #f99;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+.dark .error-alert {
+  background: #3b1e1e;
+  border-color: #ef4444;
+}
+.error-text {
+  color: #c00;
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+.dark .error-text {
+  color: #f87171;
+}
+
+/* Form */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.form-label {
+  font-weight: 600;
+  color: var(--login-text-primary);
+  font-size: 0.95rem;
+}
+.form-input {
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--login-input-border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background: var(--login-input-bg);
+  color: var(--login-text-primary);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.form-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+.dark .form-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+.password-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;        /* Adjust as needed – pushes to the right edge */
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--login-text-secondary);
+  padding: 8px;       /* Increases clickable area */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ensure the input has enough right padding so text doesn't overlap the icon */
+.form-input {
+  padding-right: 44px;  /* Space for the toggle button */
+}
+.submit-button {
+  background: var(--login-button-bg);
+  color: white;
+  padding: 0.875rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.submit-button:hover:not(:disabled) {
+  background: var(--login-button-hover);
+}
+.submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.forgot-password {
+  text-align: center;
+  margin-top: -0.5rem;
+}
+.forgot-link {
+  color: var(--login-text-secondary);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.forgot-link:hover {
+  color: #007bff;
+  text-decoration: underline;
+}
+.dark .forgot-link:hover {
+  color: #60a5fa;
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 1.5rem 0;
+  color: var(--login-text-secondary);
+}
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--login-border);
+}
+.divider-text {
+  padding: 0 1rem;
+  font-size: 0.9rem;
+}
+
+/* Google button */
+.google-button {
+  width: 100%;
+  background: var(--login-google-button-bg);
+  color: var(--login-text-primary);
+  padding: 0.875rem;
+  border: 2px solid var(--login-border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+.google-button:hover:not(:disabled) {
+  background: var(--login-google-button-hover);
+  border-color: #007bff;
+}
+.google-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Registration link */
+.registration-link {
+  text-align: center;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--login-border);
+}
+.registration-text {
+  color: var(--login-text-secondary);
+  font-size: 0.95rem;
+}
+.registration-action {
+  color: #007bff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.registration-action:hover {
+  text-decoration: underline;
+}
+.dark .registration-action {
+  color: #60a5fa;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
   .login-card {
-    /* Card styling */
-    width: 100%;
-    max-width: 450px;
-    background: white;
-    border-radius: 1rem;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-    padding: 2.5rem;
-    transition: transform 0.3s ease;
+    padding: 1.5rem;
   }
-  
-  .login-card:hover {
-    /* Subtle hover effect for better UX */
-    transform: translateY(-5px);
-  }
-  
-  /* =================== TYPOGRAPHY =================== */
   .login-title {
-    /* Main heading */
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: #007bff;
-    margin-bottom: 0.5rem;
-    text-align: center;
+    font-size: 1.5rem;
   }
-  
   .login-subtitle {
-    /* Subtitle text */
-    font-size: 1rem;
-    color: #666;
-    text-align: center;
-    margin-bottom: 2rem;
-    line-height: 1.5;
-  }
-  
-  /* =================== ERROR DISPLAY =================== */
-  .error-alert {
-    /* Container for error messages */
-    background: #fee;
-    border: 1px solid #f99;
-    border-radius: 0.5rem;
-    padding: 1rem;
-    margin-bottom: 1.5rem;
-  }
-  
-  .error-text {
-    /* Individual error message */
-    color: #c00;
-    margin: 0.25rem 0;
-    font-size: 0.9rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  /* =================== FORM STYLES =================== */
-  .login-form {
-    /* Form container */
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  
-  .form-group {
-    /* Individual form field container */
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .form-label {
-    /* Field labels */
-    font-weight: 600;
-    color: #333;
-    font-size: 0.95rem;
-  }
-  
-  .form-input,
-  .form-select {
-    /* Input and select fields */
-    padding: 0.75rem 1rem;
-    border: 2px solid #e0e0e0;
-    border-radius: 0.5rem;
-    font-size: 1rem;
-    transition: all 0.3s ease;
-    background: white;
-  }
-  
-  .form-input:focus,
-  .form-select:focus {
-    /* Focus state for better accessibility */
-    outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-  }
-  
-  .form-input:disabled,
-  .form-select:disabled {
-    /* Disabled state styling */
-    background: #f5f5f5;
-    cursor: not-allowed;
-    opacity: 0.7;
-  }
-  
-  .form-help {
-    /* Help text below fields */
-    font-size: 0.85rem;
-    color: #666;
-    margin-top: 0.25rem;
-  }
-  
-  /* =================== BUTTONS =================== */
-  .submit-button {
-    /* Primary submit button */
-    background: #007bff;
-    color: white;
-    padding: 0.875rem;
-    border: none;
-    border-radius: 0.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .submit-button:hover:not(:disabled) {
-    /* Hover state */
-    background: #0056b3;
-  }
-  
-  .submit-button:disabled {
-    /* Disabled state */
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  .submit-button .spinner {
-    /* Loading spinner */
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    border-top-color: white;
-    animation: spin 1s linear infinite;
-  }
-  
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  
-  /* =================== FORGOT PASSWORD =================== */
-  .forgot-password {
-    /* Forgot password link container */
-    text-align: center;
-    margin-top: -0.5rem;
-  }
-  
-  .forgot-link {
-    /* Forgot password link */
-    color: #666;
-    font-size: 0.9rem;
-    text-decoration: none;
-    transition: color 0.3s ease;
-  }
-  
-  .forgot-link:hover {
-    color: #007bff;
-    text-decoration: underline;
-  }
-  
-  /* =================== DIVIDER =================== */
-  .divider {
-    /* Horizontal divider between form and Google sign-in */
-    display: flex;
-    align-items: center;
-    margin: 1.5rem 0;
-    color: #999;
-  }
-  
-  .divider::before,
-  .divider::after {
-    /* Lines on either side of "OR" */
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: #e0e0e0;
-  }
-  
-  .divider-text {
-    /* "OR" text */
-    padding: 0 1rem;
     font-size: 0.9rem;
   }
-  
-  /* =================== GOOGLE BUTTON =================== */
-  .google-button {
-    /* Google sign-in button */
-    width: 100%;
-    background: white;
-    color: #333;
-    padding: 0.875rem;
-    border: 2px solid #e0e0e0;
-    border-radius: 0.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 0.75rem;
+  .form-input, .submit-button, .google-button {
+    padding: 0.75rem;
   }
-  
-  .google-button:hover:not(:disabled) {
-    /* Hover state */
-    background: #f8f9fa;
-    border-color: #007bff;
-    transform: translateY(-2px);
-  }
-  
-  .google-button:disabled {
-    /* Disabled state */
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  .google-icon {
-    /* Google logo */
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-  
-  /* =================== REGISTRATION LINK =================== */
-  .registration-link {
-    /* Registration prompt container */
-    text-align: center;
-    margin-top: 1.5rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid #e0e0e0;
-  }
-  
-  .registration-text {
-    /* Registration text */
-    color: #666;
-    font-size: 0.95rem;
-    margin: 0;
-  }
-  
-  .registration-action {
-    /* Registration link */
-    color: #007bff;
-    font-weight: 600;
-    text-decoration: none;
-    transition: color 0.3s ease;
-  }
-  
-  .registration-action:hover {
-    color: #0056b3;
-    text-decoration: underline;
-  }
-  
-  /* =================== RESPONSIVE DESIGN =================== */
-  @media (max-width: 480px) {
-    /* Mobile-specific adjustments */
-    .login-card {
-      padding: 1.5rem;
-      border-radius: 0.75rem;
-    }
-    
-    .login-title {
-      font-size: 1.5rem;
-    }
-    
-    .login-subtitle {
-      font-size: 0.9rem;
-    }
-    
-    .form-input,
-    .form-select,
-    .submit-button,
-    .google-button {
-      padding: 0.75rem;
-    }
-  }
+}
+
+.google-button.coming-soon {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #6c757d;
+  border-color: #6c757d;
+  color: white;
+}
+.google-button.coming-soon:hover {
+  background: #6c757d;
+  transform: none;
+}

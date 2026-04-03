@@ -8,9 +8,14 @@ import PublicLayout from '../shared/components/layout/PublicLayout';
 import ForceSingleLayout from '../components/ForceSingleLayout';
 import AuthCallback from '../modules/auth/pages/AuthCallback';
 import ErrorBoundary from '../shared/components/ErrorBoundary';
+import ForgotPassword from '../modules/auth/pages/ForgotPassword';
+import ResetPassword from '../modules/auth/pages/ResetPassword';
+import Terms from '../modules/auth/pages/Terms';
+import Privacy from '../modules/auth/pages/Privacy';
+import RentEasyLoader from '../shared/components/RentEasyLoader';
 
 // Loading Components
-const DashboardLoading = () => (
+{/*const DashboardLoading = () => (
   <div style={{ 
     display: 'flex', 
     justifyContent: 'center', 
@@ -47,6 +52,7 @@ const SuperAdminLoading = () => (
     <p style={{ fontSize: '14px', color: '#666' }}>Highest privilege level • Secure access</p>
   </div>
 );
+*/}
 
 // ========== LAYOUT COMPONENTS ==========
 const LandlordLayout = lazy(() => import('../modules/dashboard/components/landlord/LandlordLayout'));
@@ -86,7 +92,7 @@ const ManagerSetup = lazy(() => import('../modules/manager/pages/ManagerSetup'))
 const ManagerNotifications = lazy(() => import('../modules/manager/pages/ManagerNotifications'));
 const ManagerChats = lazy(() => import('../modules/manager/pages/ManagerChats'));
 const ManagerProperties = lazy(() => import('../modules/manager/pages/ManagerProperties'));
-//const ManagerPayments = lazy(() => import('../modules/manager/pages/ManagerPayments'));
+const ManagerPayments = lazy(() => import('../modules/manager/pages/ManagerPayments'));
 const ManagerKYC = lazy(() => import('../modules/manager/pages/ManagerKYC'));
 const ManagerRadius = lazy(() => import('../modules/manager/pages/ManagerRadius'));
 const ManagerChatMonitoring = lazy(() => import('../modules/manager/components/ManagerChatMonitoring'));
@@ -176,8 +182,8 @@ const AdminStates = lazy(() => import('../modules/super-admin/pages/AdminStates'
 const ProviderDashboard = lazy(() => import('../modules/providers/pages/ProviderDashboard'));
 const ProviderProfile = lazy(() => import('../modules/providers/pages/ProviderProfile'));
 const ProviderServices = lazy(() => import('../modules/providers/pages/ProviderServices'));
-//const ProviderSubscription = lazy(() => import('../modules/providers/pages/ProviderSubscription'));
-//const ProviderSubscribe = lazy(() => import('../modules/providers/pages/ProviderSubscribe'));
+const ProviderSubscription = lazy(() => import('../modules/providers/pages/ProviderSubscription'));
+const ProviderSubscribe = lazy(() => import('../modules/providers/pages/ProviderSubscribe'));
 const ProviderBilling = lazy(() => import('../modules/providers/pages/ProviderBilling'));
 const ProviderLeads = lazy(() => import('../modules/providers/pages/ProviderLeads'));
 const ProviderBookings = lazy(() => import('../modules/providers/pages/ProviderBookings'));
@@ -233,6 +239,10 @@ const AppRoutes = () => {
   <Route path="/" element={<Home />} />
   <Route path="/login" element={<Login />} />
   <Route path="/signup" element={<Signup />} />
+  <Route path="/forgot-password" element={<ForgotPassword />} />
+  <Route path="/reset-password" element={<ResetPassword />} />
+  <Route path="/terms" element={<Terms />} />
+  <Route path="/privacy" element={<Privacy />} />
 </Route>
 
 <Route path="/auth/callback" element={<AuthCallback />} />
@@ -241,7 +251,7 @@ const AppRoutes = () => {
 <Route 
   path="/accept-invite/:token" 
   element={
-    <Suspense fallback={<DashboardLoading />}>
+    <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
       <AcceptInvite />
     </Suspense>
   } 
@@ -251,7 +261,7 @@ const AppRoutes = () => {
 <Route 
   path="/super-admin/login" 
   element={
-    <Suspense fallback={<SuperAdminLoading />}>
+    <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
       <SuperAdminLogin />
     </Suspense>
   }
@@ -262,7 +272,7 @@ const AppRoutes = () => {
         path="/super-admin/*"
         element={
           <PrivateRoute allowedRoles={['super-admin']} redirectTo="/super-admin/login">
-            <Suspense fallback={<SuperAdminLoading />}>
+            <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
               <SuperAdminLayout />
             </Suspense>
           </PrivateRoute>
@@ -290,7 +300,7 @@ const AppRoutes = () => {
         path="/admin/*"
         element={
           <PrivateRoute allowedRoles={['admin']}>
-            <Suspense fallback={<AdminLoading />}>
+            <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
               <AdminLayout />
             </Suspense>
           </PrivateRoute>
@@ -321,7 +331,7 @@ const AppRoutes = () => {
         element={
           <PrivateRoute allowedRoles={['tenant']}>
             <ForceSingleLayout>
-            <Suspense fallback={<DashboardLoading />}>
+            <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
               <TenantSidebarLayout />
             </Suspense>
           </ForceSingleLayout>
@@ -352,7 +362,7 @@ const AppRoutes = () => {
   element={
     <PrivateRoute allowedRoles={['landlord']}>
       <ForceSingleLayout>
-        <Suspense fallback={<DashboardLoading />}>
+         <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
           <LandlordLayout />
         </Suspense>
       </ForceSingleLayout>
@@ -378,7 +388,7 @@ const AppRoutes = () => {
         path="/dashboard/manager/*"
         element={
           <PrivateRoute allowedRoles={['manager']}>
-            <Suspense fallback={<DashboardLoading />}>
+             <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
               <ManagerLayout />
             </Suspense>
           </PrivateRoute>
@@ -389,7 +399,7 @@ const AppRoutes = () => {
         <Route path="notifications" element={<ManagerNotifications />} />
         <Route path="chats" element={<ManagerChats />} />
         <Route path="properties" element={<ManagerProperties />} />
-        {/*<Route path="payments" element={<ManagerPayments />} />*/}
+        <Route path="payments" element={<ManagerPayments />} />
         <Route path="kyc" element={<ManagerKYC />} />
         <Route path="radius" element={<ManagerRadius />} />
         <Route path="commission" element={<ManagerCommission />} />
@@ -405,7 +415,7 @@ const AppRoutes = () => {
         path="/dashboard/provider/*"
         element={
           <PrivateRoute allowedRoles={['provider', 'service-provider']}>
-            <Suspense fallback={<DashboardLoading />}>
+             <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
               <ProviderLayout />
             </Suspense>
           </PrivateRoute>
@@ -414,8 +424,8 @@ const AppRoutes = () => {
         <Route index element={<ProviderDashboard />} />
         <Route path="profile" element={<ProviderProfile />} />
         <Route path="marketplace-profile" element={<ProviderMarketplaceProfile />} />
-       {/* <Route path="subscription" element={<ProviderSubscription />} />
-        <Route path="subscribe" element={<ProviderSubscribe />} /> */}
+        <Route path="subscription" element={<ProviderSubscription />} />
+        <Route path="subscribe" element={<ProviderSubscribe />} />
         <Route path="billing" element={<ProviderBilling />} />
         <Route path="leads" element={<ProviderLeads />} />
         <Route path="bookings" element={<ProviderBookings />} />
@@ -456,7 +466,7 @@ const AppRoutes = () => {
         path="/dashboard/estate-firm/*"
         element={
           <PrivateRoute allowedRoles={['estate-firm', 'estate_firm']}>
-            <Suspense fallback={<DashboardLoading />}>
+             <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
               <EstateFirmLayout />
             </Suspense>
           </PrivateRoute>
@@ -493,7 +503,7 @@ const AppRoutes = () => {
       <Route 
         path="/post-property" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute allowedRoles={['landlord', 'estate-firm', 'estate_firm']}>
               <PostPropertyPage />
             </PrivateRoute>
@@ -505,7 +515,7 @@ const AppRoutes = () => {
       <Route 
         path="/dashboard/messages" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute>
               <ChatListPage />
             </PrivateRoute>
@@ -516,7 +526,7 @@ const AppRoutes = () => {
       <Route 
         path="/dashboard/messages/:listingId" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute>
               <Messages />
             </PrivateRoute>
@@ -527,7 +537,7 @@ const AppRoutes = () => {
       <Route 
         path="/dashboard/messages/chat/:chatId" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute>
               <Messages />
             </PrivateRoute>
@@ -539,7 +549,7 @@ const AppRoutes = () => {
       <Route 
         path="/listings/:id" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+          <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <ListingDetailsPage />
           </Suspense>
         } 
@@ -548,7 +558,7 @@ const AppRoutes = () => {
       <Route 
         path="/listings" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading Properties.." fullScreen />}>
             <ListingsPage />
           </Suspense>
         } 
@@ -557,7 +567,7 @@ const AppRoutes = () => {
       <Route 
   path="/services" 
   element={
-    <Suspense fallback={<DashboardLoading />}>
+     <Suspense fallback={<RentEasyLoader message= "Loading Services.." fullScreen />}>
       <MarketplacePage />
     </Suspense>
   } 
@@ -566,7 +576,7 @@ const AppRoutes = () => {
 <Route 
   path="/services/:id" 
   element={
-    <Suspense fallback={<DashboardLoading />}>
+     <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
       <ServiceDetailsPage />
     </Suspense>
   } 
@@ -575,7 +585,7 @@ const AppRoutes = () => {
 <Route 
   path="/marketplace" 
   element={
-    <Suspense fallback={<DashboardLoading />}>
+     <Suspense fallback={<RentEasyLoader message= "Loading Market.." fullScreen />}>
       <ErrorBoundary>
         <MarketplacePage />
       </ErrorBoundary>
@@ -586,7 +596,7 @@ const AppRoutes = () => {
 <Route 
   path="/provider/:providerId/reviews" 
   element={
-    <Suspense fallback={<DashboardLoading />}>
+     <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
       <ProviderReviews />
     </Suspense>
   } 
@@ -594,7 +604,7 @@ const AppRoutes = () => {
 <Route 
   path="/write-review/:providerId" 
   element={
-    <Suspense fallback={<DashboardLoading />}>
+     <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
       <WriteReview />
     </Suspense>
   } 
@@ -604,7 +614,7 @@ const AppRoutes = () => {
       <Route 
         path="/verify" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute>
               <VerificationHub />
             </PrivateRoute>
@@ -615,7 +625,7 @@ const AppRoutes = () => {
       <Route 
         path="/verify/form" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute>
               <VerificationForm />
             </PrivateRoute>
@@ -626,7 +636,7 @@ const AppRoutes = () => {
       <Route 
         path="/verify/status" 
         element={
-          <Suspense fallback={<DashboardLoading />}>
+           <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
             <PrivateRoute>
               <VerificationStatus />
             </PrivateRoute>

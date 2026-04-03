@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { messagesService } from '../../../shared/services/messagesService';
+import Header from '../../../shared/components/Header';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { Home, Shield, Paperclip, X, Image, Video, File } from 'lucide-react';
 import './Messages.css';
@@ -884,6 +885,7 @@ const Messages = () => {
 
   return (
     <div className="messages-page">
+      <Header />
       <div className="messages-container">
         {/* Role Banner for Staff */}
         {user.role === 'estate-firm' && isStaff && staffRole === 'associate' && (

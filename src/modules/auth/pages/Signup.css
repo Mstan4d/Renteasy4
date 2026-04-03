@@ -1,226 +1,294 @@
 /* src/modules/auth/pages/Signup.css */
+
+/* Light mode */
+:root {
+  --signup-bg: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  --signup-card-bg: white;
+  --signup-text-primary: #333;
+  --signup-text-secondary: #666;
+  --signup-border: #e0e0e0;
+  --signup-input-bg: white;
+  --signup-input-border: #e0e0e0;
+  --signup-button-bg: #007bff;
+  --signup-button-hover: #0056b3;
+  --signup-google-button-bg: white;
+  --signup-google-button-hover: #f8f9fa;
+  --signup-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode */
+.dark {
+  --signup-bg: #0f172a;
+  --signup-card-bg: #1e293b;
+  --signup-text-primary: #f1f5f9;
+  --signup-text-secondary: #94a3b8;
+  --signup-border: #334155;
+  --signup-input-bg: #334155;
+  --signup-input-border: #475569;
+  --signup-button-bg: #3b82f6;
+  --signup-button-hover: #2563eb;
+  --signup-google-button-bg: #334155;
+  --signup-google-button-hover: #475569;
+  --signup-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
 .signup-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  background: var(--signup-bg);
+  padding: 1rem;
 }
 
 .signup-container {
   width: 100%;
-  max-width: 400px;
+  max-width: 550px;
 }
 
 .signup-card {
-  background: white;
-  border-radius: 12px;
-  padding: 40px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  background: var(--signup-card-bg);
+  border-radius: 1rem;
+  box-shadow: var(--signup-shadow);
+  padding: 2rem;
 }
 
 .signup-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 1.5rem;
 }
-
 .signup-header h2 {
-  margin: 0;
-  color: #333;
-  font-size: 28px;
-  font-weight: 600;
+  color: var(--signup-text-primary);
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
 }
-
 .signup-header p {
-  color: #666;
-  margin: 8px 0 0;
-  font-size: 15px;
+  color: var(--signup-text-secondary);
 }
 
+/* Error alert */
 .error-alert {
   background: #fee;
   border: 1px solid #f99;
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 20px;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
 }
-
+.dark .error-alert {
+  background: #3b1e1e;
+  border-color: #ef4444;
+}
 .error-text {
-  margin: 0;
   color: #c00;
-  font-size: 14px;
+  margin: 0.25rem 0;
+}
+.dark .error-text {
+  color: #f87171;
 }
 
+/* Form */
 .signup-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 1.25rem;
 }
-
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.5rem;
 }
-
 .form-group label {
-  font-weight: 500;
-  color: #333;
-  font-size: 14px;
-}
-
-.form-group input,
-.form-group select {
-  padding: 12px;
-  border: 2px solid #ddd;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 0.3s;
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.form-group small {
-  color: #888;
-  font-size: 12px;
-  margin-top: 4px;
-}
-
-.terms-group {
-  margin: 10px 0;
-}
-
-.terms-group label {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.terms-group input[type="checkbox"] {
-  margin-top: 3px;
-}
-
-.terms-group a {
-  color: #667eea;
-  text-decoration: none;
-}
-
-.terms-group a:hover {
-  text-decoration: underline;
-}
-
-.submit-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 14px;
-  border-radius: 8px;
-  font-size: 16px;
   font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.3s;
+  color: var(--signup-text-primary);
+  font-size: 0.95rem;
 }
-
-.submit-btn:hover:not(:disabled) {
-  opacity: 0.9;
+.form-group input, .form-group select {
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--signup-input-border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background: var(--signup-input-bg);
+  color: var(--signup-text-primary);
 }
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.form-group input:focus, .form-group select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
 }
-
-.login-link {
-  text-align: center;
-  margin-top: 20px;
-  color: #666;
-  font-size: 14px;
+.dark .form-group input:focus, .dark .form-group select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
-
-.login-link a {
-  color: #667eea;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.login-link a:hover {
-  text-decoration: underline;
-}
-
-/* src/modules/auth/pages/Signup.css */
-/* Add to existing CSS */
-
-/* Password input wrapper */
-.password-group {
-  position: relative;
-}
-
 .password-input-wrapper {
   position: relative;
-  display: flex;
-  align-items: center;
 }
-
-.password-input-wrapper input {
+.password-input-wrapper {
+  position: relative;
   width: 100%;
-  padding-right: 45px; /* Space for eye button */
 }
 
-/* Password toggle button */
 .password-toggle {
   position: absolute;
-  right: 12px;
+  right: 10px;        /* Adjust as needed – pushes to the right edge */
+  top: 50%;
+  transform: translateY(-50%);
   background: none;
   border: none;
-  color: #888;
   cursor: pointer;
+  color: var(--login-text-secondary);
+  padding: 8px;       /* Increases clickable area */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  border-radius: 4px;
-  transition: color 0.3s, background-color 0.3s;
 }
 
-.password-toggle:hover {
-  color: #667eea;
-  background-color: rgba(102, 126, 234, 0.1);
+/* Ensure the input has enough right padding so text doesn't overlap the icon */
+.form-input {
+  padding-right: 45px;  /* Space for the toggle button */
 }
-
-.password-toggle:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+small {
+  color: var(--signup-text-secondary);
+  font-size: 0.75rem;
 }
-
-.password-toggle:active {
-  transform: scale(0.95);
+.terms-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
-
-/* Adjust spacing for eye icon */
-.form-group input {
+.terms-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  color: var(--signup-text-primary);
+}
+.terms-group a {
+  color: #007bff;
+  text-decoration: none;
+}
+.dark .terms-group a {
+  color: #60a5fa;
+}
+.submit-btn {
+  background: var(--signup-button-bg);
+  color: white;
+  padding: 0.875rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.submit-btn:hover:not(:disabled) {
+  background: var(--signup-button-hover);
+}
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+  color: var(--signup-text-secondary);
+}
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--signup-border);
+}
+.divider-text {
+  padding: 0 1rem;
+  font-size: 0.9rem;
+}
+.google-button {
   width: 100%;
-  padding: 12px;
-  border: 2px solid #ddd;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 0.3s;
-  box-sizing: border-box; /* Ensure padding doesn't affect width */
+  background: var(--signup-google-button-bg);
+  color: var(--signup-text-primary);
+  padding: 0.875rem;
+  border: 2px solid var(--signup-border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+.google-button:hover:not(:disabled) {
+  background: var(--signup-google-button-hover);
+  border-color: #007bff;
+}
+.google-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.login-link {
+  text-align: center;
+  margin-top: 0.5rem;
+  color: var(--signup-text-secondary);
+}
+.login-link a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 500;
+}
+.dark .login-link a {
+  color: #60a5fa;
 }
 
-/* Ensure the eye doesn't cover text */
-.password-input-wrapper input:not(:placeholder-shown) {
-  padding-right: 45px;
+@media (max-width: 480px) {
+  .signup-card {
+    padding: 1.5rem;
+  }
 }
 
-/* Accessibility: focus states */
-.password-toggle:focus-visible {
-  outline: 2px solid #667eea;
-  outline-offset: 2px;
+.facebook-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #4267B2;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.facebook-button:hover:not(:disabled) {
+  background-color: #365899;
+}
+.facebook-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.facebook-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.social-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.google-button.coming-soon {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #6c757d;
+  border-color: #6c757d;
+  color: white;
+}
+.google-button.coming-soon:hover {
+  background: #6c757d;
+  transform: none;
 }

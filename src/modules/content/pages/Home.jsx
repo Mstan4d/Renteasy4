@@ -71,6 +71,7 @@ const Home = () => {
     fetchListingsFromSupabase();
   }, [userLocation.state, userLocation.lga, boostedUserIds]);
 
+
   const fetchListingsFromSupabase = async () => {
     try {
       setLoading(true);
@@ -415,6 +416,7 @@ const Home = () => {
           </>
         )}
       </section>
+
 
       {/* PROMO CARDS & STATS – unchanged */}
       <section className="promo-section">

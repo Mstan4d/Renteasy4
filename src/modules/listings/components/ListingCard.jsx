@@ -5,7 +5,6 @@ import './ListingCard.css';
 
 const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [showExtraDetails, setShowExtraDetails] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState(0);
@@ -13,34 +12,21 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   const [lightboxTouchStart, setLightboxTouchStart] = useState(0);
   const [lightboxTouchEnd, setLightboxTouchEnd] = useState(0);
 
-  const cardRef = useRef(null);
   const videoRef = useRef(null);
 
   const fallbackImage = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&h=400&fit=crop';
   
   // Combine images and videos into a single media array
   const mediaItems = [];
-  
-  // Add images
   if (listing.images?.length) {
-    listing.images.forEach(img => {
-      mediaItems.push({ type: 'image', url: img });
-    });
+    listing.images.forEach(img => mediaItems.push({ type: 'image', url: img }));
   }
-  
-  // Add videos (single video URL)
   if (listing.video_url) {
     mediaItems.push({ type: 'video', url: listing.video_url });
   }
-  
-  // Add multiple video URLs
   if (listing.video_urls?.length) {
-    listing.video_urls.forEach(video => {
-      mediaItems.push({ type: 'video', url: video });
-    });
+    listing.video_urls.forEach(video => mediaItems.push({ type: 'video', url: video }));
   }
-  
-  // If no media, use fallback
   if (mediaItems.length === 0) {
     mediaItems.push({ type: 'image', url: fallbackImage });
   }
@@ -60,11 +46,8 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   const handleTouchStart = (e) => setTouchStartX(e.touches[0].clientX);
   const handleTouchMove = (e) => setTouchEndX(e.touches[0].clientX);
   const handleTouchEnd = () => {
-    if (touchStartX - touchEndX > 50) {
-      nextMedia({ stopPropagation: () => {} });
-    } else if (touchEndX - touchStartX > 50) {
-      prevMedia({ stopPropagation: () => {} });
-    }
+    if (touchStartX - touchEndX > 50) nextMedia({ stopPropagation: () => {} });
+    else if (touchEndX - touchStartX > 50) prevMedia({ stopPropagation: () => {} });
   };
 
   const openLightbox = (index, e) => {
@@ -75,10 +58,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
 
   const closeLightbox = () => {
     setLightboxOpen(false);
-    // Pause video if playing
-    if (videoRef.current) {
-      videoRef.current.pause();
-    }
+    if (videoRef.current) videoRef.current.pause();
   };
 
   const nextLightboxImage = (e) => {
@@ -94,24 +74,24 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   const handleLightboxTouchStart = (e) => setLightboxTouchStart(e.touches[0].clientX);
   const handleLightboxTouchMove = (e) => setLightboxTouchEnd(e.touches[0].clientX);
   const handleLightboxTouchEnd = () => {
-    if (lightboxTouchStart - lightboxTouchEnd > 50) {
-      nextLightboxImage({ stopPropagation: () => {} });
-    } else if (lightboxTouchEnd - lightboxTouchStart > 50) {
-      prevLightboxImage({ stopPropagation: () => {} });
-    }
+    if (lightboxTouchStart - lightboxTouchEnd > 50) nextLightboxImage({ stopPropagation: () => {} });
+    else if (lightboxTouchEnd - lightboxTouchStart > 50) prevLightboxImage({ stopPropagation: () => {} });
   };
 
+  // Card click handler: navigate to detail page, unless clicking on interactive elements
   const handleCardClick = (e) => {
     const target = e.target;
-    const isInteractive = target.closest('.carousel-btn') || 
-                         target.closest('.dot') ||
-                         target.closest('.btn') ||
-                         target.closest('.listing-image') ||
-                         target.closest('.play-overlay') ||
-                         target.closest('.verified-badge') ||
-                         target.closest('video');
+    const isInteractive = target.closest('.carousel-btn') ||
+                          target.closest('.dot') ||
+                          target.closest('.listing-image') ||
+                          target.closest('.play-overlay') ||
+                          target.closest('.video-thumbnail') ||
+                          target.closest('.badge') ||
+                          target.closest('.estate-firm-badge') ||
+                          target.closest('.pending-badge') ||
+                          target.closest('video');
     if (!isInteractive) {
-      setShowExtraDetails(!showExtraDetails);
+      onViewDetails(); // navigate to detail page
     }
   };
 
@@ -123,10 +103,9 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
 
   const getRoleIcon = () => {
     switch(listing.posterRole) {
-      case 'estate-firm': return <Building size={14} />;
-      case 'landlord': return <Home size={14} />;
-      case 'tenant': return <User size={14} />;
-      default: return <User size={14} />;
+      case 'estate-firm': return <Building size={12} />;
+      case 'landlord': return <Home size={12} />;
+      default: return <User size={12} />;
     }
   };
 
@@ -153,19 +132,12 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
   const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
   const totalPrice = basePrice + commission + totalExtraFees;
 
-  const commissionBreakdown = isEstateFirm ? null : {
-    rentEasy: commission * (3.5 / 7.5),
-    manager: commission * (2.5 / 7.5),
-    referral: commission * (1.5 / 7.5),
-  };
-
   const currentMedia = mediaItems[currentImageIndex];
 
   return (
     <>
       <div 
         className={`listing-card ${!listing.verified ? 'unverified' : ''} ${listing.posterRole || ''}`}
-        ref={cardRef}
         onClick={handleCardClick}
       >
         {/* Media Carousel */}
@@ -185,7 +157,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
                 preload="metadata"
               />
               <div className="play-overlay">
-                <Play size={32} />
+                <Play size={28} />
               </div>
             </div>
           ) : (
@@ -207,13 +179,13 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             )}
             {listing.posterRole === 'estate-firm' && (
               <div className="estate-firm-badge">
-                <Building size={14} />
+                <Building size={12} />
                 <span>0% Commission</span>
               </div>
             )}
             {!listing.verified && !listing.userVerified && listing.posterRole !== 'estate-firm' && (
               <div className="pending-badge">
-                <Clock size={14} />
+                <Clock size={12} />
                 <span>Pending</span>
               </div>
             )}
@@ -236,7 +208,7 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
           )}
         </div>
 
-        {/* Content - unchanged from your original */}
+        {/* Content – compact */}
         <div className="listing-content">
           <h3 className="listing-title">{listing.title}</h3>
           
@@ -244,13 +216,13 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             <span className="property-type">{listing.property_type || listing.propertyType}</span>
             <span className="separator">•</span>
             <span className="location">
-              <MapPin size={14} />
+              <MapPin size={12} />
               {listing.state} / {listing.lga}
             </span>
           </div>
 
           <p className="listing-description">
-            {listing.description?.substring(0, 100)}...
+            {listing.description?.substring(0, 80)}...
           </p>
 
           {/* Price Summary */}
@@ -271,72 +243,18 @@ const ListingCard = ({ listing, onViewDetails, onContact, onVerify, userRole }) 
             </div>
           </div>
 
-          {/* Extra Details */}
-          {showExtraDetails && (
-            <div className="extra-details" onClick={(e) => e.stopPropagation()}>
-              {!isEstateFirm && commissionBreakdown && (
-                <div className="commission-breakdown">
-                  <p><strong>Commission Breakdown:</strong></p>
-                  <p>RentEasy: {formatPrice(commissionBreakdown.rentEasy)} (3.5%)</p>
-                  <p>Manager: {formatPrice(commissionBreakdown.manager)} (2.5%)</p>
-                  <p>Referral: {formatPrice(commissionBreakdown.referral)} (1.5%)</p>
-                </div>
-              )}
-              {extraFees.length > 0 && (
-                <div className="extra-fees-details">
-                  <p><strong>Additional Fees:</strong></p>
-                  {extraFees.map((fee, idx) => (
-                    <div key={idx} className="fee-detail-row">
-                      <span>{fee.name}{fee.description && <small> ({fee.description})</small>}:</span>
-                      <span>{formatPrice(fee.amount)}</span>
-                    </div>
-                  ))}
-                  <div className="fee-total-row">
-                    <span>Total Additional Fees:</span>
-                    <span>{formatPrice(totalExtraFees)}</span>
-                  </div>
-                </div>
-              )}
-              <div className="poster-info">
-                {getRoleIcon()}
-                <span>
-                  Posted by {listing.posterName || 'Anonymous'} • {getRoleLabel()}
-                </span>
-                <span className="listing-date">
-                  {formatDate(listing.created_at || listing.posted_date)}
-                </span>
-              </div>
-
-              {/* Actions */}
-              <div className="listing-actions">
-                <button 
-                  className="btn btn-outline view-btn"
-                  onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
-                >
-                  View Details
-                </button>
-                <button 
-                  className="btn btn-primary contact-btn"
-                  onClick={(e) => { e.stopPropagation(); onContact(); }}
-                >
-                  Contact
-                </button>
-                
-                {(userRole === 'admin' || userRole === 'manager') && !listing.verified && (
-                  <button 
-                    className="btn btn-success verify-btn"
-                    onClick={(e) => { e.stopPropagation(); onVerify(); }}
-                  >
-                    Verify
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+          {/* Poster info – inline, no extra details */}
+          <div className="poster-info" style={{ marginTop: '8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b' }}>
+            {getRoleIcon()}
+            <span>Posted by {listing.posterName || 'Anonymous'} • {getRoleLabel()}</span>
+            <span className="listing-date" style={{ marginLeft: 'auto' }}>
+              {formatDate(listing.created_at || listing.posted_date)}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Lightbox Modal */}
+      {/* Lightbox Modal (unchanged) */}
       {lightboxOpen && (
         <div className="lightbox-overlay" onClick={closeLightbox}>
           <div 

@@ -11,6 +11,7 @@ import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { messagesService } from '../../../shared/services/messagesService';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import Header from '../../../shared/components/Header';
 import { locationService } from '../../../shared/services/locationService';
 import './Marketplace.css';
 
@@ -447,24 +448,26 @@ const MarketplacePage = () => {
       </div>
     );
   }
+  
 
   return (
     <div className="marketplace-container">
-      {/* Header */}
-      <div className="marketplace-header">
-        <div className="header-content">
-          <h1>Professional Services Marketplace</h1>
-          <p className="subtitle">
-            Find trusted estate firms and service providers. <span className="highlight">Verified</span> and <span className="highlight">Boosted</span> listings highlighted.
-          </p>
-          {userLocation && (
-            <div className="location-info">
-              <Navigation size={16} />
-              <span>Showing providers near {userLocation.city ? `${userLocation.city}, ` : ''}{userLocation.state}</span>
-            </div>
-          )}
-        </div>
+      <Header />
+      {/* Hero Section – not a header, just a banner */}
+<div className="marketplace-hero">
+  <div className="hero-content">
+    <h1>Professional Services Marketplace</h1>
+    <p className="hero-subtitle">
+      Find trusted estate firms and service providers. <span className="highlight">Verified</span> and <span className="highlight">Boosted</span> listings highlighted.
+    </p>
+    {userLocation && (
+      <div className="hero-location">
+        <Navigation size={16} />
+        <span>Showing providers near {userLocation.city ? `${userLocation.city}, ` : ''}{userLocation.state}</span>
       </div>
+    )}
+  </div>
+</div>
 
       {/* Search and Filter Bar */}
       <div className="search-filter-bar">

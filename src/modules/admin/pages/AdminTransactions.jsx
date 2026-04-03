@@ -1,17 +1,13 @@
 // src/modules/admin/pages/AdminTransactions.jsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { 
   CreditCard, DollarSign, Filter, Search, Download, 
   CheckCircle, XCircle, Clock, TrendingUp, TrendingDown,
   Eye, Receipt, User, Home, Calendar, Building, RefreshCw
 } from 'lucide-react';
 import './AdminTransactions.css';
-
-// Define constants
-const transactionTypes = ['rent', 'deposit', 'service', 'commission', 'withdrawal', 'referral'];
-const statuses = ['completed', 'pending', 'failed', 'processing'];
-const methods = ['card', 'bank_transfer', 'wallet', 'cash', 'paystack', 'flutterwave'];
 
 const AdminTransactions = () => {
   const [transactions, setTransactions] = useState([]);
@@ -29,190 +25,116 @@ const AdminTransactions = () => {
     pending: 0,
     failed: 0,
     totalAmount: 0,
-    commission: 0,
+    totalCommission: 0,
+    totalPlatformFee: 0,
     todayRevenue: 0
   });
 
-  // Load transactions from Supabase
+  // Load transactions from Supabase – only relevant types, no nested joins
   const loadTransactions = async () => {
     try {
       setLoading(true);
       
-      // Fetch transactions from Supabase
+      // Fetch only subscription, boost, commission, referral, platform_fee transactions
       const { data: transactionsData, error } = await supabase
         .from('transactions')
-        .select(`
-          *,
-          profile:user_id (
-            id,
-            name,
-            email,
-            role
-          ),
-          listing:listing_id (
-            id,
-            title,
-            price
-          )
-        `)
+        .select('*')
+        .in('type', ['subscription', 'boost', 'commission', 'referral_commission', 'platform_fee'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // If no transactions, load sample data
-      if (!transactionsData || transactionsData.length === 0) {
-        const sampleData = await generateSampleTransactions();
-        setTransactions(sampleData);
-        calculateStats(sampleData);
-      } else {
-        // Transform data to match frontend structure
-        const transformedTransactions = transactionsData.map(txn => ({
-          id: txn.id,
-          transactionId: txn.transaction_id || txn.id.substring(0, 8).toUpperCase(),
-          userId: txn.user_id,
-          userName: txn.profile?.name || 'Unknown User',
-          userEmail: txn.profile?.email || 'No email',
-          type: txn.type,
-          amount: parseFloat(txn.amount) || 0,
-          commission: parseFloat(txn.commission) || 0,
-          platformFee: parseFloat(txn.platform_fee) || 0,
-          status: txn.status,
-          method: txn.payment_method,
-          description: txn.description,
-          listingId: txn.listing_id,
-          listingTitle: txn.listing?.title,
-          createdAt: txn.created_at,
-          updatedAt: txn.updated_at,
-          reference: txn.reference || txn.id,
-          metadata: txn.metadata || {}
-        }));
-
-        setTransactions(transformedTransactions);
-        calculateStats(transformedTransactions);
+      // Get user profiles for these transactions (separate query to avoid foreign key issues)
+      const userIds = [...new Set((transactionsData || []).map(t => t.user_id).filter(Boolean))];
+      let profilesMap = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, name, email, role')
+          .in('id', userIds);
+        if (profiles) {
+          profilesMap = profiles.reduce((acc, p) => { acc[p.id] = p; return acc; }, {});
+        }
       }
 
+      // Transform data
+      const transformedTransactions = (transactionsData || []).map(txn => ({
+        id: txn.id,
+        transactionId: txn.transaction_id || txn.id.substring(0, 8).toUpperCase(),
+        userId: txn.user_id,
+        userName: profilesMap[txn.user_id]?.full_name || profilesMap[txn.user_id]?.name || 'Unknown User',
+        userEmail: profilesMap[txn.user_id]?.email || 'No email',
+        userRole: profilesMap[txn.user_id]?.role,
+        type: txn.type,
+        amount: parseFloat(txn.amount) || 0,
+        commission: parseFloat(txn.commission) || 0,
+        platformFee: parseFloat(txn.platform_fee) || 0,
+        status: txn.status,
+        method: txn.payment_method,
+        description: txn.description,
+        listingId: txn.listing_id,
+        createdAt: txn.created_at,
+        updatedAt: txn.updated_at,
+        reference: txn.reference || txn.id,
+        metadata: txn.metadata || {},
+        breakdown: txn.breakdown || {}
+      }));
+
+      setTransactions(transformedTransactions);
+      calculateStats(transformedTransactions);
     } catch (error) {
       console.error('Error loading transactions:', error);
-      // Fallback to sample data
-      const sampleData = await generateSampleTransactions();
-      setTransactions(sampleData);
-      calculateStats(sampleData);
+      setTransactions([]);
+      calculateStats([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Generate sample transactions for development
-  const generateSampleTransactions = async () => {
-    const sampleTransactions = Array.from({ length: 25 }, (_, index) => {
-      const amount = Math.floor(Math.random() * 1000000) + 10000;
-      const isTenantComm = index % 5 === 0;
-      const commission = isTenantComm ? (amount * 0.015) : (amount * 0.075);
-      
-      return {
-        id: `txn-${Date.now()}-${index}`,
-        transactionId: `TXN${10000 + index}`,
-        userId: `user-${index % 10}`,
-        userName: ['John Doe', 'Jane Smith', 'Mike Johnson', 'Sarah Wilson', 'David Brown'][index % 5],
-        userEmail: `user${index}@example.com`,
-        type: transactionTypes[index % transactionTypes.length],
-        amount,
-        commission,
-        platformFee: commission * 0.2,
-        status: statuses[index % statuses.length],
-        method: methods[index % methods.length],
-        description: `Payment for ${['Apartment rent', 'Service fee', 'Security deposit', 'Maintenance'][index % 4]}`,
-        listingId: index > 5 ? `listing-${index % 5}` : null,
-        listingTitle: index > 5 ? `Apartment ${index % 5} in Lagos` : null,
-        createdAt: new Date(Date.now() - index * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - index * 43200000).toISOString(),
-        reference: `REF${10000 + index}`,
-        metadata: {
-          bankName: index % 3 === 0 ? 'First Bank' : 'GTBank',
-          accountNumber: `123456789${index}`,
-          narration: `RentEasy Transaction ${index}`,
-          type: isTenantComm ? 'commission' : 'rent',
-          description: isTenantComm ? 'Tenant 1.5% Referral Commission' : 'Standard Rental Payment',
-        }
-      };
-    });
-
-    // Save sample data to Supabase for future use
-    try {
-      const transactionsToSave = sampleTransactions.map(txn => ({
-        transaction_id: txn.transactionId,
-        user_id: txn.userId,
-        type: txn.type,
-        amount: txn.amount,
-        commission: txn.commission,
-        platform_fee: txn.platformFee,
-        status: txn.status,
-        payment_method: txn.method,
-        description: txn.description,
-        listing_id: txn.listingId,
-        reference: txn.reference,
-        metadata: txn.metadata,
-        created_at: txn.createdAt,
-        updated_at: txn.updatedAt
-      }));
-
-      const { error } = await supabase
-        .from('transactions')
-        .insert(transactionsToSave);
-
-      if (error) console.log('Note: Sample data already exists or error:', error.message);
-    } catch (error) {
-      console.log('Could not save sample data to Supabase:', error.message);
-    }
-
-    return sampleTransactions;
-  };
-
   useEffect(() => {
     loadTransactions();
     
-    // Set up real-time subscription
-    const transactionsChannel = supabase
+    // Real-time subscription
+    const channel = supabase
       .channel('admin-transactions-changes')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'transactions'
-      }, () => {
-        loadTransactions();
-      })
+      }, () => loadTransactions())
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(transactionsChannel);
-    };
+    return () => supabase.removeChannel(channel);
   }, []);
 
   useEffect(() => {
     filterTransactions();
   }, [searchTerm, statusFilter, typeFilter, dateRange, transactions]);
 
-  const calculateStats = (transactionsData) => {
-    const total = transactionsData.length;
-    const completed = transactionsData.filter(t => t.status === 'completed').length;
-    const pending = transactionsData.filter(t => t.status === 'pending').length;
-    const failed = transactionsData.filter(t => t.status === 'failed').length;
+  const calculateStats = (txns) => {
+    const total = txns.length;
+    const completed = txns.filter(t => t.status === 'completed').length;
+    const pending = txns.filter(t => t.status === 'pending').length;
+    const failed = txns.filter(t => t.status === 'failed').length;
     
-    const totalAmount = transactionsData
+    const totalAmount = txns
       .filter(t => t.status === 'completed')
       .reduce((sum, t) => sum + t.amount, 0);
     
-    const commission = transactionsData
+    const totalCommission = txns
       .filter(t => t.status === 'completed')
-      .reduce((sum, t) => sum + t.commission, 0);
+      .reduce((sum, t) => sum + (t.commission || 0), 0);
 
-    // Calculate today's revenue
+    const totalPlatformFee = txns
+      .filter(t => t.status === 'completed')
+      .reduce((sum, t) => sum + (t.platformFee || 0), 0);
+
     const today = new Date().toDateString();
-    const todayRevenue = transactionsData
+    const todayRevenue = txns
       .filter(t => t.status === 'completed' && new Date(t.createdAt).toDateString() === today)
       .reduce((sum, t) => sum + t.amount, 0);
     
-    setStats({ total, completed, pending, failed, totalAmount, commission, todayRevenue });
+    setStats({ total, completed, pending, failed, totalAmount, totalCommission, totalPlatformFee, todayRevenue });
   };
 
   const filterTransactions = () => {
@@ -227,19 +149,13 @@ const AdminTransactions = () => {
       );
     }
     
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(txn => txn.status === statusFilter);
-    }
-    
-    if (typeFilter !== 'all') {
-      filtered = filtered.filter(txn => txn.type === typeFilter);
-    }
+    if (statusFilter !== 'all') filtered = filtered.filter(txn => txn.status === statusFilter);
+    if (typeFilter !== 'all') filtered = filtered.filter(txn => txn.type === typeFilter);
     
     if (dateRange.start) {
       const startDate = new Date(dateRange.start);
       filtered = filtered.filter(txn => new Date(txn.createdAt) >= startDate);
     }
-    
     if (dateRange.end) {
       const endDate = new Date(dateRange.end);
       endDate.setHours(23, 59, 59, 999);
@@ -249,90 +165,51 @@ const AdminTransactions = () => {
     setFilteredTransactions(filtered);
   };
 
-  // Update transaction status in Supabase
   const updateTransactionStatus = async (transactionId, newStatus) => {
     try {
       setIsVerifying(true);
       
-      // 1. Update the transaction record
       const { error: txnError } = await supabase
         .from('transactions')
         .update({ 
           status: newStatus, 
           updated_at: new Date().toISOString(),
-          ...(newStatus === 'completed' ? { completed_at: new Date().toISOString() } : {})
+          completed_at: newStatus === 'completed' ? new Date().toISOString() : null
         })
         .eq('id', transactionId);
-
       if (txnError) throw txnError;
 
-      // 2. Get the transaction details
-      const { data: transaction, error: fetchError } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      // 3. If completed and it's a commission/referral, update related tables
+      // If completed, update related tables (subscriptions, boosts, commissions)
       if (newStatus === 'completed') {
-        if (transaction.type === 'commission') {
-          // Update tenant commissions table
+        const { data: transaction } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('id', transactionId)
+          .single();
+
+        if (transaction.type === 'subscription') {
           await supabase
-            .from('tenant_commissions')
-            .update({ 
-              status: 'paid', 
-              paid_at: new Date().toISOString(),
-              transaction_id: transactionId 
-            })
-            .eq('listing_id', transaction.listing_id)
-            .eq('user_id', transaction.user_id);
-            
-        } else if (transaction.type === 'referral') {
-          // Update tenant referrals table
+            .from('subscriptions')
+            .update({ status: 'active' })
+            .eq('payment_id', transaction.payment_id);
+        } else if (transaction.type === 'boost') {
           await supabase
-            .from('tenant_referrals')
-            .update({ 
-              status: 'paid', 
-              paid_at: new Date().toISOString(),
-              transaction_id: transactionId 
-            })
-            .eq('referrer_id', transaction.user_id);
+            .from('active_boosts')
+            .update({ status: 'active' })
+            .eq('payment_id', transaction.payment_id);
+        } else if (transaction.type === 'commission') {
+          await supabase
+            .from('commissions')
+            .update({ status: 'paid', paid_to_manager: true, paid_at: new Date().toISOString() })
+            .eq('payment_id', transaction.payment_id);
         }
-
-        // 4. Update user's wallet balance (if applicable)
-        await supabase.rpc('update_user_wallet', {
-          user_id: transaction.user_id,
-          amount: transaction.amount,
-          transaction_type: 'credit',
-          description: `Payment for ${transaction.type} - ${transaction.reference}`
-        });
-
-        // 5. Log admin activity
-        await supabase
-          .from('admin_activities')
-          .insert({
-            admin_id: (await supabase.auth.getUser()).data.user?.id,
-            action: `Approved ${transaction.type} payout: ${transaction.reference}`,
-            type: 'transaction',
-            entity_id: transactionId,
-            details: {
-              amount: transaction.amount,
-              user_id: transaction.user_id,
-              reference: transaction.reference
-            }
-          });
       }
 
-      // 6. Refresh transactions
       await loadTransactions();
-      
-      alert(`Transaction marked as ${newStatus} successfully!`);
-      
+      alert(`Transaction marked as ${newStatus}`);
     } catch (err) {
-      console.error("Transaction update failed:", err.message);
-      alert(`Failed to update transaction: ${err.message}`);
+      console.error('Update failed:', err);
+      alert('Failed to update transaction');
     } finally {
       setIsVerifying(false);
     }
@@ -340,15 +217,15 @@ const AdminTransactions = () => {
 
   const exportTransactions = () => {
     const csvContent = [
-      ['Transaction ID', 'User', 'Type', 'Amount', 'Commission', 'Status', 'Method', 'Date'],
+      ['Transaction ID', 'User', 'Type', 'Amount', 'Commission', 'Platform Fee', 'Status', 'Date'],
       ...filteredTransactions.map(txn => [
         txn.transactionId,
         txn.userName,
         txn.type,
         `₦${txn.amount.toLocaleString()}`,
         `₦${txn.commission.toLocaleString()}`,
+        `₦${txn.platformFee.toLocaleString()}`,
         txn.status,
-        txn.method,
         new Date(txn.createdAt).toLocaleDateString()
       ])
     ].map(row => row.join(',')).join('\n');
@@ -358,9 +235,7 @@ const AdminTransactions = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `renteasy_transactions_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -369,7 +244,6 @@ const AdminTransactions = () => {
       case 'completed': return <CheckCircle size={16} className="completed" />;
       case 'pending': return <Clock size={16} className="pending" />;
       case 'failed': return <XCircle size={16} className="failed" />;
-      case 'processing': return <RefreshCw size={16} className="processing" />;
       default: return <Clock size={16} />;
     }
   };
@@ -379,69 +253,37 @@ const AdminTransactions = () => {
       case 'completed': return 'success';
       case 'pending': return 'warning';
       case 'failed': return 'danger';
-      case 'processing': return 'info';
       default: return 'secondary';
     }
   };
 
   const getMethodIcon = (method) => {
-    switch(method) {
-      case 'card': return '💳';
-      case 'bank_transfer': return '🏦';
-      case 'wallet': return '💰';
-      case 'cash': return '💵';
-      case 'paystack': return '⚡';
-      case 'flutterwave': return '🌊';
-      default: return '💳';
-    }
+    const icons = {
+      card: '💳',
+      bank_transfer: '🏦',
+      wallet: '💰',
+      paystack: '⚡',
+      flutterwave: '🌊'
+    };
+    return icons[method] || '💳';
   };
 
-  const viewTransactionDetails = (transaction) => {
-    const details = `
-      Transaction ID: ${transaction.transactionId}
-      Reference: ${transaction.reference}
-      User: ${transaction.userName} (${transaction.userEmail})
-      Amount: ₦${transaction.amount.toLocaleString()}
-      Commission: ₦${transaction.commission.toLocaleString()}
-      Platform Fee: ₦${transaction.platformFee?.toLocaleString() || '0'}
-      Type: ${transaction.type}
-      Status: ${transaction.status}
-      Method: ${transaction.method}
-      Date: ${new Date(transaction.createdAt).toLocaleString()}
-      Description: ${transaction.description}
-      ${transaction.listingTitle ? `Listing: ${transaction.listingTitle}` : ''}
-      
-      Bank Details:
-      Bank: ${transaction.metadata?.bankName || 'N/A'}
-      Account: ${transaction.metadata?.accountNumber || 'N/A'}
-      Narration: ${transaction.metadata?.narration || 'N/A'}
-    `;
-    
-    alert(details);
-  };
+  if (loading) return <RentEasyLoader message="Loading transactions..." fullScreen />;
 
   return (
     <div className="admin-transactions">
       <div className="transactions-header">
         <div className="header-left">
-          <h1><CreditCard size={28} /> Transactions</h1>
-          <p>Manage and monitor all platform transactions</p>
+          <h1><CreditCard size={28} /> Financial Transactions</h1>
+          <p>Manage subscriptions, boosts, and commission payouts</p>
           <small>Total: {stats.total} transactions | Last updated: {new Date().toLocaleTimeString()}</small>
         </div>
         <div className="header-right">
-          <button 
-            className="btn-refresh" 
-            onClick={loadTransactions}
-            disabled={loading}
-          >
+          <button className="btn-refresh" onClick={loadTransactions} disabled={loading}>
             <RefreshCw size={18} className={loading ? 'spinning' : ''} />
             Refresh
           </button>
-          <button 
-            className="btn-export" 
-            onClick={exportTransactions}
-            disabled={filteredTransactions.length === 0}
-          >
+          <button className="btn-export" onClick={exportTransactions} disabled={filteredTransactions.length === 0}>
             <Download size={18} /> Export CSV ({filteredTransactions.length})
           </button>
         </div>
@@ -450,57 +292,38 @@ const AdminTransactions = () => {
       {/* Stats Cards */}
       <div className="transactions-stats-grid">
         <div className="stat-card total">
-          <div className="stat-icon">
-            <CreditCard size={24} />
-          </div>
+          <div className="stat-icon"><CreditCard size={24} /></div>
           <div className="stat-content">
             <h3>{stats.total}</h3>
             <p>Total Transactions</p>
-            <small>All types</small>
           </div>
         </div>
-        
         <div className="stat-card amount">
-          <div className="stat-icon">
-            <DollarSign size={24} />
-          </div>
+          <div className="stat-icon"><DollarSign size={24} /></div>
           <div className="stat-content">
             <h3>₦{stats.totalAmount.toLocaleString()}</h3>
-            <p>Total Amount</p>
-            <small>All time</small>
+            <p>Total Volume</p>
           </div>
         </div>
-        
         <div className="stat-card commission">
-          <div className="stat-icon">
-            <TrendingUp size={24} />
-          </div>
+          <div className="stat-icon"><TrendingUp size={24} /></div>
           <div className="stat-content">
-            <h3>₦{stats.commission.toLocaleString()}</h3>
-            <p>Total Commission</p>
-            <small>7.5% platform fee</small>
+            <h3>₦{stats.totalCommission.toLocaleString()}</h3>
+            <p>Total Commission (2.5%+1.5%)</p>
           </div>
         </div>
-        
-        <div className="stat-card completed">
-          <div className="stat-icon">
-            <CheckCircle size={24} />
+        <div className="stat-card fee">
+          <div className="stat-icon"><Building size={24} /></div>
+          <div className="stat-content">
+            <h3>₦{stats.totalPlatformFee.toLocaleString()}</h3>
+            <p>RentEasy Fee (3.5%)</p>
           </div>
+        </div>
+        <div className="stat-card completed">
+          <div className="stat-icon"><CheckCircle size={24} /></div>
           <div className="stat-content">
             <h3>{stats.completed}</h3>
             <p>Completed</p>
-            <small>{stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}% success rate</small>
-          </div>
-        </div>
-        
-        <div className="stat-card pending">
-          <div className="stat-icon">
-            <Clock size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>{stats.pending}</h3>
-            <p>Pending</p>
-            <small>Requires action</small>
           </div>
         </div>
       </div>
@@ -509,66 +332,29 @@ const AdminTransactions = () => {
       <div className="transactions-filters">
         <div className="search-box">
           <Search size={18} />
-          <input
-            type="text"
-            placeholder="Search by ID, user, reference..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-          />
+          <input type="text" placeholder="Search by ID, user, reference..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="search-input" />
         </div>
-        
         <div className="filter-group">
-          <select 
-            value={statusFilter} 
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="filter-select"
-          >
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="filter-select">
             <option value="all">All Status</option>
             <option value="completed">Completed</option>
             <option value="pending">Pending</option>
             <option value="failed">Failed</option>
-            <option value="processing">Processing</option>
           </select>
-          
-          <select 
-            value={typeFilter} 
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="filter-select"
-          >
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="filter-select">
             <option value="all">All Types</option>
-            <option value="rent">Rent</option>
-            <option value="deposit">Deposit</option>
-            <option value="service">Service</option>
-            <option value="withdrawal">Withdrawal</option>
+            <option value="subscription">Subscription</option>
+            <option value="boost">Boost</option>
             <option value="commission">Commission</option>
-            <option value="referral">Referral</option>
+            <option value="referral_commission">Referral Commission</option>
+            <option value="platform_fee">Platform Fee</option>
           </select>
-          
           <div className="date-range">
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              placeholder="Start Date"
-              className="date-input"
-            />
+            <input type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
             <span>to</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              placeholder="End Date"
-              className="date-input"
-            />
+            <input type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
           </div>
-          
-          <button className="btn-clear-filters" onClick={() => {
-            setSearchTerm('');
-            setStatusFilter('all');
-            setTypeFilter('all');
-            setDateRange({ start: '', end: '' });
-          }}>
+          <button className="btn-clear-filters" onClick={() => { setSearchTerm(''); setStatusFilter('all'); setTypeFilter('all'); setDateRange({ start: '', end: '' }); }}>
             <Filter size={16} /> Clear Filters
           </button>
         </div>
@@ -576,25 +362,12 @@ const AdminTransactions = () => {
 
       {/* Transactions Table */}
       <div className="transactions-table-container">
-        {loading ? (
-          <div className="loading-state">
-            <RefreshCw className="spinning" size={32} />
-            <p>Loading transactions...</p>
-          </div>
-        ) : filteredTransactions.length === 0 ? (
+        {filteredTransactions.length === 0 ? (
           <div className="empty-state">
             <CreditCard size={48} />
             <h3>No transactions found</h3>
             <p>Try adjusting your search or filters</p>
-            <button 
-              className="btn-clear-filters"
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('all');
-                setTypeFilter('all');
-                setDateRange({ start: '', end: '' });
-              }}
-            >
+            <button className="btn-clear-filters" onClick={() => { setSearchTerm(''); setStatusFilter('all'); setTypeFilter('all'); setDateRange({ start: '', end: '' }); }}>
               Clear all filters
             </button>
           </div>
@@ -603,256 +376,108 @@ const AdminTransactions = () => {
             <table className="transactions-table">
               <thead>
                 <tr>
-                  <th>Transaction ID</th>
+                  <th>ID / Reference</th>
                   <th>User</th>
                   <th>Type</th>
                   <th>Amount</th>
                   <th>Commission</th>
+                  <th>Platform Fee</th>
                   <th>Status</th>
-                  <th>Method</th>
                   <th>Date</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTransactions.map(transaction => (
-                  <tr key={transaction.id}>
+                {filteredTransactions.map(txn => (
+                  <tr key={txn.id}>
                     <td>
                       <div className="txn-id">
-                        <strong>{transaction.transactionId}</strong>
-                        <small>Ref: {transaction.reference}</small>
+                        <strong>{txn.transactionId}</strong>
+                        <small>{txn.reference}</small>
                       </div>
                     </td>
                     <td>
                       <div className="user-info">
                         <User size={14} />
                         <div>
-                          <strong>{transaction.userName}</strong>
-                          <small>{transaction.userEmail}</small>
+                          <strong>{txn.userName}</strong>
+                          <small>{txn.userEmail}</small>
+                          <span className="user-role">{txn.userRole}</span>
                         </div>
                       </div>
                     </td>
-                    <td>
-                      <span className={`type-badge type-${transaction.type}`}>
-                        {transaction.type}
-                      </span>
-                    </td>
+                    <td><span className={`type-badge type-${txn.type}`}>{txn.type.replace('_', ' ')}</span></td>
                     <td>
                       <div className="amount-cell">
-                        <strong>₦{transaction.amount.toLocaleString()}</strong>
-                        {transaction.listingTitle && (
-                          <small>{transaction.listingTitle}</small>
-                        )}
+                        <strong>₦{txn.amount.toLocaleString()}</strong>
                       </div>
                     </td>
-                    <td>
-                      <div className="commission-cell">
-                        <span className="commission-amount">
-                          ₦{transaction.commission.toLocaleString()}
-                        </span>
-                        {transaction.platformFee > 0 && (
-                          <small>Fee: ₦{transaction.platformFee.toLocaleString()}</small>
-                        )}
-                      </div>
-                    </td>
+                    <td>₦{txn.commission.toLocaleString()}</td>
+                    <td>₦{txn.platformFee.toLocaleString()}</td>
                     <td>
                       <div className="status-cell">
-                        <span className={`status-badge ${getStatusColor(transaction.status)}`}>
-                          {getStatusIcon(transaction.status)} {transaction.status}
+                        <span className={`status-badge ${getStatusColor(txn.status)}`}>
+                          {getStatusIcon(txn.status)} {txn.status}
                         </span>
-                        {transaction.status === 'pending' && (
+                        {txn.status === 'pending' && (
                           <div className="status-actions">
-                            <button 
-                              className="btn-approve"
-                              onClick={() => updateTransactionStatus(transaction.id, 'completed')}
-                              disabled={isVerifying}
-                            >
-                              Approve
-                            </button>
-                            <button 
-                              className="btn-reject"
-                              onClick={() => updateTransactionStatus(transaction.id, 'failed')}
-                              disabled={isVerifying}
-                            >
-                              Reject
-                            </button>
+                            <button className="btn-approve" onClick={() => updateTransactionStatus(txn.id, 'completed')} disabled={isVerifying}>Approve</button>
+                            <button className="btn-reject" onClick={() => updateTransactionStatus(txn.id, 'failed')} disabled={isVerifying}>Reject</button>
                           </div>
                         )}
                       </div>
                     </td>
-                    <td>
-                      <div className="method-cell">
-                        <span className="method-icon">
-                          {getMethodIcon(transaction.method)}
-                        </span>
-                        <span>{transaction.method.replace('_', ' ')}</span>
-                      </div>
-                    </td>
-                    <td>
-                      {new Date(transaction.createdAt).toLocaleDateString()}
-                      <br />
-                      <small>{new Date(transaction.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
-                    </td>
+                    <td>{new Date(txn.createdAt).toLocaleDateString()}<br/><small>{new Date(txn.createdAt).toLocaleTimeString()}</small></td>
                     <td>
                       <div className="action-buttons">
-                        <button 
-                          className="btn-view"
-                          onClick={() => setSelectedTxn(transaction)}
-                          title="View Details"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button 
-                          className="btn-receipt"
-                          onClick={() => viewTransactionDetails(transaction)}
-                          title="View Receipt"
-                        >
-                          <Receipt size={16} />
-                        </button>
+                        <button className="btn-view" onClick={() => setSelectedTxn(txn)}><Eye size={16} /></button>
+                        <button className="btn-receipt" onClick={() => alert(JSON.stringify(txn.breakdown, null, 2))}><Receipt size={16} /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            
             <div className="table-footer">
               <span>Showing {filteredTransactions.length} of {transactions.length} transactions</span>
-              <div className="pagination">
-                <button disabled>Previous</button>
-                <span className="current-page">1</span>
-                <button>Next</button>
-              </div>
             </div>
           </>
         )}
       </div>
 
-      {/* Summary Section */}
-      <div className="transactions-summary">
-        <div className="summary-card">
-          <h3><TrendingUp size={20} /> Revenue Summary</h3>
-          <div className="revenue-stats">
-            <div className="revenue-stat">
-              <span className="label">Today's Revenue</span>
-              <span className="value">₦{stats.todayRevenue.toLocaleString()}</span>
-            </div>
-            <div className="revenue-stat">
-              <span className="label">This Month</span>
-              <span className="value">₦{Math.floor(stats.totalAmount * 0.3).toLocaleString()}</span>
-            </div>
-            <div className="revenue-stat">
-              <span className="label">Avg. Transaction</span>
-              <span className="value">₦{stats.completed > 0 ? (stats.totalAmount / stats.completed).toLocaleString(undefined, {maximumFractionDigits: 0}) : '0'}</span>
-            </div>
-            <div className="revenue-stat">
-              <span className="label">Success Rate</span>
-              <span className="value">
-                {stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
-              </span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="summary-card">
-          <h3><Building size={20} /> Top Sources</h3>
-          <div className="sources-list">
-            {['rent', 'deposit', 'service', 'commission', 'referral'].map((type) => {
-              const typeTransactions = transactions.filter(t => t.type === type && t.status === 'completed');
-              const total = typeTransactions.reduce((sum, t) => sum + t.amount, 0);
-              const count = typeTransactions.length;
-              
-              if (count === 0) return null;
-              
-              return (
-                <div key={type} className="source-item">
-                  <div className="source-info">
-                    <span className="source-type">{type.charAt(0).toUpperCase() + type.slice(1)}</span>
-                    <span className="source-count">{count} transaction{count !== 1 ? 's' : ''}</span>
-                  </div>
-                  <div className="source-amount">
-                    ₦{total.toLocaleString()}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Verification Modal */}
+      {/* Transaction Detail Modal */}
       {selectedTxn && (
         <div className="admin-modal-overlay">
           <div className="admin-modal-content verification-card">
             <div className="modal-header">
-              <h3>Verify Payout: {selectedTxn.transactionId}</h3>
+              <h3>Transaction Details</h3>
               <button onClick={() => setSelectedTxn(null)}>×</button>
             </div>
-
-            <div className="verification-body">
-              <div className="audit-section">
-                <h4><User size={16} /> Payee: {selectedTxn.userName}</h4>
-                <p>Role: <strong>Tenant</strong> | Email: {selectedTxn.userEmail}</p>
-              </div>
-
-              <div className="audit-section highlight">
-                <h4><Receipt size={16} /> Earning Type: {selectedTxn.type.toUpperCase()}</h4>
-                <p>Amount to Pay: <strong className="payout-amount">₦{selectedTxn.amount.toLocaleString()}</strong></p>
-                <small>Calculated at: {selectedTxn.type === 'commission' ? '1.5%' : selectedTxn.type === 'referral' ? '₦5,000 flat rate' : 'Standard rate'}</small>
-              </div>
-
-              {/* ADMIN CHECKLIST */}
-              <div className="admin-checklist">
-                <h4>Required Verifications:</h4>
-                <label className="check-item">
-                  <input type="checkbox" /> 
-                  <span>Property post is verified & not a duplicate</span>
-                </label>
-                <label className="check-item">
-                  <input type="checkbox" /> 
-                  <span>New tenant has signed tenancy agreement</span>
-                </label>
-                <label className="check-item">
-                  <input type="checkbox" /> 
-                  <span>Payment of total rent has been confirmed</span>
-                </label>
-                <label className="check-item">
-                  <input type="checkbox" /> 
-                  <span>No disputes or complaints pending</span>
-                </label>
-              </div>
-
-              <div className="verification-actions">
-                <button 
-                  className="btn-reject-large"
-                  onClick={() => {
-                    updateTransactionStatus(selectedTxn.id, 'failed');
-                    setSelectedTxn(null);
-                  }}
-                  disabled={isVerifying}
-                >
-                  <XCircle size={18} /> Flag as Fraud
-                </button>
-                
-                <button 
-                  className="btn-approve-large"
-                  onClick={async () => {
-                    await updateTransactionStatus(selectedTxn.id, 'completed');
-                    setSelectedTxn(null);
-                  }}
-                  disabled={isVerifying}
-                >
-                  {isVerifying ? (
-                    <>
-                      <RefreshCw size={18} className="spinning" /> Processing...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle size={18} /> Approve & Credit Wallet
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="modal-body">
+              <p><strong>ID:</strong> {selectedTxn.transactionId}</p>
+              <p><strong>Reference:</strong> {selectedTxn.reference}</p>
+              <p><strong>User:</strong> {selectedTxn.userName} ({selectedTxn.userRole})</p>
+              <p><strong>Type:</strong> {selectedTxn.type}</p>
+              <p><strong>Amount:</strong> ₦{selectedTxn.amount.toLocaleString()}</p>
+              <p><strong>Commission:</strong> ₦{selectedTxn.commission.toLocaleString()}</p>
+              <p><strong>Platform Fee:</strong> ₦{selectedTxn.platformFee.toLocaleString()}</p>
+              <p><strong>Status:</strong> {selectedTxn.status}</p>
+              <p><strong>Date:</strong> {new Date(selectedTxn.createdAt).toLocaleString()}</p>
+              {selectedTxn.breakdown && (
+                <div className="breakdown">
+                  <strong>Breakdown:</strong>
+                  <pre>{JSON.stringify(selectedTxn.breakdown, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+            <div className="modal-actions">
+              {selectedTxn.status === 'pending' && (
+                <>
+                  <button className="btn-approve" onClick={() => updateTransactionStatus(selectedTxn.id, 'completed')}>Approve</button>
+                  <button className="btn-reject" onClick={() => updateTransactionStatus(selectedTxn.id, 'failed')}>Reject</button>
+                </>
+              )}
+              <button className="btn-cancel" onClick={() => setSelectedTxn(null)}>Close</button>
             </div>
           </div>
         </div>

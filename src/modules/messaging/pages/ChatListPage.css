@@ -1,9 +1,77 @@
 /* src/modules/messaging/pages/ChatListPage.css */
 
+/* Light mode variables (default) */
+:root {
+  --chat-bg: #f5f7fa;
+  --chat-card-bg: #ffffff;
+  --chat-border: #e5e7eb;
+  --chat-text-primary: #1f2937;
+  --chat-text-secondary: #6b7280;
+  --chat-text-muted: #9ca3af;
+  --chat-hover-bg: #f9fafb;
+  --chat-unread-bg: linear-gradient(90deg, #eff6ff 0%, transparent 100%);
+  --chat-unread-title: #1e40af;
+  --chat-avatar-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --chat-chevron: #9ca3af;
+  --chat-chevron-hover: #667eea;
+  --role-tenant-bg: #dbeafe;
+  --role-tenant-text: #1e40af;
+  --role-landlord-bg: #d1fae5;
+  --role-landlord-text: #065f46;
+  --role-manager-bg: #fef3c7;
+  --role-manager-text: #92400e;
+  --role-estate-bg: #e2e8f0;
+  --role-estate-text: #475569;
+  --tag-estate-bg: #e2e8f0;
+  --tag-estate-text: #475569;
+  --tag-commission-bg: #fef3c7;
+  --tag-commission-text: #92400e;
+  --tag-monitoring-bg: #e0f2fe;
+  --tag-monitoring-text: #075985;
+  --stat-bg: #ffffff;
+  --stat-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode overrides */
+.dark {
+  --chat-bg: #111827;
+  --chat-card-bg: #1f2937;
+  --chat-border: #374151;
+  --chat-text-primary: #f3f4f6;
+  --chat-text-secondary: #9ca3af;
+  --chat-text-muted: #6b7280;
+  --chat-hover-bg: #374151;
+  --chat-unread-bg: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%);
+  --chat-unread-title: #60a5fa;
+  --chat-avatar-gradient: linear-gradient(135deg, #4f46e5, #7c3aed);
+  --chat-chevron: #6b7280;
+  --chat-chevron-hover: #a78bfa;
+  --role-tenant-bg: #1e3a8a;
+  --role-tenant-text: #93c5fd;
+  --role-landlord-bg: #064e3b;
+  --role-landlord-text: #6ee7b7;
+  --role-manager-bg: #78350f;
+  --role-manager-text: #fcd34d;
+  --role-estate-bg: #334155;
+  --role-estate-text: #cbd5e1;
+  --tag-estate-bg: #334155;
+  --tag-estate-text: #cbd5e1;
+  --tag-commission-bg: #78350f;
+  --tag-commission-text: #fcd34d;
+  --tag-monitoring-bg: #0c4a6e;
+  --tag-monitoring-text: #7dd3fc;
+  --stat-bg: #1f2937;
+  --stat-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Base */
 .chat-list-page {
   min-height: 100vh;
-  background: #f5f7fa;
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+  background: var(--chat-bg);
   padding: 20px;
+  transition: background 0.2s, color 0.2s;
 }
 
 /* Role Banner */
@@ -19,9 +87,19 @@
   color: #0369a1;
 }
 
+.dark .role-banner {
+  background: #1e3a8a;
+  color: #93c5fd;
+}
+
 .role-banner.executive {
   background: #fef3c7;
   color: #92400e;
+}
+
+.dark .role-banner.executive {
+  background: #78350f;
+  color: #fcd34d;
 }
 
 /* Header */
@@ -40,22 +118,23 @@
   gap: 10px;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--chat-text-primary);
   margin: 0 0 4px 0;
 }
 
 .header-content p {
   margin: 0;
-  color: #6b7280;
+  color: var(--chat-text-secondary);
   font-size: 0.875rem;
 }
 
 /* Chat List Container */
 .chat-list-container {
-  background: white;
+  background: var(--chat-card-bg);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  transition: background 0.2s;
 }
 
 /* Empty State */
@@ -68,15 +147,16 @@
   font-size: 4rem;
   opacity: 0.5;
   margin-bottom: 16px;
+  color: var(--chat-text-muted);
 }
 
 .empty-state h3 {
   margin: 0 0 8px 0;
-  color: #1f2937;
+  color: var(--chat-text-primary);
 }
 
 .empty-state p {
-  color: #6b7280;
+  color: var(--chat-text-secondary);
   margin-bottom: 24px;
 }
 
@@ -91,24 +171,24 @@
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--chat-border);
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
 }
 
 .chat-item:hover {
-  background: #f9fafb;
+  background: var(--chat-hover-bg);
   transform: translateX(4px);
 }
 
 .chat-item.unread {
-  background: linear-gradient(90deg, #eff6ff 0%, transparent 100%);
+  background: var(--chat-unread-bg);
 }
 
 .chat-item.unread .chat-title {
   font-weight: 700;
-  color: #1e40af;
+  color: var(--chat-unread-title);
 }
 
 /* Avatar */
@@ -120,13 +200,14 @@
 .avatar-icon {
   width: 52px;
   height: 52px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--chat-avatar-gradient);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: white;
 }
 
 .unread-badge {
@@ -168,7 +249,7 @@
 .chat-title {
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--chat-text-primary);
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -184,28 +265,28 @@
 }
 
 .chat-role-badge.tenant {
-  background: #dbeafe;
-  color: #1e40af;
+  background: var(--role-tenant-bg);
+  color: var(--role-tenant-text);
 }
 
 .chat-role-badge.landlord {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--role-landlord-bg);
+  color: var(--role-landlord-text);
 }
 
 .chat-role-badge.manager {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--role-manager-bg);
+  color: var(--role-manager-text);
 }
 
 .chat-role-badge.estate-firm {
-  background: #e2e8f0;
-  color: #475569;
+  background: var(--role-estate-bg);
+  color: var(--role-estate-text);
 }
 
 .chat-time {
   font-size: 0.7rem;
-  color: #9ca3af;
+  color: var(--chat-text-muted);
   flex-shrink: 0;
 }
 
@@ -216,7 +297,7 @@
 
 .preview-text {
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--chat-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -236,40 +317,40 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #6b7280;
+  color: var(--chat-text-muted);
 }
 
 .tag-estate {
-  background: #e2e8f0;
-  color: #475569;
+  background: var(--tag-estate-bg);
+  color: var(--tag-estate-text);
   padding: 2px 8px;
   border-radius: 12px;
 }
 
 .tag-commission {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--tag-commission-bg);
+  color: var(--tag-commission-text);
   padding: 2px 8px;
   border-radius: 12px;
 }
 
 .tag-monitoring {
-  background: #e0f2fe;
-  color: #075985;
+  background: var(--tag-monitoring-bg);
+  color: var(--tag-monitoring-text);
   padding: 2px 8px;
   border-radius: 12px;
 }
 
 /* Chevron Icon */
 .chevron-icon {
-  color: #9ca3af;
+  color: var(--chat-chevron);
   flex-shrink: 0;
-  transition: transform 0.2s;
+  transition: transform 0.2s, color 0.2s;
 }
 
 .chat-item:hover .chevron-icon {
   transform: translateX(4px);
-  color: #667eea;
+  color: var(--chat-chevron-hover);
 }
 
 /* Stats Section */
@@ -279,9 +360,9 @@
   justify-content: center;
   margin-top: 24px;
   padding: 16px;
-  background: white;
+  background: var(--stat-bg);
   border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--stat-shadow);
 }
 
 .stat-item {
@@ -292,12 +373,12 @@
   display: block;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--chat-text-primary);
 }
 
 .stat-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--chat-text-secondary);
 }
 
 /* Buttons */
@@ -363,52 +444,5 @@
   
   .stat-value {
     font-size: 1.2rem;
-  }
-}
-
-/* Dark Mode */
-@media (prefers-color-scheme: dark) {
-  .chat-list-page {
-    background: #111827;
-  }
-  
-  .chat-list-container {
-    background: #1f2937;
-  }
-  
-  .chat-item {
-    border-bottom-color: #374151;
-  }
-  
-  .chat-item:hover {
-    background: #374151;
-  }
-  
-  .chat-item.unread {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%);
-  }
-  
-  .chat-title {
-    color: #f3f4f6;
-  }
-  
-  .preview-text {
-    color: #9ca3af;
-  }
-  
-  .chat-time {
-    color: #6b7280;
-  }
-  
-  .stat-value {
-    color: #f3f4f6;
-  }
-  
-  .stat-label {
-    color: #9ca3af;
-  }
-  
-  .chat-stats {
-    background: #1f2937;
   }
 }

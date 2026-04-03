@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient'; // adjust import path as needed
+import DarkModeToggle from './DarkModeToggle'; // adjust path
+
+// Inside the header's JSX (e.g., next to other user actions)
+<div className="user-actions">
+  {/* ... existing buttons ... */}
+  
+  {/* ... */}
+</div>
 import { 
   Menu, X, User, Bell, MessageSquare, PlusCircle, 
   ChevronDown, Search, Shield, Home, Building
@@ -240,6 +248,7 @@ const getProfileRoute = () => {
 
         {/* User Actions */}
         <div className="user-actions">
+          <DarkModeToggle />
           {user ? (
             <>
               {user.role === 'admin' && (
@@ -264,6 +273,7 @@ const getProfileRoute = () => {
               
               {/* User Dropdown */}
               <div className="user-dropdown-container">
+                
                 <button 
                   className="user-button"
                   onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
@@ -315,6 +325,7 @@ const getProfileRoute = () => {
                     </button>
                   </div>
                 )}
+                
               </div>
             </>
           ) : (

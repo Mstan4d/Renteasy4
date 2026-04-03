@@ -160,3 +160,130 @@ body {
 .manager-sidebar .commission-rate {
   color: inherit !important;
 }
+
+/* Dark Mode Toggle Button – Add to your global CSS or Header.css */
+.dark-mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--button-bg, #f1f5f9);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 40px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary, #1e293b);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.dark-mode-toggle:hover {
+  background: var(--button-hover, #e2e8f0);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.dark-mode-toggle:active {
+  transform: translateY(0);
+}
+
+/* Icon size */
+.dark-mode-toggle svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* If you prefer text only, adjust accordingly */
+@media (max-width: 768px) {
+  .dark-mode-toggle {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+}
+
+/* ========== LIGHT MODE (default) ========== */
+:root {
+  /* Backgrounds */
+  --bg-page: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5f9;
+  --bg-input: #ffffff;
+  --bg-input-disabled: #f1f5f9;
+  
+  /* Text */
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  
+  /* Borders */
+  --border: #e2e8f0;
+  --border-light: #e2e8f0;
+  
+  /* Buttons */
+  --btn-primary-bg: #2563eb;
+  --btn-primary-hover: #1d4ed8;
+  --btn-outline-bg: transparent;
+  --btn-outline-border: #cbd5e1;
+  
+  /* Status badges */
+  --badge-verified-bg: #d1fae5;
+  --badge-verified-text: #065f46;
+  --badge-pending-bg: #fef3c7;
+  --badge-pending-text: #92400e;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+/* ========== DARK MODE ========== */
+.dark {
+  --bg-page: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --bg-input: #334155;
+  --bg-input-disabled: #1e293b;
+  
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  
+  --border: #334155;
+  --border-light: #475569;
+  
+  --btn-primary-bg: #3b82f6;
+  --btn-primary-hover: #2563eb;
+  --btn-outline-bg: transparent;
+  --btn-outline-border: #475569;
+  
+  --badge-verified-bg: rgba(16, 185, 129, 0.2);
+  --badge-verified-text: #6ee7b7;
+  --badge-pending-bg: rgba(245, 158, 11, 0.2);
+  --badge-pending-text: #fbbf24;
+  
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4);
+}
+
+/* Apply to body */
+body {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Utility classes for cards, inputs, etc. */
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+input, select, textarea {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}

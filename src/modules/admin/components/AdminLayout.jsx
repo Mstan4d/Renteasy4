@@ -181,7 +181,7 @@ const AdminLayout = () => {
           </div>
           <div className="admin-details">
             <strong>{user?.name || 'Administrator'}</strong>
-            <span className="admin-role">Super Admin</span>
+            <span className="admin-role">Admin</span>
             <small>{user?.email}</small>
           </div>
         </div>

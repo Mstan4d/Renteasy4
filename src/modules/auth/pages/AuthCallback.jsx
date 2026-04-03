@@ -2,14 +2,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { useAuth } from '../../../shared/context/AuthContext';
 import './AuthCallback.css';
 
 const AuthCallback = () => {
   const [status, setStatus] = useState('Processing your signup...');
   const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   useEffect(() => {
     handleAuthCallback();
@@ -17,74 +15,74 @@ const AuthCallback = () => {
 
   const handleAuthCallback = async () => {
     try {
-      // Get the session from URL
+      // 1. Get the session from Supabase
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
       if (sessionError) throw sessionError;
-      
       if (!session?.user) {
         setError('No session found. Please try signing in again.');
         setTimeout(() => navigate('/login'), 3000);
         return;
       }
 
-      // Check if this is a new Google signup with role
-      const storedRole = sessionStorage.getItem('google_signup_role');
-      const isNewGoogleSignup = storedRole && !session.user.user_metadata?.role;
+      const user = session.user;
       
-      // Get or create profile
-      let profile = await getOrCreateProfile(session.user, storedRole);
-      
-      // If Google signup for service provider, create provider record
-      if (isNewGoogleSignup && storedRole === 'service-provider') {
-        const providerData = sessionStorage.getItem('google_signup_provider_data');
+      // Look for stored role from either Google or Facebook signup
+      const storedRole = sessionStorage.getItem('google_signup_role') || sessionStorage.getItem('facebook_signup_role');
+      const storedFullName = sessionStorage.getItem('google_signup_full_name') || sessionStorage.getItem('facebook_signup_full_name');
+      const isNewSignup = storedRole && !user.user_metadata?.role;
+
+      // 2. Get or create profile
+      let profile = await getOrCreateProfile(user, storedRole);
+
+      // 3. For service provider signup, create provider record (if data exists)
+      if (isNewSignup && storedRole === 'service-provider') {
+        // Try to get provider data from either Google or Facebook storage
+        const providerData = sessionStorage.getItem('google_signup_provider_data') || sessionStorage.getItem('facebook_signup_provider_data');
         if (providerData) {
-          await createServiceProvider(session.user.id, JSON.parse(providerData));
+          await createServiceProvider(user.id, JSON.parse(providerData));
         }
       }
-      
-      // Prepare user data
+
+      // 4. Prepare user object for localStorage
       const userData = {
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.user_metadata?.name || profile.name,
-        fullName: session.user.user_metadata?.full_name || profile.name,
+        id: user.id,
+        email: user.email,
+        full_name: profile.full_name || profile.name,
         role: profile.role,
-        isVerified: session.user.email_confirmed_at ? true : false,
         avatar_url: profile.avatar_url,
-        is_admin: profile.is_admin || false
+        is_verified: user.email_confirmed_at ? true : false,
       };
-      
-      // Update AuthContext
-      login(userData);
-      
-      // Store in localStorage
+
+      // 5. Store user and token in localStorage
       localStorage.setItem('user', JSON.stringify(userData));
       localStorage.setItem('renteasy_user', JSON.stringify(userData));
       localStorage.setItem('token', session.access_token);
       localStorage.setItem('renteasy_token', session.access_token);
-      
-      // Clean up
+
+      // 6. Clean up all session storage items
       sessionStorage.removeItem('google_signup_role');
+      sessionStorage.removeItem('google_signup_full_name');
       sessionStorage.removeItem('google_signup_provider_data');
-      
-      // Redirect based on role
+      sessionStorage.removeItem('facebook_signup_role');
+      sessionStorage.removeItem('facebook_signup_full_name');
+      sessionStorage.removeItem('facebook_signup_provider_data');
+
+      // 7. Redirect based on role
       setStatus('Success! Redirecting to dashboard...');
-      setTimeout(() => {
-        const dashboardPaths = {
-          'tenant': '/dashboard',
-          'landlord': '/dashboard',
-          'manager': '/dashboard',
-          'service-provider': '/dashboard',
-          'estate-firm': '/dashboard',
-          'admin': '/admin'
-        };
-        navigate(dashboardPaths[profile.role] || '/dashboard');
-      }, 1500);
-      
-    } catch (error) {
-      console.error('Auth callback error:', error);
-      setError(error.message || 'Authentication failed');
+      const rolePathMap = {
+        tenant: '/dashboard/tenant',
+        landlord: '/dashboard/landlord',
+        manager: '/dashboard/manager',
+        'service-provider': '/dashboard/provider',
+        'estate-firm': '/dashboard/estate-firm',
+        admin: '/admin',
+        'super-admin': '/super-admin'
+      };
+      const target = rolePathMap[profile.role] || '/dashboard';
+      setTimeout(() => navigate(target), 1500);
+    } catch (err) {
+      console.error('Auth callback error:', err);
+      setError(err.message || 'Authentication failed');
       setTimeout(() => navigate('/login'), 3000);
     }
   };
@@ -95,28 +93,38 @@ const AuthCallback = () => {
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
-    
+      .maybeSingle();
+
     if (!fetchError && existingProfile) {
       return existingProfile;
     }
-    
-    // Create new profile with stored role or default
+
+    // Create new profile
     const role = storedRole || user.user_metadata?.role || 'tenant';
-    
+    const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email.split('@')[0];
+
     const { data: newProfile, error: createError } = await supabase
       .from('profiles')
       .insert({
         id: user.id,
-        name: user.user_metadata?.name || user.email.split('@')[0],
         email: user.email,
+        full_name: fullName,
         role: role,
-        avatar_url: user.user_metadata?.avatar_url
+        avatar_url: user.user_metadata?.avatar_url || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
-    
+
     if (createError) throw createError;
+
+    // Create wallet for the new user
+    await supabase.from('wallets').upsert(
+      { user_id: user.id, balance: 0, commission_rate: 1.5 },
+      { onConflict: 'user_id' }
+    );
+
     return newProfile;
   };
 
@@ -126,7 +134,7 @@ const AuthCallback = () => {
         .from('service_providers')
         .insert({
           user_id: userId,
-          business_name: providerData.businessName || 'Google Signup',
+          business_name: providerData.businessName || 'Social Signup',
           city: providerData.city || '',
           state: providerData.state || '',
           services: providerData.selectedServices || [],
@@ -134,7 +142,6 @@ const AuthCallback = () => {
           status: 'pending',
           verified: false
         });
-      
       if (error) console.warn('Provider creation warning:', error);
     } catch (error) {
       console.warn('Failed to create provider record:', error);

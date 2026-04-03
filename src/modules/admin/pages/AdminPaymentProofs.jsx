@@ -3,13 +3,14 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { CheckCircle, XCircle, Eye, RefreshCw, Home, CreditCard, Users } from 'lucide-react';
 import './AdminPaymentProofs.css';
 
 const AdminPaymentProofs = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('tenant'); // 'tenant', 'subscription', 'commission'
+  const [activeTab, setActiveTab] = useState('tenant');
   const [tenantProofs, setTenantProofs] = useState([]);
   const [subscriptionPayments, setSubscriptionPayments] = useState([]);
   const [commissionPayments, setCommissionPayments] = useState([]);
@@ -29,41 +30,100 @@ const AdminPaymentProofs = () => {
       // 1. Tenant rent proofs (from payment_proofs)
       const { data: tenantData, error: tenantError } = await supabase
         .from('payment_proofs')
-        .select(`
-          *,
-          listings!payment_proofs_listing_id_fkey (title, address),
-          profiles!payment_proofs_tenant_id_fkey (full_name, email)
-        `)
+        .select('*')
         .eq('verified', false)
         .order('created_at', { ascending: false });
       if (tenantError) throw tenantError;
-      setTenantProofs(tenantData || []);
+
+      // Fetch related listings and profiles manually
+      const listingIds = tenantData.map(p => p.listing_id).filter(Boolean);
+      const tenantIds = tenantData.map(p => p.tenant_id).filter(Boolean);
+
+      let listingsMap = {};
+      if (listingIds.length) {
+        const { data: listings } = await supabase
+          .from('listings')
+          .select('id, title, address')
+          .in('id', listingIds);
+        if (listings) listingsMap = listings.reduce((acc, l) => ({ ...acc, [l.id]: l }), {});
+      }
+
+      let profilesMap = {};
+      if (tenantIds.length) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', tenantIds);
+        if (profiles) profilesMap = profiles.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+      }
+
+      const enrichedTenantProofs = tenantData.map(p => ({
+        ...p,
+        listings: listingsMap[p.listing_id] || null,
+        profiles: profilesMap[p.tenant_id] || null,
+      }));
+      setTenantProofs(enrichedTenantProofs);
 
       // 2. Subscription/boost payments (from payments)
       const { data: paymentData, error: paymentError } = await supabase
         .from('payments')
-        .select(`
-          *,
-          profiles!user_id (full_name, email, role)
-        `)
+        .select('*')
         .eq('status', 'pending')
         .in('payment_type', ['subscription', 'boost'])
         .order('created_at', { ascending: false });
       if (paymentError) throw paymentError;
-      setSubscriptionPayments(paymentData || []);
+
+      const userIds = paymentData.map(p => p.user_id).filter(Boolean);
+      let userProfilesMap = {};
+      if (userIds.length) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, role')
+          .in('id', userIds);
+        if (profiles) userProfilesMap = profiles.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+      }
+
+      const enrichedPayments = paymentData.map(p => ({
+        ...p,
+        profiles: userProfilesMap[p.user_id] || null,
+      }));
+      setSubscriptionPayments(enrichedPayments);
 
       // 3. Commission proofs (from commissions)
       const { data: commissionData, error: commissionError } = await supabase
         .from('commissions')
-        .select(`
-          *,
-          listing:listings(id, title, address, price),
-          manager:profiles!manager_id (full_name, email)
-        `)
+        .select('*')
         .eq('status', 'proof_submitted')
         .order('created_at', { ascending: false });
       if (commissionError) throw commissionError;
-      setCommissionPayments(commissionData || []);
+
+      const listingIdsComm = commissionData.map(c => c.listing_id).filter(Boolean);
+      const managerIds = commissionData.map(c => c.manager_id).filter(Boolean);
+
+      let listingsCommMap = {};
+      if (listingIdsComm.length) {
+        const { data: listings } = await supabase
+          .from('listings')
+          .select('id, title, address, price')
+          .in('id', listingIdsComm);
+        if (listings) listingsCommMap = listings.reduce((acc, l) => ({ ...acc, [l.id]: l }), {});
+      }
+
+      let managersMap = {};
+      if (managerIds.length) {
+        const { data: managers } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', managerIds);
+        if (managers) managersMap = managers.reduce((acc, m) => ({ ...acc, [m.id]: m }), {});
+      }
+
+      const enrichedCommissions = commissionData.map(c => ({
+        ...c,
+        listing: listingsCommMap[c.listing_id] || null,
+        manager: managersMap[c.manager_id] || null,
+      }));
+      setCommissionPayments(enrichedCommissions);
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -109,14 +169,12 @@ const AdminPaymentProofs = () => {
     if (!window.confirm('Mark this payment as completed?')) return;
 
     try {
-      // Update payment status
       const { error: payError } = await supabase
         .from('payments')
         .update({ status: 'completed' })
         .eq('id', payment.id);
       if (payError) throw payError;
 
-      // Activate subscription or boost
       if (payment.payment_type === 'subscription') {
         const { error: subError } = await supabase
           .from('subscriptions')
@@ -124,7 +182,6 @@ const AdminPaymentProofs = () => {
           .eq('payment_id', payment.id);
         if (subError) throw subError;
 
-        // Update estate firm profile if applicable
         if (payment.profiles?.role === 'estate-firm') {
           const { data: sub } = await supabase
             .from('subscriptions')
@@ -178,7 +235,6 @@ const AdminPaymentProofs = () => {
     if (!window.confirm('Mark this commission as verified and mark as paid?')) return;
 
     try {
-      // Update commission record
       const { error: updateError } = await supabase
         .from('commissions')
         .update({
@@ -190,7 +246,6 @@ const AdminPaymentProofs = () => {
         .eq('id', commission.id);
       if (updateError) throw updateError;
 
-      // Optionally update a wallet or payment record – placeholder for now
       alert('Commission verified and marked as paid.');
       fetchAllData();
     } catch (error) {
@@ -204,7 +259,7 @@ const AdminPaymentProofs = () => {
     try {
       const { error } = await supabase
         .from('commissions')
-        .update({ status: 'pending' }) // or 'rejected' if you have that status
+        .update({ status: 'pending' })
         .eq('id', commissionId);
       if (error) throw error;
       alert('Commission proof rejected (moved back to pending)');
@@ -215,7 +270,9 @@ const AdminPaymentProofs = () => {
     }
   };
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) {
+    return <RentEasyLoader message="Loading Proof of Payments..." fullScreen />;
+  }
 
   return (
     <div className="admin-payment-proofs">
@@ -263,7 +320,7 @@ const AdminPaymentProofs = () => {
                     <span className="proof-date">{new Date(proof.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="proof-body">
-                    <p><strong>Property:</strong> {proof.listings?.title}</p>
+                    <p><strong>Property:</strong> {proof.listings?.title || 'Unknown'}</p>
                     <p><strong>Tenant:</strong> {proof.profiles?.full_name || proof.tenant_id}</p>
                     <p><strong>Description:</strong> {proof.description || 'No description'}</p>
                     <div className="proof-file">
@@ -301,7 +358,7 @@ const AdminPaymentProofs = () => {
                     <span className="payment-date">{new Date(payment.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="payment-body">
-                    <p><strong>User:</strong> {payment.profiles?.full_name || payment.profiles?.email}</p>
+                    <p><strong>User:</strong> {payment.profiles?.full_name || payment.profiles?.email || payment.user_id}</p>
                     <p><strong>Amount:</strong> ₦{payment.amount?.toLocaleString()}</p>
                     <p><strong>Reference:</strong> {payment.reference}</p>
                     {payment.metadata?.proof_url && (

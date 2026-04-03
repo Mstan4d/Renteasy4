@@ -61,10 +61,7 @@ const ChatListPage = () => {
           schema: 'public',
           table: 'messages'
         },
-        () => {
-          // Reload chats when new message arrives
-          loadChats();
-        }
+        () => loadChats()
       )
       .on(
         'postgres_changes',
@@ -73,10 +70,7 @@ const ChatListPage = () => {
           schema: 'public',
           table: 'chats'
         },
-        () => {
-          // Reload chats when chat is updated
-          loadChats();
-        }
+        () => loadChats()
       )
       .subscribe();
 
@@ -89,11 +83,20 @@ const ChatListPage = () => {
     try {
       setLoading(true);
 
-      // Query chats without embeds to avoid relationship ambiguity
+      // Role‑based query conditions
+      let condition;
+      if (userRole === 'manager') {
+        // Managers: see chats they monitor OR they participate in
+        condition = `monitoring_manager_id.eq.${user.id},participant1_id.eq.${user.id},participant2_id.eq.${user.id}`;
+      } else {
+        // Tenants, landlords, estate‑firm, etc.: only chats they directly participate in
+        condition = `participant1_id.eq.${user.id},participant2_id.eq.${user.id}`;
+      }
+
       const { data: chatsData, error } = await supabase
         .from('chats')
         .select('*')
-        .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id},monitoring_manager_id.eq.${user.id}`)
+        .or(condition)
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
@@ -172,138 +175,77 @@ const ChatListPage = () => {
     }
   };
 
-  const getChatTitle = (chat) => {
-    return chat.listing?.title || 'Unknown Property';
-  };
-
+  const getChatTitle = (chat) => chat.listing?.title || 'Unknown Property';
   const getOtherParticipant = (chat) => {
-    // For manager monitoring chats
-    if (chat.monitoring_manager_id === user.id && chat.participant2) {
-      return chat.participant2;
-    }
-    // For direct chats
-    if (chat.participant1_id === user.id) {
-      return chat.participant2;
-    }
-    if (chat.participant2_id === user.id) {
-      return chat.participant1;
-    }
+    if (chat.participant1_id === user.id) return chat.participant2;
+    if (chat.participant2_id === user.id) return chat.participant1;
     return null;
   };
-
   const getOtherParticipantName = (chat) => {
     const other = getOtherParticipant(chat);
     return other?.full_name || other?.name || 'User';
   };
-
   const getOtherParticipantRole = (chat) => {
     const other = getOtherParticipant(chat);
     return other?.role || 'User';
   };
-
   const getChatPreview = (chat) => {
     if (!chat.lastMessage) return 'No messages yet';
-    
     const isOwn = chat.lastMessage.sender_id === user.id;
     const content = chat.lastMessage.is_system_message ? '🔔 System message' : chat.lastMessage.content;
-    
-    if (chat.lastMessage.is_system_message && content.includes('You\'ve contacted')) {
-      if (chat.participant2_id === user.id) {
-        return 'Someone has contacted you about this property';
-      }
-      return content;
-    }
-    
     const sender = isOwn ? 'You: ' : `${getOtherParticipantName(chat)}: `;
     return `${sender}${content.substring(0, 60)}${content.length > 60 ? '...' : ''}`;
   };
-
   const formatDate = (dateString) => {
-    if (!dateString) return '';
     const date = new Date(dateString);
     const now = new Date();
-    const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
+    const diffDays = Math.ceil((now - date) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
   };
-
   const getChatIcon = (chat) => {
     const listing = chat.listing;
     if (listing?.poster_role === 'estate-firm') return '🏢';
     if (listing?.poster_role === 'landlord') return '🏠';
     if (listing?.poster_role === 'tenant') return '👤';
     if (chat.monitoring_manager_id === user.id) return '👨‍💼';
-    if (chat.is_manager_intermediary) return '🔄';
     return '💬';
   };
-
-  const getUnreadCount = (chat) => {
-    return chat.unread_count || 0;
-  };
-
+  const getUnreadCount = (chat) => chat.unread_count || 0;
   const canAccessChat = (chat) => {
     // Admin can access all
     if (user.role === 'admin' || user.role === 'super-admin') return true;
-    
     // Associate staff: only chats from their listings
     if (user.role === 'estate-firm' && isStaff && staffRole === 'associate') {
       const listing = chat.listing;
       return listing?.created_by_staff_id === user.id;
     }
-    
     // Executive staff: all firm chats
-    if (user.role === 'estate-firm' && isStaff && staffRole === 'executive') {
-      return true;
-    }
-    
-    // Regular users: chats they participate in
+    if (user.role === 'estate-firm' && isStaff && staffRole === 'executive') return true;
+    // Regular users: already filtered by the OR condition, but we keep this for safety
     return true;
   };
 
-  if (loading) {
-    return <RentEasyLoader message="Loading conversations..." fullScreen />;
-  }
+  if (loading) return <RentEasyLoader message="Loading conversations..." fullScreen />;
 
   return (
     <div className="chat-list-page">
       {/* Role Banner for Staff */}
       {user.role === 'estate-firm' && isStaff && staffRole === 'associate' && (
-        <div className="role-banner">
-          <Shield size={16} />
-          <span>Associate View - You can only see conversations from listings you created</span>
-        </div>
+        <div className="role-banner"><Shield size={16} /><span>Associate View - You can only see conversations from listings you created</span></div>
       )}
-      
       {user.role === 'estate-firm' && isStaff && staffRole === 'executive' && (
-        <div className="role-banner executive">
-          <Shield size={16} />
-          <span>Executive View - You can see all conversations for your firm</span>
-        </div>
+        <div className="role-banner executive"><Shield size={16} /><span>Executive View - You can see all conversations for your firm</span></div>
       )}
 
       <header className="chat-list-header">
         <div className="header-content">
-          <h1>
-            <MessageSquare size={24} />
-            Messages
-          </h1>
+          <h1><MessageSquare size={24} /> Messages</h1>
           <p>Manage your conversations and inquiries</p>
         </div>
-        <button 
-          className="btn btn-primary"
-          onClick={() => navigate('/listings')}
-        >
-          Browse Listings
-        </button>
+        <button className="btn btn-primary" onClick={() => navigate('/listings')}>Browse Listings</button>
       </header>
 
       <div className="chat-list-container">
@@ -311,69 +253,43 @@ const ChatListPage = () => {
           <div className="empty-state">
             <div className="empty-icon">💬</div>
             <h3>No conversations yet</h3>
-            <p>
-              {user.role === 'estate-firm' && isStaff && staffRole === 'associate'
-                ? 'When tenants contact your listings, conversations will appear here.'
-                : 'Start a conversation by contacting a listing'}
-            </p>
-            <button onClick={() => navigate('/listings')} className="btn btn-primary">
-              Browse Listings to Start Chat
-            </button>
+            <p>{user.role === 'estate-firm' && isStaff && staffRole === 'associate'
+              ? 'When tenants contact your listings, conversations will appear here.'
+              : 'Start a conversation by contacting a listing'}</p>
+            <button onClick={() => navigate('/listings')} className="btn btn-primary">Browse Listings to Start Chat</button>
           </div>
         ) : (
           <div className="chat-list">
             {chats.map(chat => {
               const unreadCount = getUnreadCount(chat);
-              const listing = chat.listing;
               const otherRole = getOtherParticipantRole(chat);
-              
               if (!canAccessChat(chat)) return null;
-              
               return (
-                <div 
-                  key={chat.id} 
+                <div
+                  key={chat.id}
                   className={`chat-item ${unreadCount > 0 ? 'unread' : ''}`}
                   onClick={() => navigate(`/dashboard/messages/chat/${chat.id}`)}
                 >
                   <div className="chat-avatar">
                     <div className="avatar-icon">{getChatIcon(chat)}</div>
-                    {unreadCount > 0 && (
-                      <span className="unread-badge">{unreadCount}</span>
-                    )}
+                    {unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
                   </div>
-                  
                   <div className="chat-content">
                     <div className="chat-header">
                       <div className="chat-title-section">
                         <h4 className="chat-title">{getChatTitle(chat)}</h4>
-                        <span className={`chat-role-badge ${otherRole.toLowerCase()}`}>
-                          {otherRole}
-                        </span>
+                        <span className={`chat-role-badge ${otherRole.toLowerCase()}`}>{otherRole}</span>
                       </div>
                       <span className="chat-time">{formatDate(chat.lastMessageTime || chat.updated_at)}</span>
                     </div>
-                    
-                    <div className="chat-preview">
-                      <span className="preview-text">{getChatPreview(chat)}</span>
-                    </div>
-                    
+                    <div className="chat-preview"><span className="preview-text">{getChatPreview(chat)}</span></div>
                     <div className="chat-meta">
-                      <span className="chat-with">
-                        <Users size={12} />
-                        With: {getOtherParticipantName(chat)}
-                      </span>
-                      {listing?.poster_role === 'estate-firm' && (
-                        <span className="tag-estate">🏢 No Commission</span>
-                      )}
-                      {listing?.poster_role !== 'estate-firm' && listing?.price && (
-                        <span className="tag-commission">💰 7.5% Commission</span>
-                      )}
-                      {chat.monitoring_manager_id === user.id && (
-                        <span className="tag-monitoring">👁️ Monitoring</span>
-                      )}
+                      <span className="chat-with"><Users size={12} /> With: {getOtherParticipantName(chat)}</span>
+                      {chat.listing?.poster_role === 'estate-firm' && <span className="tag-estate">🏢 No Commission</span>}
+                      {chat.listing?.poster_role !== 'estate-firm' && chat.listing?.price && <span className="tag-commission">💰 7.5% Commission</span>}
+                      {chat.monitoring_manager_id === user.id && <span className="tag-monitoring">👁️ Monitoring</span>}
                     </div>
                   </div>
-                  
                   <ChevronRight size={18} className="chevron-icon" />
                 </div>
               );
@@ -381,22 +297,12 @@ const ChatListPage = () => {
           </div>
         )}
       </div>
-      
-      {/* Quick Stats */}
+
       {chats.length > 0 && (
         <div className="chat-stats">
-          <div className="stat-item">
-            <span className="stat-value">{chats.length}</span>
-            <span className="stat-label">Total Conversations</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-value">{chats.filter(c => c.unread_count > 0).length}</span>
-            <span className="stat-label">Unread</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-value">{chats.filter(c => c.state === 'active').length}</span>
-            <span className="stat-label">Active</span>
-          </div>
+          <div className="stat-item"><span className="stat-value">{chats.length}</span><span className="stat-label">Total Conversations</span></div>
+          <div className="stat-item"><span className="stat-value">{chats.filter(c => c.unread_count > 0).length}</span><span className="stat-label">Unread</span></div>
+          <div className="stat-item"><span className="stat-value">{chats.filter(c => c.state === 'active').length}</span><span className="stat-label">Active</span></div>
         </div>
       )}
     </div>
