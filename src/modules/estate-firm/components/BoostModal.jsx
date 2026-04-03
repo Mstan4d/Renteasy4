@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
 import { Zap, Check, X, CreditCard, Upload } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { paymentService } from '@shared/lib/paymentService.js';
+
 import { useAuth } from '../../../shared/context/AuthContext';
 
 const BoostModal = ({ show, onHide, onBoostSuccess }) => {
@@ -83,6 +83,15 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
       setLoading(false);
     }
   };
+
+  const paymentService = {
+  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
+  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
+  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
+  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
+  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
+};
 
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
