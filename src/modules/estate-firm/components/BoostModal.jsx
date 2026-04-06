@@ -3,9 +3,67 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
 import { Zap, Check, X, CreditCard, Upload } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
-
 import { useAuth } from '../../../shared/context/AuthContext';
 
+// ===== Embedded payment service functions (real Supabase) =====
+const generateReference = (prefix = 'PAY') => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${prefix}-${timestamp}-${random}`;
+};
+
+const createPayment = async ({ userId, amount, type, reference, metadata = {} }) => {
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      user_id: userId,
+      amount,
+      payment_type: type,
+      reference,
+      status: 'pending',
+      metadata,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+const uploadProof = async ({ paymentId, userId, file }) => {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${userId}/${paymentId}-${Date.now()}.${fileExt}`;
+  const filePath = fileName;
+
+  const { error: uploadError } = await supabase.storage
+    .from('payment-proofs')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage
+    .from('payment-proofs')
+    .getPublicUrl(filePath);
+
+  // Update payment metadata with proof URL
+  const { error: updateError } = await supabase
+    .from('payments')
+    .update({
+      metadata: { proof_url: urlData.publicUrl, uploaded_at: new Date().toISOString() }
+    })
+    .eq('id', paymentId);
+
+  if (updateError) throw updateError;
+
+  return urlData.publicUrl;
+};
+
+const getBankDetails = () => ({
+  bankName: 'Monie Point',
+  accountName: 'Stable Pilla Resources',
+  accountNumber: '8149113218'
+});
+
+// ===== Main Component =====
 const BoostModal = ({ show, onHide, onBoostSuccess }) => {
   const { user } = useAuth();
   const [packages, setPackages] = useState([]);
@@ -58,11 +116,11 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
     setError(null);
 
     try {
-      const reference = paymentService.generateReference('BST');
+      const reference = generateReference('BST');
       const amount = selectedPackage.price;
 
       // Create payment record with metadata containing package info
-      const payment = await paymentService.createPayment({
+      const payment = await createPayment({
         userId: user.id,
         amount,
         type: 'boost',
@@ -83,15 +141,6 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
       setLoading(false);
     }
   };
-
-  const paymentService = {
-  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
-  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
-  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
-  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
-  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
-};
 
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
@@ -119,7 +168,7 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
 
     try {
       // Upload proof and update payment metadata with proof URL
-      await paymentService.uploadProof({
+      await uploadProof({
         paymentId: paymentRecord.id,
         userId: user.id,
         file,
@@ -150,7 +199,7 @@ const BoostModal = ({ show, onHide, onBoostSuccess }) => {
     }
   };
 
-  const bankDetails = paymentService.getBankDetails();
+  const bankDetails = getBankDetails();
 
   const renderStep = () => {
     switch (step) {

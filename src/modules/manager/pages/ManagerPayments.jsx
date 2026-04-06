@@ -3,11 +3,63 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { paymentService } from '@shared/lib/paymentService.js';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { Eye, EyeOff, Upload, FileText, CheckCircle, XCircle, Clock, Download, CreditCard, Banknote, TrendingUp, Home } from 'lucide-react';
 import './ManagerPayments.css';
 
+// ===== Embedded payment service functions (no external import) =====
+const generateReference = (prefix = 'PAY') => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${prefix}-${timestamp}-${random}`;
+};
+
+const createPayment = async ({ userId, amount, type, reference, metadata = {} }) => {
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      user_id: userId,
+      amount,
+      payment_type: type,
+      reference,
+      status: 'pending',
+      metadata,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+const uploadProof = async ({ paymentId, userId, file }) => {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${userId}/${paymentId}-${Date.now()}.${fileExt}`;
+  const filePath = fileName;
+
+  const { error: uploadError } = await supabase.storage
+    .from('payment-proofs')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage
+    .from('payment-proofs')
+    .getPublicUrl(filePath);
+
+  // Update payment metadata with proof URL
+  const { error: updateError } = await supabase
+    .from('payments')
+    .update({
+      metadata: { proof_url: urlData.publicUrl, uploaded_at: new Date().toISOString() }
+    })
+    .eq('id', paymentId);
+
+  if (updateError) throw updateError;
+
+  return urlData.publicUrl;
+};
+
+// ===== Main Component =====
 const ManagerPayments = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -127,7 +179,7 @@ const ManagerPayments = () => {
     }
   };
 
-  // Upload proof (same as before)
+  // Upload proof using embedded functions
   const handleUploadProof = async (commission) => {
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -140,9 +192,9 @@ const ManagerPayments = () => {
       setUploadingForId(commission.id);
       
       try {
-        const reference = paymentService.generateReference('COMM');
+        const reference = generateReference('COMM');
         
-        const payment = await paymentService.createPayment({
+        const payment = await createPayment({
           userId: user.id,
           amount: commission.manager_share,
           type: 'commission_proof',
@@ -155,7 +207,7 @@ const ManagerPayments = () => {
           }
         });
 
-        const proofUrl = await paymentService.uploadProof({
+        const proofUrl = await uploadProof({
           paymentId: payment.id,
           userId: user.id,
           file
@@ -512,8 +564,8 @@ const ManagerPayments = () => {
                             <FileText size={14} /> Details
                           </button>
                         </div>
-                      </td>
-                    </tr>
+                       </td>
+                     </tr>
                   );
                 })}
               </tbody>

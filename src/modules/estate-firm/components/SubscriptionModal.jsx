@@ -2,9 +2,67 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Card, Row, Col, Alert, Badge, Form } from 'react-bootstrap';
 import { Crown, Check, X, CreditCard, Building, Clock, Upload } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
-
 import { useAuth } from '../../../shared/context/AuthContext';
 
+// ===== Embedded payment service functions (real Supabase) =====
+const generateReference = (prefix = 'PAY') => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${prefix}-${timestamp}-${random}`;
+};
+
+const createPayment = async ({ userId, amount, type, reference, metadata = {} }) => {
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      user_id: userId,
+      amount,
+      payment_type: type,
+      reference,
+      status: 'pending',
+      metadata,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+const uploadProof = async ({ paymentId, userId, file }) => {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${userId}/${paymentId}-${Date.now()}.${fileExt}`;
+  const filePath = fileName;
+
+  const { error: uploadError } = await supabase.storage
+    .from('payment-proofs')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage
+    .from('payment-proofs')
+    .getPublicUrl(filePath);
+
+  // Update payment metadata with proof URL
+  const { error: updateError } = await supabase
+    .from('payments')
+    .update({
+      metadata: { proof_url: urlData.publicUrl, uploaded_at: new Date().toISOString() }
+    })
+    .eq('id', paymentId);
+
+  if (updateError) throw updateError;
+
+  return urlData.publicUrl;
+};
+
+const getBankDetails = () => ({
+  bankName: 'Monie Point',
+  accountName: 'Stable Pilla Resources',
+  accountNumber: '8149113218'
+});
+
+// ===== Main Component =====
 const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
   const { user } = useAuth();
   const [plans, setPlans] = useState([]);
@@ -31,22 +89,15 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
   const loadPlans = async () => {
     setFetchError(null);
     try {
-      console.log('Fetching subscription plans...');
       const { data, error } = await supabase
         .from('subscription_plans')
         .select('*')
         .eq('is_active', true)
         .order('price', { ascending: true });
-      
-      console.log('Supabase response:', { data, error });
-      
+
       if (error) throw error;
-      
+
       if (data && data.length > 0) {
-        console.log('Plans loaded:', data.length, 'items');
-        data.forEach((plan, idx) => {
-          console.log(`Plan ${idx + 1}:`, { name: plan.name, price: plan.price });
-        });
         setPlans(data);
         setSelectedPlan(data[0]);
       } else {
@@ -57,15 +108,6 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
       setFetchError(err.message);
     }
   };
-
-  const paymentService = {
-  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
-  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
-  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
-  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
-  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
-};
 
   const handleSelectPlan = (plan) => {
     setSelectedPlan(plan);
@@ -82,10 +124,10 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
     setError(null);
 
     try {
-      const reference = paymentService.generateReference('SUB');
+      const reference = generateReference('SUB');
       const amount = selectedPlan.price;
 
-      const payment = await paymentService.createPayment({
+      const payment = await createPayment({
         userId: user.id,
         amount,
         type: 'subscription',
@@ -150,7 +192,7 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
     setError(null);
 
     try {
-      await paymentService.uploadProof({
+      await uploadProof({
         paymentId: paymentRecord.id,
         userId: user.id,
         file,
@@ -167,7 +209,7 @@ const SubscriptionModal = ({ show, onHide, onSubscriptionSuccess }) => {
     }
   };
 
-  const bankDetails = paymentService.getBankDetails();
+  const bankDetails = getBankDetails();
 
   const renderStep = () => {
     if (fetchError) {

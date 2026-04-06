@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-
 import {
   CheckCircle, XCircle, Zap, Shield,
   Star, Users, TrendingUp, Award,
@@ -11,6 +10,65 @@ import {
 } from 'lucide-react';
 import './ProviderSubscribe.css';
 
+// ===== Embedded payment service functions (real Supabase) =====
+const generateReference = (prefix = 'PAY') => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${prefix}-${timestamp}-${random}`;
+};
+
+const createPayment = async ({ userId, amount, type, reference, metadata = {} }) => {
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      user_id: userId,
+      amount,
+      payment_type: type,
+      reference,
+      status: 'pending',
+      metadata,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+const uploadProof = async ({ paymentId, userId, file }) => {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${userId}/${paymentId}-${Date.now()}.${fileExt}`;
+  const filePath = fileName;
+
+  const { error: uploadError } = await supabase.storage
+    .from('payment-proofs')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage
+    .from('payment-proofs')
+    .getPublicUrl(filePath);
+
+  // Update payment metadata with proof URL
+  const { error: updateError } = await supabase
+    .from('payments')
+    .update({
+      metadata: { proof_url: urlData.publicUrl, uploaded_at: new Date().toISOString() }
+    })
+    .eq('id', paymentId);
+
+  if (updateError) throw updateError;
+
+  return urlData.publicUrl;
+};
+
+const getBankDetails = () => ({
+  bankName: 'Monie Point',
+  accountName: 'Stable Pilla Resources',
+  accountNumber: '8149113218'
+});
+
+// ===== Main Component =====
 const ProviderSubscribe = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -53,8 +111,6 @@ const ProviderSubscribe = () => {
         .maybeSingle();
       if (subError) throw subError;
       setCurrentSubscription(subData);
-
-      // If user already has an active subscription, maybe redirect? We'll allow viewing but not subscribing again.
     } catch (err) {
       console.error('Error fetching subscription data:', err);
       setError(err.message);
@@ -62,16 +118,6 @@ const ProviderSubscribe = () => {
       setLoading(false);
     }
   };
-
-  // Mock paymentService to avoid import error
-const paymentService = {
-  generateReference: (prefix = 'PAY') => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-  getBankDetails: () => ({ bankName: 'Monie Point', accountName: 'Stable Pilla Resources', accountNumber: '8149113218' }),
-  createPayment: async ({ userId, amount, type, reference, metadata = {} }) => ({ id: 'mock-payment-id', reference }),
-  uploadProof: async ({ paymentId, userId, file }) => 'https://mock-proof-url.com',
-  createSubscription: async ({ userId, plan, paymentId }) => ({ id: 'mock-subscription-id' }),
-  createBoost: async ({ userId, package: boostPackage, paymentId }) => ({ id: 'mock-boost-id' }),
-};
 
   const handleSelectPlan = (plan) => {
     setSelectedPlan(plan);
@@ -81,11 +127,12 @@ const paymentService = {
     if (!selectedPlan) return;
     setSubmitting(true);
     try {
-      const reference = paymentService.generateReference('SUB');
-      const amount = billingCycle === 'monthly' ? selectedPlan.price : selectedPlan.price * 10; // yearly discount placeholder
+      const reference = generateReference('SUB');
+      // Yearly: 10 months price (2 months free) as in original
+      const amount = billingCycle === 'monthly' ? selectedPlan.price : selectedPlan.price * 10;
 
       // Create payment record
-      const payment = await paymentService.createPayment({
+      const payment = await createPayment({
         userId: user.id,
         amount,
         type: 'subscription',
@@ -129,14 +176,13 @@ const paymentService = {
     }
     setSubmitting(true);
     try {
-      await paymentService.uploadProof({
+      await uploadProof({
         paymentId: paymentRecord.id,
         userId: user.id,
         file,
       });
 
       alert('Payment proof uploaded! Your subscription will be activated once verified by admin.');
-      // Optionally refresh data or navigate
       navigate('/dashboard/provider/subscription');
     } catch (err) {
       console.error(err);
@@ -146,7 +192,7 @@ const paymentService = {
     }
   };
 
-  const bankDetails = paymentService.getBankDetails();
+  const bankDetails = getBankDetails();
 
   const benefits = [
     { icon: <TrendingUp size={20} />, title: '5x More Visibility', description: 'Get seen by more clients' },
@@ -211,8 +257,8 @@ const paymentService = {
             {plans.map((plan) => {
               const isCurrentPlan = currentSubscription?.plan_id === plan.id;
               const isSelected = selectedPlan?.id === plan.id;
-              const price = billingCycle === 'monthly' ? plan.price : plan.price * 10; // yearly discount placeholder
-              const yearlyPrice = plan.price * 10; // 2 months free
+              const price = billingCycle === 'monthly' ? plan.price : plan.price * 10; // yearly: 10 months price
+              const yearlyPrice = plan.price * 10;
               const monthlyEquivalent = yearlyPrice / 12;
 
               return (
