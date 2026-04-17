@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 
 const WebSocketContext = createContext(null);
 
+// Only one declaration, with error checking
 export const useWebSocket = () => {
   const context = useContext(WebSocketContext);
   if (!context) {

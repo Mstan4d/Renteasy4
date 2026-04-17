@@ -6,7 +6,7 @@ const Terms = () => (
   <div className="legal-page">
     <div className="legal-container">
       <h1>Terms & Conditions</h1>
-      <p>Last updated: April 3, 2025</p>
+      <p>Last updated: April 3, 2026</p>
       <h2>1. Acceptance of Terms</h2>
       <p>By accessing or using RentEasy, you agree to be bound by these Terms...</p>
       <h2>2. User Roles</h2>

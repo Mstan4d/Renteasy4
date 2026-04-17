@@ -139,6 +139,7 @@
 }
 .form-input {
   padding: 0.75rem 1rem;
+   padding-right: 44px;
   border: 2px solid var(--login-input-border);
   border-radius: 0.5rem;
   font-size: 1rem;
@@ -155,29 +156,54 @@
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
+/* Password input wrapper */
 .password-input-wrapper {
   position: relative;
   width: 100%;
 }
 
+/* Eye toggle button */
 .password-toggle {
   position: absolute;
-  right: 12px;        /* Adjust as needed – pushes to the right edge */
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: none;
   cursor: pointer;
   color: var(--login-text-secondary);
-  padding: 8px;       /* Increases clickable area */
+  padding: 0;           /* remove extra padding */
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
 }
 
-/* Ensure the input has enough right padding so text doesn't overlap the icon */
-.form-input {
-  padding-right: 44px;  /* Space for the toggle button */
+/* Remove default focus outline */
+.password-toggle:focus {
+  outline: none;
+}
+
+/* Optional hover effect */
+.password-toggle:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+.dark .password-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Remove the blue box from the input when focused */
+.form-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+.dark .form-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 .submit-button {
   background: var(--login-button-bg);
@@ -293,7 +319,7 @@
   .login-subtitle {
     font-size: 0.9rem;
   }
-  .form-input, .submit-button, .google-button {
+  .submit-button, .google-button {
     padding: 0.75rem;
   }
 }

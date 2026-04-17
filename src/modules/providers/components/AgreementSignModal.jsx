@@ -1,6 +1,5 @@
 // src/modules/providers/components/AgreementSignModal.jsx
 import React, { useState } from 'react';
-import { FaCheckCircle } from 'react-icons/fa';
 import './ComplianceModals.css';
 
 const AgreementSignModal = ({ item, onClose, onComplete }) => {
@@ -20,12 +19,12 @@ const AgreementSignModal = ({ item, onClose, onComplete }) => {
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-header">
-          <h3>Sign {item.title}</h3>
+          <h3>Sign {item?.title}</h3>
           <button onClick={onClose} className="modal-close">×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            <p>{item.description}</p>
+            <p>{item?.description}</p>
             <div className="agreement-text">
               <p>I have read and agree to the terms and conditions of the Service Provider Agreement.</p>
             </div>

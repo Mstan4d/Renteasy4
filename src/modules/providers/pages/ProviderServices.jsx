@@ -358,7 +358,7 @@ const ProviderServices = () => {
                 : "No services match your current filters. Try adjusting your search criteria."}
             </p>
             {services.length === 0 && (
-              <Link to="/providers/post-service" className="btn btn-primary">
+              <Link to="dashboard/provider/post-service" className="btn btn-primary">
                 <PlusCircle size={18} />
                 Post Your First Service
               </Link>

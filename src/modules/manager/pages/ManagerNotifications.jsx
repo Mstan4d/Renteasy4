@@ -53,13 +53,57 @@ const ManagerNotifications = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!managerLocation) return;
-    fetchNotifications();
-    const subscription = subscribeToNewListings();
-    return () => {
-      if (subscription) supabase.removeChannel(subscription);
-    };
-  }, [managerLocation, radius]);
+  if (!managerLocation || !managerLocation.lat || !managerLocation.lng) return;
+  
+  fetchNotifications();
+  const subscription = subscribeToNewListings();
+  return () => {
+    if (subscription) supabase.removeChannel(subscription);
+  };
+}, [managerLocation, radius]);
+
+// Fallback: also fetch from manager_notifications table (more reliable)
+useEffect(() => {
+  if (!user) return;
+
+ const fetchManagerNotifications = async () => {
+  const { data, error } = await supabase
+    .from('manager_notifications')
+    .select(`
+      *,
+      listing:listings(id, title, lat, lng, address, price, state, city, created_at)
+    `)
+    .eq('manager_id', user.id)
+    .eq('is_read', false)
+    .order('created_at', { ascending: false });
+
+  if (!error && data && data.length > 0) {
+    const formatted = data.map(n => ({
+      id: n.listing_id,
+      title: n.listing?.title,
+      price: n.listing?.price,
+      poster_role: 'tenant',
+      created_at: n.listing?.created_at,
+      lat: n.listing?.lat,
+      lng: n.listing?.lng,
+      address: n.listing?.address,
+      state: n.listing?.state,
+      city: n.listing?.city,
+      distance: n.distance,
+      notification_id: n.id
+    }));
+    setNotifications(prev => {
+      const existingIds = new Set(prev.map(p => p.id));
+      const newOnes = formatted.filter(f => !existingIds.has(f.id));
+      return [...newOnes, ...prev];
+    });
+  }
+};
+
+  fetchManagerNotifications();
+  const interval = setInterval(fetchManagerNotifications, 30000); // every 30 sec
+  return () => clearInterval(interval);
+}, [user]);
 
   const fetchManagerSettings = async () => {
     try {

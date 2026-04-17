@@ -15,7 +15,8 @@ const ManagerProfile = () => {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [assignedAreas, setAssignedAreas] = useState([]);
   const [kycStatus, setKycStatus] = useState('not_submitted');
-  
+  const [bankSearchTerm, setBankSearchTerm] = useState('');
+  const [showBankDropdown, setShowBankDropdown] = useState(false);
   // Bank details state
   const [bankDetails, setBankDetails] = useState({
     bank_name: '',
@@ -33,6 +34,16 @@ const ManagerProfile = () => {
     phone: '',
     email: ''
   });
+
+  const nigerianBanks = [
+  "Access Bank", "Zenith Bank", "First Bank", "UBA", "GTBank", 
+  "Fidelity Bank", "Ecobank", "Union Bank", "Polaris Bank", "Stanbic IBTC",
+  "Sterling Bank", "Wema Bank", "Unity Bank", "Keystone Bank", "Heritage Bank",
+  "Providus Bank", "Suntrust Bank", "Jaiz Bank", "Titan Trust Bank", "Globus Bank",
+  "Moniepoint Microfinance Bank", "OPay Digital Bank", "PalmPay", "Kuda Bank",
+  "ALAT by Wema", "Citibank Nigeria", "Enterprise Bank", "Rand Merchant Bank",
+  "Standard Chartered Bank", "TAJ Bank", "VFD Microfinance Bank", "Sparkle Microfinance Bank"
+];
 
   useEffect(() => {
     if (!user || user.role !== 'manager') {
@@ -198,6 +209,11 @@ const ManagerProfile = () => {
       setSavingBank(false);
     }
   };
+
+  const handleEditBank = () => {
+  setEditingBank(true);
+  setBankSearchTerm(bankDetails.bank_name || '');
+};
 
   const getKYCStatusBadge = () => {
     switch (kycStatus) {
@@ -402,11 +418,11 @@ const ManagerProfile = () => {
                 </button>
                 {!editingBank && (
                   <button 
-                    className="btn-icon"
-                    onClick={() => setEditingBank(true)}
-                  >
-                    ✏️ Edit
-                  </button>
+  className="btn-icon"
+  onClick={handleEditBank}
+>
+  ✏️ Edit
+</button>
                 )}
               </div>
             </div>
@@ -419,23 +435,43 @@ const ManagerProfile = () => {
             {editingBank ? (
               <div className="edit-form">
                 <div className="form-group">
-                  <label>Bank Name</label>
-                  <select
-                    value={bankDetails.bank_name}
-                    onChange={(e) => setBankDetails({...bankDetails, bank_name: e.target.value})}
-                  >
-                    <option value="">Select Bank</option>
-                    <option value="Access Bank">Access Bank</option>
-                    <option value="First Bank">First Bank</option>
-                    <option value="GTBank">GTBank</option>
-                    <option value="UBA">UBA</option>
-                    <option value="Zenith Bank">Zenith Bank</option>
-                    <option value="Moniepoint">Moniepoint</option>
-                    <option value="Opay">Opay</option>
-                    <option value="Palmpay">Palmpay</option>
-                    <option value="Kuda Bank">Kuda Bank</option>
-                  </select>
-                </div>
+  <label>Bank Name *</label>
+  <div className="bank-search-container">
+    <input
+      type="text"
+      placeholder="Search or select bank..."
+      value={bankSearchTerm}
+      onChange={(e) => {
+        setBankSearchTerm(e.target.value);
+        setShowBankDropdown(true);
+      }}
+      onFocus={() => setShowBankDropdown(true)}
+      className="bank-search-input"
+    />
+    {showBankDropdown && (
+      <div className="bank-dropdown">
+        {nigerianBanks
+          .filter(bank => bank.toLowerCase().includes(bankSearchTerm.toLowerCase()))
+          .map(bank => (
+            <div
+              key={bank}
+              className="bank-option"
+              onClick={() => {
+                setBankDetails({...bankDetails, bank_name: bank});
+                setBankSearchTerm(bank);
+                setShowBankDropdown(false);
+              }}
+            >
+              {bank}
+            </div>
+          ))}
+        {nigerianBanks.filter(bank => bank.toLowerCase().includes(bankSearchTerm.toLowerCase())).length === 0 && (
+          <div className="bank-no-results">No banks found</div>
+        )}
+      </div>
+    )}
+  </div>
+</div>
                 <div className="form-group">
                   <label>Account Number</label>
                   <input

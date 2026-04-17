@@ -178,6 +178,51 @@ const sendInvite = async () => {
     setSending(false);
   }
 };
+{/*
+    !!!use this send innite before deployment
+const sendInvite = async () => {
+  if (!inviteEmail) {
+    alert('Please enter an email address');
+    return;
+  }
+
+  setSending(true);
+  try {
+    const { data: invite, error } = await supabase
+      .from('staff_invites')
+      .insert({
+        estate_firm_id: estateFirmId,
+        email: inviteEmail,
+        role: inviteRole,
+        invited_by: user.id,
+        status: 'pending',
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // USE YOUR VERCELL URL HERE
+    const inviteLink = `https://renteasy-frontend-xi.vercel.app/accept-invite/${invite.id}`;
+    
+    await navigator.clipboard.writeText(inviteLink);
+    
+    alert(`✅ Invitation created for ${inviteEmail}!\n\nLink copied to clipboard.\n\nShare this link with them:\n${inviteLink}`);
+    
+    setInviteEmail('');
+    setShowInviteModal(false);
+    await loadPendingInvites(estateFirmId);
+
+  } catch (err) {
+    console.error('Error:', err);
+    alert('Failed to create invitation');
+  } finally {
+    setSending(false);
+  }
+};
+
+*/}
   const cancelInvite = async (inviteId) => {
     if (!window.confirm('Cancel this invitation?')) return;
     

@@ -73,86 +73,110 @@ const ManagerChats = () => {
   };
 
   const loadChats = async () => {
-    setLoading(true);
-    try {
-      const { data: chatsData, error: chatsError } = await supabase
-        .from('chats')
-        .select(`
-          *,
-          participant1:participant1_id (id, full_name, name, avatar_url, role),
-          participant2:participant2_id (id, full_name, name, avatar_url, role),
-          listing:listing_id (id, title, images, price, address, city, state, poster_role, status, user_id)
-        `)
-        .or(`monitoring_manager_id.eq.${user.id},participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
-        .order('updated_at', { ascending: false });
+  setLoading(true);
+  try {
+    // 1. Fetch chats where manager is involved
+    const { data: chatsData, error: chatsError } = await supabase
+      .from('chats')
+      .select(`
+        *,
+        listing:listing_id (id, title, images, price, address, city, state, poster_role, status, user_id)
+      `)
+      .or(`monitoring_manager_id.eq.${user.id},participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+      .order('updated_at', { ascending: false });
 
-      if (chatsError) throw chatsError;
-
-      if (!chatsData || chatsData.length === 0) {
-        setChats([]);
-        setStats({ total: 0, uniqueListings: 0, active: 0, rented: 0, pending: 0, monitoring: 0 });
-        setLoading(false);
-        return;
-      }
-
-      const enrichedChats = await Promise.all(
-        chatsData.map(async (chat) => {
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('chat_id', chat.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          const { count: unreadCount } = await supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('chat_id', chat.id)
-            .is('read_at', null)
-            .neq('sender_id', user.id);
-
-          const isMonitoring = chat.monitoring_manager_id === user.id;
-          const isParticipant = chat.participant1_id === user.id || chat.participant2_id === user.id;
-          
-          let otherParty = null;
-          if (isParticipant) {
-            otherParty = chat.participant1_id === user.id ? chat.participant2 : chat.participant1;
-          } else if (isMonitoring && chat.participant2) {
-            otherParty = chat.participant2;
-          }
-
-          const listingPrice = chat.listing?.price || 0;
-          const commission = listingPrice * 0.025;
-
-          return {
-            ...chat,
-            listingTitle: chat.listing?.title || 'Unknown Property',
-            listingPrice: listingPrice,
-            listingStatus: chat.listing?.status || 'unknown',
-            listingImage: chat.listing?.images?.[0] || null,
-            listingLocation: `${chat.listing?.city || ''} ${chat.listing?.state || ''}`.trim() || 'Location not set',
-            listingPosterRole: chat.listing?.poster_role,
-            lastMessage: lastMsg,
-            unreadCount: unreadCount || 0,
-            isMonitoring: isMonitoring,
-            isParticipant: isParticipant,
-            otherParty: otherParty,
-            commission: commission,
-            canVerify: chat.listing?.verification_status === 'pending_verification' && isMonitoring,
-            canConfirmRental: chat.listing?.status !== 'rented' && isMonitoring
-          };
-        })
-      );
-
-      setChats(enrichedChats);
-      calculateStats(enrichedChats);
-    } catch (error) {
-      console.error('Error loading chats:', error);
-    } finally {
+    if (chatsError) throw chatsError;
+    if (!chatsData || chatsData.length === 0) {
+      setChats([]);
+      setStats({ total: 0, uniqueListings: 0, active: 0, rented: 0, pending: 0, monitoring: 0 });
       setLoading(false);
+      return;
     }
-  };
+
+    // 2. Collect all participant IDs
+    const participantIds = new Set();
+    chatsData.forEach(chat => {
+      if (chat.participant1_id) participantIds.add(chat.participant1_id);
+      if (chat.participant2_id) participantIds.add(chat.participant2_id);
+    });
+    // Also add the manager's own ID (though not needed for otherParty)
+    participantIds.add(user.id);
+
+    // 3. Fetch all profiles for those IDs
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name, name, avatar_url, role')
+      .in('id', Array.from(participantIds));
+    if (profilesError) throw profilesError;
+
+    // Create a map for quick lookup
+    const profileMap = {};
+    (profilesData || []).forEach(prof => {
+      profileMap[prof.id] = prof;
+    });
+
+    // 4. Enrich chats with participant objects and other data
+    const enrichedChats = await Promise.all(
+      chatsData.map(async (chat) => {
+        const { data: lastMsg } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chat.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const { count: unreadCount } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('chat_id', chat.id)
+          .is('read_at', null)
+          .neq('sender_id', user.id);
+
+        const isMonitoring = chat.monitoring_manager_id === user.id;
+        const isParticipant = chat.participant1_id === user.id || chat.participant2_id === user.id;
+
+        let otherParty = null;
+        if (isParticipant) {
+          const otherId = chat.participant1_id === user.id ? chat.participant2_id : chat.participant1_id;
+          otherParty = profileMap[otherId];
+        } else if (isMonitoring && chat.participant2_id) {
+          otherParty = profileMap[chat.participant2_id];
+        }
+
+        const listingPrice = chat.listing?.price || 0;
+        const commission = listingPrice * 0.025;
+
+        return {
+          ...chat,
+          participant1: profileMap[chat.participant1_id],
+          participant2: profileMap[chat.participant2_id],
+          listingTitle: chat.listing?.title || 'Unknown Property',
+          listingPrice,
+          listingStatus: chat.listing?.status || 'unknown',
+          listingImage: chat.listing?.images?.[0] || null,
+          listingLocation: `${chat.listing?.city || ''} ${chat.listing?.state || ''}`.trim() || 'Location not set',
+          listingPosterRole: chat.listing?.poster_role,
+          lastMessage: lastMsg,
+          unreadCount: unreadCount || 0,
+          isMonitoring,
+          isParticipant,
+          otherParty,
+          commission,
+          canVerify: chat.listing?.verification_status === 'pending_verification' && isMonitoring,
+          canConfirmRental: chat.listing?.status !== 'rented' && isMonitoring
+        };
+      })
+    );
+
+    setChats(enrichedChats);
+    calculateStats(enrichedChats);
+  } catch (error) {
+    console.error('Error loading chats:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const calculateStats = (chatsData) => {
     // Group by listing_id to avoid double counting

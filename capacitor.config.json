@@ -1,0 +1,10 @@
+{
+  "appId": "com.renteasy4.app",
+  "appName": "RentEasyHomes",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorUpdater": {
+      "appId": "com.renteasy4.app"
+    }
+  }
+}

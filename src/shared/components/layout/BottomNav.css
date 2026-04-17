@@ -2,10 +2,10 @@
 
 .bottom-nav {
   position: fixed;
-  bottom: 15px; /* Floating look */
+  bottom: 10px; /* Floating look */
   left: 50%;
   transform: translateX(-50%);
-  width: 92%; /* Don't touch the edges */
+  width: 95%; /* Don't touch the edges */
   max-width: 450px;
   
   display: flex !important;

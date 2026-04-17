@@ -98,12 +98,10 @@ const ManagerKYC = () => {
         const status = data.kyc_status || 'not_started';
         setVerificationStatus(status);
         
-        // If already approved, redirect to dashboard after showing success message
-        if (status === 'approved') {
-          setTimeout(() => {
-            navigate('/dashboard/manager');
-          }, 3000);
-        }
+        // If already approved, just show the success screen (no auto-redirect)
+if (status === 'approved') {
+  // Stay on success page, user can click button to go to dashboard
+}
         
         // If pending, show pending screen
         if (status === 'pending') {

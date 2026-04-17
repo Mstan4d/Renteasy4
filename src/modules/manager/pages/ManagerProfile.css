@@ -609,3 +609,48 @@
     width: 100%;
   }
 }
+
+.bank-search-container {
+  position: relative;
+  width: 100%;
+}
+
+.bank-search-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--login-input-border);
+  border-radius: 0.5rem;
+  background: var(--login-input-bg);
+  color: var(--login-text-primary);
+}
+
+.bank-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--login-card-bg);
+  border: 1px solid var(--login-border);
+  border-radius: 0.5rem;
+  z-index: 1000;
+  margin-top: 4px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.bank-option {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.bank-option:hover {
+  background: var(--login-google-button-hover);
+}
+
+.bank-no-results {
+  padding: 0.75rem 1rem;
+  color: var(--login-text-secondary);
+  text-align: center;
+}

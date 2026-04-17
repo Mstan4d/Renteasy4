@@ -662,7 +662,7 @@ useEffect(() => {
       {userRole === 'associate' && (
         <div className="role-banner">
           <Shield size={16} />
-          <span>Associate View - You can only view this property (read-only)</span>
+          <span>Associate View - You can manage properties assigned to you</span>
         </div>
       )}
       
@@ -902,22 +902,23 @@ useEffect(() => {
                   </div>
                 )}
 
-                <div className="landlord-actions">
-                  {canEdit && (
-                    <button 
-                      className="btn-outline"
-                      onClick={() => handleSendDocumentToLandlord(property.landlord)}
-                    >
-                      <Send size={14} /> Send Document
-                    </button>
-                  )}
-                  <button 
-                    className="btn-outline"
-                    onClick={() => navigate(`/dashboard/estate-firm/landlords/${property.landlord.id}`)}
-                  >
-                    <Eye size={14} /> View Profile
-                  </button>
-                </div>
+                
+<div className="landlord-actions">
+  {canEdit && (
+    <button 
+      className="btn-outline"
+      onClick={() => handleSendDocumentToLandlord(property.landlord)}
+    >
+      <Send size={14} /> Send Document
+    </button>
+  )}
+  <button 
+    className="btn-outline"
+    onClick={() => navigate(`/dashboard/estate-firm/landlords/${property.landlord.id}`)}
+  >
+    <Eye size={14} /> View Profile
+  </button>
+</div>
               </>
             ) : (
               <div className="no-landlord">

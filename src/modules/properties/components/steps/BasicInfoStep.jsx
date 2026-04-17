@@ -173,7 +173,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
             value={formData.bedrooms || 1}
             onChange={(e) => handleChange('bedrooms', parseInt(e.target.value))}
           >
-            {[1, 2, 3, 4, 5, 6].map(num => (
+            {[0, 1, 2, 3, 4, 5, 6].map(num => (
               <option key={num} value={num}>
                 {num} {num === 1 ? 'Bedroom' : 'Bedrooms'}
               </option>
@@ -187,7 +187,7 @@ const BasicInfoStep = ({ formData, updateFormData, userRole, userProfile }) => {
             value={formData.bathrooms || 1}
             onChange={(e) => handleChange('bathrooms', parseInt(e.target.value))}
           >
-            {[1, 2, 3, 4, 5, 6].map(num => (
+            {[0, 1, 2, 3, 4, 5, 6].map(num => (
               <option key={num} value={num}>
                 {num} {num === 1 ? 'Bathroom' : 'Bathrooms'}
               </option>

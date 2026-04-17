@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { nigerianStates } from '../../../shared/data/nigerianLocations';
+
 import './ServicePostForm.css';
 
 const ServicePostForm = ({ firmDetails, onSuccess }) => {

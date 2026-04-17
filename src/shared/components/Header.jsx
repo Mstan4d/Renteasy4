@@ -334,7 +334,7 @@ const getProfileRoute = () => {
                 Login
               </Link>
               <Link to="/signup" className="signup-button">
-                Sign Up
+                SignUp
               </Link>
             </div>
           )}

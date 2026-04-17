@@ -52,43 +52,66 @@
   margin: 0;
 }
 
+/* ===== HEADER RIGHT SECTION – FIXED OVERLAP ===== */
 .header-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 1.5rem;
+  position: relative;
+  z-index: 10;
 }
 
-.notifications, .user-profile {
+/* Notification bell container */
+.notifications {
   position: relative;
-  background: none;
-  border: none;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px;
   border-radius: 8px;
   color: #4b5563;
   transition: background 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
-.notifications:hover, .user-profile:hover {
+.notifications:hover {
   background: #f1f5f9;
 }
 
+/* Badge – fixed position and size */
 .notification-badge {
   position: absolute;
-  top: 0;
-  right: 0;
-  background: #ef4444;
+  top: -4px;
+  right: -4px;
+  background-color: #ef4444;
   color: white;
+  border-radius: 50%;
+  min-width: 18px;
+  height: 18px;
   font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 10px;
-  min-width: 16px;
-  text-align: center;
-  transform: translate(25%, -25%);
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 0 0 1px white;
+  z-index: 2;
+}
+
+/* User profile */
+.user-profile {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 8px;
+  border-radius: 8px;
+  color: #4b5563;
+  transition: background 0.2s;
+}
+
+.user-profile:hover {
+  background: #f1f5f9;
 }
 
 .user-name {
@@ -100,7 +123,7 @@
 /* ===== SIDEBAR ===== */
 .manager-sidebar {
   position: fixed;
-  top: 64px; /* below header */
+  top: 64px;
   left: 0;
   bottom: 0;
   width: 260px;
@@ -113,7 +136,7 @@
   flex-direction: column;
 }
 
-/* Desktop: always visible unless collapsed */
+/* Desktop */
 @media (min-width: 1024px) {
   .manager-sidebar {
     transform: translateX(0);
@@ -123,7 +146,7 @@
   }
 }
 
-/* Mobile: hidden by default, slides in */
+/* Mobile */
 @media (max-width: 1023px) {
   .manager-sidebar {
     transform: translateX(-100%);
@@ -192,7 +215,6 @@
   font-weight: 500;
 }
 
-/* KYC Status Badge */
 .kyc-status-sidebar {
   margin-top: 4px;
 }
@@ -317,7 +339,7 @@
 
 /* ===== MAIN CONTENT ===== */
 .manager-main {
-  margin-top: 64px; /* header height */
+  margin-top: 64px;
   margin-left: 260px;
   transition: margin-left 0.3s ease;
   padding: 24px;
@@ -340,7 +362,7 @@
   }
 }
 
-/* ===== OVERLAY (mobile) ===== */
+/* ===== OVERLAY ===== */
 .sidebar-overlay {
   position: fixed;
   top: 64px;

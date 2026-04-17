@@ -525,17 +525,25 @@ const PostPropertyPage = () => {
     }
     
     let coordinates = null;
-    try {
-      coordinates = await getCoordinatesFromAddress(
-        formData.address,
-        formData.city,
-        formData.state,
-        formData.lga
-      );
-      console.log('Coordinates obtained:', coordinates);
-    } catch (error) {
-      console.error('Error getting coordinates:', error);
-    }
+
+// PRIORITY 1: Use GPS coordinates from LocationStep (user clicked "Get Current Location")
+if (formData.coordinates?.lat && formData.coordinates?.lng) {
+  coordinates = formData.coordinates;
+  console.log('📍 Using GPS coordinates from formData:', coordinates);
+} else {
+  // PRIORITY 2: Try geocoding from address
+  try {
+    coordinates = await getCoordinatesFromAddress(
+      formData.address,
+      formData.city,
+      formData.state,
+      formData.lga
+    );
+    console.log('📍 Geocoded coordinates:', coordinates);
+  } catch (error) {
+    console.error('❌ Geocoding failed:', error);
+  }
+}
 
     const commission = calculateCommission();
 
@@ -688,8 +696,10 @@ const PostPropertyPage = () => {
       }
 
       // Notify nearby managers
-      if (currentProfile.role !== 'estate-firm' && formData.coordinates?.lat && formData.coordinates?.lng) {
-        await notifyNearbyManagers(listing.id, formData.coordinates);
+      if (currentProfile.role !== 'estate-firm' && coordinates?.lat && coordinates?.lng) {
+        await notifyNearbyManagers(listing.id, coordinates);
+      }else{
+        console.warn('No coordinates available-managers will not be notified')
       }
 
       const successMessage = currentProfile.role === 'estate-firm'

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import EstateHeader from './EstateHeader';
+import './EstateFirmLayout.css'; // optional
 
 const EstateFirmLayout = () => {
   return (

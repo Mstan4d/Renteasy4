@@ -1,10 +1,12 @@
 // src/modules/providers/pages/ProviderPayouts.jsx
-import React, { useState } from 'react';
-import { 
-  CreditCard, 
-  Wallet, 
-  CheckCircle, 
-  Clock, 
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import {
+  CreditCard,
+  Wallet,
+  CheckCircle,
+  Clock,
   AlertCircle,
   DollarSign,
   Calendar,
@@ -15,83 +17,140 @@ import {
   Filter,
   Search
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './ProviderPayouts.css';
 
 const ProviderPayouts = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [selectedMethod, setSelectedMethod] = useState('bank');
+  const [selectedMethod, setSelectedMethod] = useState(null);
   const [activeTab, setActiveTab] = useState('withdraw');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const payoutMethods = [
-    { id: 1, type: 'bank', name: 'Guaranty Trust Bank', account: '0123456789', default: true },
-    { id: 2, type: 'bank', name: 'Access Bank', account: '9876543210', default: false },
-    { id: 3, type: 'mobile', name: 'OPay', phone: '08123456789', default: false },
-  ];
-
-  const payoutHistory = [
-    {
-      id: 1,
-      amount: 50000,
-      method: 'Bank Transfer',
-      status: 'completed',
-      date: '2024-01-15',
-      transactionId: 'TXN-001234',
-      fee: 100
-    },
-    {
-      id: 2,
-      amount: 35000,
-      method: 'OPay',
-      status: 'processing',
-      date: '2024-01-14',
-      transactionId: 'TXN-001233',
-      fee: 50
-    },
-    {
-      id: 3,
-      amount: 75000,
-      method: 'Bank Transfer',
-      status: 'failed',
-      date: '2024-01-10',
-      transactionId: 'TXN-001232',
-      fee: 100
-    },
-    {
-      id: 4,
-      amount: 25000,
-      method: 'Bank Transfer',
-      status: 'completed',
-      date: '2024-01-08',
-      transactionId: 'TXN-001231',
-      fee: 100
-    },
-  ];
-
-  const walletBalance = {
-    available: 245000,
-    pending: 45000,
+  const [walletBalance, setWalletBalance] = useState({
+    available: 0,
+    pending: 0,
     minWithdrawal: 5000,
     processingFee: 100
-  };
+  });
 
-  const handleWithdraw = () => {
-    const amount = parseFloat(withdrawAmount);
-    if (amount >= walletBalance.minWithdrawal && amount <= walletBalance.available) {
-      alert(`Withdrawal request for ₦${amount.toLocaleString()} submitted!`);
-      setWithdrawAmount('');
-    } else if (amount < walletBalance.minWithdrawal) {
-      alert(`Minimum withdrawal amount is ₦${walletBalance.minWithdrawal.toLocaleString()}`);
-    } else {
-      alert('Insufficient balance');
+  const [payoutMethods, setPayoutMethods] = useState([]);
+  const [payoutHistory, setPayoutHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user?.id) {
+      loadData();
+    }
+  }, [user]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Fetch wallet balance
+      const { data: wallet, error: walletError } = await supabase
+        .from('wallets')
+        .select('balance, pending_balance')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (walletError) throw walletError;
+
+      setWalletBalance(prev => ({
+        ...prev,
+        available: wallet?.balance || 0,
+        pending: wallet?.pending_balance || 0
+      }));
+
+      // Fetch payment methods
+      const { data: methods, error: methodsError } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('is_default', { ascending: false });
+
+      if (methodsError) throw methodsError;
+      setPayoutMethods(methods || []);
+
+      // Fetch payout history
+      const { data: payouts, error: payoutsError } = await supabase
+        .from('payouts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (payoutsError) throw payoutsError;
+      setPayoutHistory(payouts || []);
+    } catch (error) {
+      console.error('Error loading payout data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const filteredHistory = payoutHistory.filter(payout => 
-    payout.transactionId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const handleWithdraw = async () => {
+    const amount = parseFloat(withdrawAmount);
+    if (!selectedMethod) {
+      alert('Please select a payout method');
+      return;
+    }
+    if (amount < walletBalance.minWithdrawal) {
+      alert(`Minimum withdrawal amount is ₦${walletBalance.minWithdrawal.toLocaleString()}`);
+      return;
+    }
+    if (amount > walletBalance.available) {
+      alert('Insufficient balance');
+      return;
+    }
+
+    try {
+      // Insert payout request
+      const { error: payoutError } = await supabase
+        .from('payouts')
+        .insert([{
+          user_id: user.id,
+          amount: amount,
+          fee: walletBalance.processingFee,
+          method: selectedMethod.type,
+          method_details: selectedMethod,
+          status: 'pending'
+        }]);
+
+      if (payoutError) throw payoutError;
+
+      // Deduct from wallet balance (you might want to use a transaction or function)
+      const { error: updateError } = await supabase
+        .from('wallets')
+        .update({
+          balance: walletBalance.available - amount,
+          pending_balance: walletBalance.pending + amount
+        })
+        .eq('user_id', user.id);
+
+      if (updateError) throw updateError;
+
+      alert(`Withdrawal request for ₦${amount.toLocaleString()} submitted!`);
+      setWithdrawAmount('');
+      loadData(); // refresh data
+    } catch (error) {
+      console.error('Error processing withdrawal:', error);
+      alert('Failed to process withdrawal. Please try again.');
+    }
+  };
+
+  const getMethodIcon = (type) => {
+    return type === 'bank' ? <DollarSign size={24} /> : <Smartphone size={24} />;
+  };
+
+  const filteredHistory = payoutHistory.filter(payout =>
+    payout.transaction_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     payout.method.toLowerCase().includes(searchQuery.toLowerCase()) ||
     payout.status.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (loading) return <div className="loading">Loading payout information...</div>;
 
   return (
     <div className="payouts-container">
@@ -101,7 +160,7 @@ const ProviderPayouts = () => {
           <h1 className="text-2xl font-bold text-gray-800">Payouts & Withdrawals</h1>
           <p className="text-gray-600">Withdraw your earnings to your bank account or mobile wallet</p>
         </div>
-        
+
         <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
           <Download size={20} />
           <span>Download Statement</span>
@@ -140,7 +199,7 @@ const ProviderPayouts = () => {
               onClick={() => setActiveTab(tab)}
               className={`tab-button ${activeTab === tab ? 'active' : ''}`}
             >
-              {tab}
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </nav>
@@ -164,7 +223,7 @@ const ProviderPayouts = () => {
                     className="amount-input"
                   />
                 </div>
-                
+
                 <div className="quick-amounts">
                   {[5000, 10000, 25000, 50000].map((amount) => (
                     <button
@@ -176,7 +235,7 @@ const ProviderPayouts = () => {
                     </button>
                   ))}
                 </div>
-                
+
                 <div className="calculator-summary">
                   <div className="calc-row">
                     <span>Available Balance</span>
@@ -195,68 +254,71 @@ const ProviderPayouts = () => {
                 </div>
               </div>
             </div>
-            
+
             {/* Payout Methods */}
             <div className="payout-methods">
               <div className="methods-header">
                 <h3>Payout Method</h3>
-                <button className="add-method-btn">
+                <button
+                  className="add-method-btn"
+                  onClick={() => navigate('/dashboard/provider/payment-methods')}
+                >
                   <Plus size={16} />
                   <span>Add New Method</span>
                 </button>
               </div>
-              
+
               <div className="methods-list">
-                {payoutMethods.map((method) => (
-                  <div
-                    key={method.id}
-                    onClick={() => setSelectedMethod(method.type)}
-                    className={`method-card ${selectedMethod === method.type ? 'selected' : ''}`}
-                  >
-                    <div className="method-header">
-                      <div className="method-info">
-                        <div className={`method-icon ${method.type}`}>
-                          {method.type === 'bank' ? (
-                            <DollarSign size={24} />
-                          ) : (
-                            <Smartphone size={24} />
-                          )}
+                {payoutMethods.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No payment methods added yet</p>
+                ) : (
+                  payoutMethods.map((method) => (
+                    <div
+                      key={method.id}
+                      onClick={() => setSelectedMethod(method)}
+                      className={`method-card ${selectedMethod?.id === method.id ? 'selected' : ''}`}
+                    >
+                      <div className="method-header">
+                        <div className="method-info">
+                          <div className={`method-icon ${method.type}`}>
+                            {getMethodIcon(method.type)}
+                          </div>
+                          <div className="method-details">
+                            <h4>{method.name}</h4>
+                            <p>{method.type === 'bank' ? 'Bank Account' : 'Mobile Wallet'}</p>
+                          </div>
                         </div>
-                        <div className="method-details">
-                          <h4>{method.name}</h4>
-                          <p>{method.type === 'bank' ? 'Bank Account' : 'Mobile Wallet'}</p>
-                        </div>
+                        {method.is_default && (
+                          <span className="default-badge">Default</span>
+                        )}
                       </div>
-                      {method.default && (
-                        <span className="default-badge">Default</span>
+
+                      <div className="method-details-row">
+                        <p className="text-sm text-gray-600 mb-1">
+                          {method.type === 'bank' ? 'Account Number' : 'Phone Number'}
+                        </p>
+                        <p className="method-number">
+                          {method.account_number}
+                        </p>
+                      </div>
+
+                      {selectedMethod?.id === method.id && (
+                        <div className="method-actions">
+                          <button className="method-btn default">
+                            Make Default
+                          </button>
+                          <button className="method-btn remove">
+                            Remove
+                          </button>
+                        </div>
                       )}
                     </div>
-                    
-                    <div className="method-details-row">
-                      <p className="text-sm text-gray-600 mb-1">
-                        {method.type === 'bank' ? 'Account Number' : 'Phone Number'}
-                      </p>
-                      <p className="method-number">
-                        {method.type === 'bank' ? method.account : method.phone}
-                      </p>
-                    </div>
-                    
-                    {selectedMethod === method.type && (
-                      <div className="method-actions">
-                        <button className="method-btn default">
-                          Make Default
-                        </button>
-                        <button className="method-btn remove">
-                          Remove
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
-          
+
           <div className="space-y-6">
             {/* Withdraw Summary */}
             <div className="withdraw-summary">
@@ -279,7 +341,7 @@ const ProviderPayouts = () => {
                   </span>
                 </div>
               </div>
-              
+
               <button
                 onClick={handleWithdraw}
                 disabled={!withdrawAmount || parseFloat(withdrawAmount) < walletBalance.minWithdrawal}
@@ -287,12 +349,12 @@ const ProviderPayouts = () => {
               >
                 Withdraw Now
               </button>
-              
+
               <p className="processing-time">
                 Processing time: 1-3 business days
               </p>
             </div>
-            
+
             {/* Important Notes */}
             <div className="important-notes">
               <div className="notes-header">
@@ -332,7 +394,7 @@ const ProviderPayouts = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
@@ -351,10 +413,10 @@ const ProviderPayouts = () => {
                       <td>
                         <div className="date-cell">
                           <Calendar size={16} />
-                          <span>{payout.date}</span>
+                          <span>{new Date(payout.created_at).toLocaleDateString()}</span>
                         </div>
                       </td>
-                      <td className="id-cell">{payout.transactionId}</td>
+                      <td className="id-cell">{payout.transaction_id || 'N/A'}</td>
                       <td className="amount-cell">₦{payout.amount.toLocaleString()}</td>
                       <td>
                         <span className="method-badge">{payout.method}</span>
@@ -374,7 +436,7 @@ const ProviderPayouts = () => {
               </table>
             </div>
           </div>
-          
+
           {filteredHistory.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               No payout history found
@@ -383,64 +445,67 @@ const ProviderPayouts = () => {
         </div>
       )}
 
-      {/* Payout Methods */}
+      {/* Payout Methods (full page) */}
       {activeTab === 'methods' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="methods-header">
               <h3 className="text-lg font-semibold">Your Payout Methods</h3>
-              <button className="add-method-btn">
+              <button
+                className="add-method-btn"
+                onClick={() => navigate('/dashboard/provider/payment-methods')}
+              >
                 <Plus size={20} />
                 <span>Add New Method</span>
               </button>
             </div>
-            
+
             <div className="methods-grid">
-              {payoutMethods.map((method) => (
-                <div key={method.id} className="method-card-full">
-                  <div className="method-header-full">
-                    <div className="method-info-full">
-                      <div className={`method-icon-full ${method.type}`}>
-                        {method.type === 'bank' ? (
-                          <DollarSign size={24} />
-                        ) : (
-                          <Smartphone size={24} />
-                        )}
+              {payoutMethods.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No payment methods added yet</p>
+              ) : (
+                payoutMethods.map((method) => (
+                  <div key={method.id} className="method-card-full">
+                    <div className="method-header-full">
+                      <div className="method-info-full">
+                        <div className={`method-icon-full ${method.type}`}>
+                          {getMethodIcon(method.type)}
+                        </div>
+                        <div className="method-details-full">
+                          <h4>{method.name}</h4>
+                          <p>{method.type === 'bank' ? 'Bank Account' : 'Mobile Wallet'}</p>
+                        </div>
                       </div>
-                      <div className="method-details-full">
-                        <h4>{method.name}</h4>
-                        <p>{method.type === 'bank' ? 'Bank Account' : 'Mobile Wallet'}</p>
+                      {method.is_default && (
+                        <span className="default-badge">Default</span>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">
+                          {method.type === 'bank' ? 'Account Number' : 'Phone Number'}
+                        </p>
+                        <p className="method-number">
+                          {method.account_number}
+                        </p>
+                      </div>
+
+                      <div className="method-actions-full">
+                        <button className="action-btn-full default-btn">
+                          Make Default
+                        </button>
+                        <button className="action-btn-full remove-btn">
+                          Remove
+                        </button>
                       </div>
                     </div>
-                    {method.default && (
-                      <span className="default-badge">Default</span>
-                    )}
                   </div>
-                  
-                  <div className="space-y-2">
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">
-                        {method.type === 'bank' ? 'Account Number' : 'Phone Number'}
-                      </p>
-                      <p className="method-number">
-                        {method.type === 'bank' ? method.account : method.phone}
-                      </p>
-                    </div>
-                    
-                    <div className="method-actions-full">
-                      <button className="action-btn-full default-btn">
-                        Make Default
-                      </button>
-                      <button className="action-btn-full remove-btn">
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
-          
+
           <div className="guidelines">
             <h4>Payout Method Guidelines</h4>
             <ul>
