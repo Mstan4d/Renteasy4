@@ -79,7 +79,7 @@ const Signup = () => {
           id: userId, email: formData.email.trim(), full_name: formData.fullName.trim(), role: formData.role
         }]);
         if (profileErr) throw profileErr;
-        await supabase.from('wallets').upsert({ user_id: userId, balance: 0, commission_rate: 1.5 }, { onConflict: 'user_id' });
+     
         const loginResult = await login(formData.email.trim(), formData.password);
         if (loginResult.success) {
           const target = rolePaths[formData.role] || '/dashboard';
@@ -132,8 +132,10 @@ const Signup = () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
-        redirectTo: 'https://renteasy-frontend-xi.vercel.app/auth/callback',
-      },
+  redirectTo: window.location.origin === 'http://localhost:5173' 
+    ? 'http://localhost:5173/auth/callback'
+    : 'https://renteasy-frontend-xi.vercel.app/auth/callback',
+},
     });
     if (error) throw error;
   } catch (error) {

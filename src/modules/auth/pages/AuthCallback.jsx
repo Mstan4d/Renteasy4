@@ -27,7 +27,8 @@ const AuthCallback = () => {
       const user = session.user;
       
       // Look for stored role from either Google or Facebook signup
-      const storedRole = sessionStorage.getItem('google_signup_role') || sessionStorage.getItem('facebook_signup_role');
+      const storedRole = sessionStorage.getItem('facebook_signup_role') || sessionStorage.getItem('google_signup_role');
+     const role = storedRole || user.user_metadata?.role || 'tenant';
       const storedFullName = sessionStorage.getItem('google_signup_full_name') || sessionStorage.getItem('facebook_signup_full_name');
       const isNewSignup = storedRole && !user.user_metadata?.role;
 

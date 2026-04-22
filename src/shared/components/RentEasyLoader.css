@@ -28,8 +28,8 @@
 }
 
 .rotating-logo {
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   margin: 0 auto 20px;
   position: relative;
   animation: rotate 1.5s linear infinite;
@@ -49,8 +49,8 @@
 }
 
 .logo-inner {
-  width: 56px;
-  height: 56px;
+  width: 42px;
+  height: 42px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   border-radius: 50%;
   display: flex;
@@ -60,7 +60,7 @@
 }
 
 .letter-r {
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 700;
   color: white;
   font-family: inherit;

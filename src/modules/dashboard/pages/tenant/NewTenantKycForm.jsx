@@ -59,30 +59,32 @@ const NewTenantKycForm = () => {
     }
   }, [user]);
 
-  const checkKycStatus = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('kyc_status, verification_status, is_kyc_verified')
-        .eq('id', user.id)
-        .single();
-      
-      if (error) throw error;
-      
-      if (data) {
-        const status = data.kyc_status || data.verification_status;
-        setKycStatus(status);
-        
-        if (status === 'verified' || data.is_kyc_verified === true) {
-          setTimeout(() => {
-            navigate('/dashboard/tenant');
-          }, 2000);
-        }
+ const checkKycStatus = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('kyc_status, verification_status, kyc_submitted_at, is_kyc_verified')
+      .eq('id', user.id)
+      .single();
+    
+    if (error) throw error;
+    
+    if (data) {
+      let status = data.kyc_status;
+      // If no explicit kyc_status, check if a submission has actually been made
+      if (!status && data.kyc_submitted_at) {
+        status = 'pending';
       }
-    } catch (error) {
-      console.error('Error checking KYC status:', error);
+      setKycStatus(status || null);
+      
+      if (status === 'verified' && data.is_kyc_verified === true) {
+        setTimeout(() => navigate('/dashboard/tenant'), 2000);
+      }
     }
-  };
+  } catch (error) {
+    console.error('Error checking KYC status:', error);
+  }
+};
 
   const loadExistingProfile = async () => {
     try {
@@ -128,33 +130,40 @@ const NewTenantKycForm = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileUpload = async (file, docType) => {
-    if (!file) return null;
+ const handleFileUpload = async (file, docType, retryCount = 0) => {
+  if (!file) return null;
+  
+  const maxRetries = 2;
+  setUploading(true);
+  
+  try {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `kyc/${user.id}/${docType}_${Date.now()}.${fileExt}`;  // fixed backtick
     
-    setUploading(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `kyc/${user.id}/${docType}_${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('kyc-documents')
-        .upload(fileName, file);
-      
-      if (uploadError) throw uploadError;
-      
-      const { data: urlData } = supabase.storage
-        .from('kyc-documents')
-        .getPublicUrl(fileName);
-      
-      return urlData.publicUrl;
-    } catch (error) {
-      console.error(`Error uploading ${docType}:`, error);
-      alert(`Failed to upload ${docType}. Please try again.`);
-      return null;
-    } finally {
-      setUploading(false);
+    const { error: uploadError } = await supabase.storage
+      .from('kyc-documents')
+      .upload(fileName, file, { cacheControl: '3600' });
+    
+    if (uploadError) throw uploadError;
+    
+    const { data: urlData } = supabase.storage
+      .from('kyc-documents')
+      .getPublicUrl(fileName);
+    
+    return urlData.publicUrl;
+    
+  } catch (error) {
+    console.error(`Error uploading ${docType}:`, error);
+    if (retryCount < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return handleFileUpload(file, docType, retryCount + 1);
     }
-  };
+    alert(`Failed to upload ${docType}. Please try again.`);
+    return null;
+  } finally {
+    setUploading(false);
+  }
+};
 
   const handleDocumentChange = async (e, docType) => {
     const file = e.target.files[0];
