@@ -45,6 +45,37 @@ export const AuthProvider = ({ children }) => {
 
       if (error) throw error;
 
+       if (!profile) {
+      // Profile missing – create a default one using auth user data
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      
+      const email = userData.user.email;
+      // Get role from user metadata (set during signup) or default to 'tenant'
+      const role = userData.user.user_metadata?.role || 'tenant';
+      const fullName = userData.user.user_metadata?.full_name || email.split('@')[0];
+      
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userid,
+          email: email,
+          full_name: fullName,
+          role: role,
+          created_at: new Date().toISOString()
+        });
+      if (insertError) throw insertError;
+      
+      // Fetch the newly created profile
+      const { data: newProfile, error: refetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userid)
+        .single();
+      if (refetchError) throw refetchError;
+      profile = newProfile;
+    }
+
       // Check if user is staff (has estate_firm_profile with parent)
       let isStaff = false;
       let staffRole = null;

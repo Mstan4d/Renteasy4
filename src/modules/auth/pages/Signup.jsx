@@ -49,52 +49,58 @@ const Signup = () => {
     return newErrors;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setErrors([]);
-    const validationErrors = validateForm();
-    if (validationErrors.length > 0) {
-      setErrors(validationErrors);
-      setIsLoading(false);
-      return;
-    }
-    const rolePaths = {
-      tenant: '/dashboard/tenant',
-      landlord: '/dashboard/landlord',
-      manager: '/dashboard/manager',
-      'service-provider': '/dashboard/provider',
-      'estate-firm': '/dashboard/estate-firm'
-    };
-    try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email.trim(),
-        password: formData.password,
-        options: { data: { full_name: formData.fullName.trim(), role: formData.role } }
-      });
-      if (signUpError) throw signUpError;
-      if (authData?.user) {
-        const userId = authData.user.id;
-        const { error: profileErr } = await supabase.from('profiles').insert([{
-          id: userId, email: formData.email.trim(), full_name: formData.fullName.trim(), role: formData.role
-        }]);
-        if (profileErr) throw profileErr;
-     
-        const loginResult = await login(formData.email.trim(), formData.password);
-        if (loginResult.success) {
-          const target = rolePaths[formData.role] || '/dashboard';
-          navigate(target);
-        } else {
-          setErrors([loginResult.error || 'Login failed after signup']);
-        }
-      }
-    } catch (error) {
-      console.error("Signup error:", error);
-      setErrors([error.message || "An error occurred during setup."]);
-    } finally {
-      setIsLoading(false);
-    }
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setIsLoading(true);
+  setErrors([]);
+  const validationErrors = validateForm();
+  if (validationErrors.length > 0) {
+    setErrors(validationErrors);
+    setIsLoading(false);
+    return;
+  }
+  const rolePaths = {
+    tenant: '/dashboard/tenant',
+    landlord: '/dashboard/landlord',
+    manager: '/dashboard/manager',
+    'service-provider': '/dashboard/provider',
+    'estate-firm': '/dashboard/estate-firm'
   };
+  try {
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      email: formData.email.trim(),
+      password: formData.password,
+      options: { data: { full_name: formData.fullName.trim(), role: formData.role } }
+    });
+    if (signUpError) throw signUpError;
+    if (authData?.user) {
+      const userId = authData.user.id;
+      
+      // Check if profile already exists (to avoid duplicate key errors)
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+
+      
+      
+      // Attempt login
+      const loginResult = await login(formData.email.trim(), formData.password);
+      if (loginResult.success) {
+        const target = rolePaths[formData.role] || '/dashboard';
+        navigate(target);
+      } else {
+        setErrors([loginResult.error || 'Login failed after signup']);
+      }
+    }
+  } catch (error) {
+    console.error("Signup error:", error);
+    setErrors([error.message || "An error occurred during setup."]);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleGoogleSignup = () => {
     if (!formData.role) {
