@@ -1,9 +1,10 @@
+// src/modules/listings/components/HorizontalScrollList.jsx
 import React from 'react';
-import ListingCard from './ListingCard';
+import HorizontalListingCard from '../../../shared/components/HorizontalListingCard';
 import './HorizontalScrollList.css';
 
-const HorizontalScrollList = ({ listings, title, onViewDetails, onContact, onVerify, userRole }) => {
-  if (!listings.length) return null;
+const HorizontalScrollList = ({ listings, title, onViewDetails }) => {
+  if (!listings?.length) return null;
 
   return (
     <div className="horizontal-scroll-section">
@@ -13,12 +14,9 @@ const HorizontalScrollList = ({ listings, title, onViewDetails, onContact, onVer
       <div className="scroll-container">
         {listings.map(listing => (
           <div key={listing.id} className="scroll-item">
-            <ListingCard
+            <HorizontalListingCard
               listing={listing}
-              onViewDetails={() => onViewDetails(listing)}
-              onContact={() => onContact(listing)}
-              onVerify={() => onVerify(listing)}
-              userRole={userRole}
+              onViewDetails={onViewDetails}
             />
           </div>
         ))}

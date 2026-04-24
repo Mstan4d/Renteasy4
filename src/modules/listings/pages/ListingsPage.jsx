@@ -10,6 +10,7 @@ import VerifiedBadge, { InlineVerifiedBadge } from '../../../shared/components/V
 import ListingDetails from '../components/ListingDetails';
 import FilterBar from '../components/FilterBar';
 import ListingCard from '../components/ListingCard';
+import HorizontalScrollList from '../components/HorizontalScrollList';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import { locationService } from '../../../shared/services/locationService';
 import { 
@@ -542,27 +543,11 @@ useEffect(() => {
 
         
 {tenantListings.length > 0 && (
-  <div className="horizontal-scroll-section">
-    <div className="section-header">
-      <h2 className="section-title">Latest from Outgoing Tenants</h2>
-      <Link to="/listings?filter=tenant" className="view-all-link">
-        View all →
-      </Link>
-    </div>
-    <div className="scroll-container">
-      {tenantListings.slice(0, 10).map(listing => (
-        <div key={listing.id} className="scroll-item">
-          <ListingCard
-            listing={listing}
-            onViewDetails={() => handleViewDetails(listing)}
-            onContact={() => handleContact(listing)}
-            onVerify={() => handleVerify(listing.id)}
-            userRole={user?.role}
-          />
-        </div>
-      ))}
-    </div>
-  </div>
+  <HorizontalScrollList
+    listings={tenantListings}
+    title="Latest from Outgoing Tenants"
+    onViewDetails={handleViewDetails}
+  />
 )}
 
         {/* Top Control Bar */}

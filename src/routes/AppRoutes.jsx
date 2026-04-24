@@ -459,7 +459,7 @@ const AppRoutes = () => {
         <Route path="notifications" element={<ProviderNotifications />} />
       </Route>
 
-      <Route path="/services/:id" element={<ServiceDetailsPage />} />
+      <Route path="/marketplace/details" element={<ServiceDetailsPage />} />
 
       {/* ========== ESTATE FIRM ROUTES ========== */}
       <Route 

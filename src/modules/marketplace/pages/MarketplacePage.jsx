@@ -63,13 +63,12 @@ const MarketplacePage = () => {
     const now = new Date().toISOString().split('T')[0]; // YYYY-MM-DD for date column
     const { data: activeSubs, error: subError } = await supabase
       .from('subscriptions')
-      .select('user_id')
+      .select('profile_id')
       .eq('status', 'active')
-      .gte('expires_at', now);
+      //.gte('expires_at', now);
 
     if (subError) throw subError;
-
-    const activeUserIds = activeSubs?.map(s => s.user_id) || [];
+    const activeUserIds = activeSubs?.map(s => s.profile_id) || [];
     console.log('Active subscription users:', activeUserIds.length);
 
     // ========== 2. Estate firms (only those with active subscription) ==========
@@ -99,7 +98,12 @@ const MarketplacePage = () => {
         .in('user_id', activeUserIds);
 
       if (estateFirmError) console.error('Error fetching estate firms:', estateFirmError);
-
+   console.log('📦 Estate firm profiles fetched:', estateFirmProfiles?.length);
+if (estateFirmProfiles && estateFirmProfiles.length > 0) {
+  console.log('🔍 First estate firm:', estateFirmProfiles[0]);
+} else {
+  console.log('❌ No estate firm profiles found for user IDs:', activeUserIds);
+}
       // Get user profiles for these firms (optional)
       const userIds = estateFirmProfiles?.map(p => p.user_id).filter(Boolean) || [];
       let userProfilesMap = {};
@@ -137,8 +141,9 @@ const MarketplacePage = () => {
           },
           createdAt: new Date().toISOString()
         });
+        
       });
-
+      
       // ========== 3. Estate services (only those belonging to these firms) ==========
       const estateFirmIds = estateFirmProfiles?.map(f => f.id) || [];
       if (estateFirmIds.length > 0) {
@@ -271,7 +276,9 @@ const MarketplacePage = () => {
       allItems = [...transformedEstateFirms, ...transformedEstateServices];
     } else if (activeTab === 'services') {
       allItems = transformedServiceProviders;
+      console.log('📊 All items before filters:', allItems.length);
     }
+    
 
     // ========== 6. Apply search filter ==========
     if (searchTerm.trim()) {
@@ -301,6 +308,7 @@ const MarketplacePage = () => {
     }
     if (filters.boostOnly) {
       allItems = allItems.filter(item => item.boostState === 'boosted');
+      console.log('filters.boostOnly:', filters.boostOnly);
     }
     if (filters.minRating > 0) {
       allItems = allItems.filter(item => item.rating >= filters.minRating);
@@ -410,6 +418,18 @@ const MarketplacePage = () => {
     handleContactServiceProvider({ providerId: item.id });
   };
 
+  const resetFilters = () => {
+  setFilters({
+    state: '',
+    lga: '',
+    minRating: 0,
+    verifiedOnly: false,
+    boostOnly: false,
+    sortBy: 'relevance'
+  });
+  setSearchTerm('');
+};
+
   const renderBadges = (item) => {
     const badges = [];
 
@@ -514,6 +534,9 @@ const MarketplacePage = () => {
             <span>Boosted Only</span>
           </button>
         </div>
+        <button className="btn-reset" onClick={resetFilters}>
+          <XCircle size={16} /> Reset Filters
+        </button>
       </div>
 
       {/* Category Tabs */}
@@ -688,12 +711,12 @@ const MarketplacePage = () => {
                       <span>Contact</span>
                     </button>
                     <button 
-                      className="btn btn-outline"
-                      onClick={() => navigate(`/services/${item.id}`)}
-                    >
-                      <Eye size={16} />
-                      <span>View Details</span>
-                    </button>
+  className="btn btn-outline"
+  onClick={() => navigate(`/marketplace/details?id=${item.id}&type=${item.type}`)}
+>
+  <Eye size={16} />
+  <span>View Details</span>
+</button>
                   </div>
                 </div>
               </div>

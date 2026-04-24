@@ -32,7 +32,8 @@ const Messages = () => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState({});
   const [showFilePreview, setShowFilePreview] = useState(false);
-
+  const [isProviderChat, setIsProviderChat] = useState(false);
+  const [otherParticipant, setOtherParticipant] = useState(null);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const subscriptionRef = useRef(null);
@@ -137,9 +138,9 @@ const Messages = () => {
   };
 
   const isValidUUID = (uuid) => {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return uuid && typeof uuid === 'string' && uuidRegex.test(uuid);
-  };
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuid && typeof uuid === 'string' && uuidRegex.test(uuid);
+};
 
   const fetchListing = async (id) => {
     const { data, error } = await supabase
@@ -152,46 +153,74 @@ const Messages = () => {
   };
 
   const loadExistingChat = async (id) => {
-    try {
-      setLoading(true);
-      const { data: chatData, error: chatError } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', id)
-        .single();
+  try {
+    setLoading(true);
+    const { data: chatData, error: chatError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-      if (chatError || !chatData) {
-        alert('Chat not found');
-        navigate('/listings');
-        return;
-      }
-
-      if (!isValidUUID(chatData.listing_id)) {
-        alert('This chat has an invalid reference to a listing.');
-        navigate('/listings');
-        return;
-      }
-
-      if (!hasChatAccess(chatData)) {
-        alert('You do not have permission to access this chat');
-        navigate('/listings');
-        return;
-      }
-
-      const listingData = await fetchListing(chatData.listing_id);
-      setListing(listingData);
-      setChat(chatData);
-
-      await fetchParticipantProfiles(chatData);
-      await fetchMessages(id);
-      await loadRentalConfirmation(listingData.id, id);
-    } catch (error) {
-      console.error('Error loading chat:', error);
-      alert('Failed to load chat');
-    } finally {
-      setLoading(false);
+    if (chatError || !chatData) {
+      alert('Chat not found');
+      navigate('/listings');
+      return;
     }
-  };
+
+    // Check if it's a provider chat (no listing_id or invalid UUID)
+    let listingData = null;
+    let isProvider = false;
+    if (!chatData.listing_id || !isValidUUID(chatData.listing_id)) {
+      isProvider = true;
+    } else {
+      const { data, error } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('id', chatData.listing_id)
+        .maybeSingle();
+      if (error || !data) {
+        isProvider = true;
+      } else {
+        listingData = data;
+      }
+    }
+
+    if (!hasChatAccess(chatData)) {
+      alert('You do not have permission to access this chat');
+      navigate('/listings');
+      return;
+    }
+
+    setChat(chatData);
+    setIsProviderChat(isProvider);
+
+    if (isProvider) {
+      const otherId = chatData.participant1_id === user.id ? chatData.participant2_id : chatData.participant1_id;
+      if (otherId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, avatar_url')
+          .eq('id', otherId)
+          .single();
+        setOtherParticipant(profile);
+      }
+      setListing(null);
+    } else {
+      setListing(listingData);
+      await loadRentalConfirmation(listingData.id, id);
+    }
+console.log('Loading chat ID:', id);
+console.log('Chat data:', chatData);
+console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id));
+    await fetchParticipantProfiles(chatData);
+    await fetchMessages(id);
+  } catch (error) {
+    console.error('Error loading chat:', error);
+    alert('Failed to load chat');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const loadOrCreateChat = async (id) => {
     try {
@@ -859,29 +888,30 @@ const Messages = () => {
   };
 
   const canSendMessage = () => {
-    if (listing?.status === 'rented') return false;
-    if (chat?.state !== 'active') return false;
-    if (chat?.admin_locked) return false;
-    return true;
-  };
+  if (chat?.state !== 'active') return false;
+  if (chat?.admin_locked) return false;
+  if (isProviderChat) return true;
+  if (listing?.status === 'rented') return false;
+  return true;
+};
 
   if (loading) {
     return <RentEasyLoader message="Loading Messages..." fullScreen />;
   }
 
-  if (!chat || !listing) {
-    return (
-      <div className="not-found-container">
-        <h2>Chat Not Found</h2>
-        <button onClick={() => navigate('/listings')} className="btn-primary">
-          Back to Listings
-        </button>
-      </div>
-    );
-  }
+  if (!chat) {
+  return (
+    <div className="not-found-container">
+      <h2>Chat Not Found</h2>
+      <button onClick={() => navigate('/listings')} className="btn-primary">
+        Back to Listings
+      </button>
+    </div>
+  );
+}
 
   const progress = getConfirmationProgress();
-  const showRentalFlow = listing.status !== 'rented';
+  const showRentalFlow = !isProviderChat && listing && listing.status !== 'rented';
 
   return (
     <div className="messages-page">
@@ -897,29 +927,42 @@ const Messages = () => {
 
         {/* Header */}
         <header className="messages-header">
-          <div className="header-top">
-            <h2>{listing.title}</h2>
-            <div className="listing-tags">
-              <span className={`tag tag-${listing.poster_role}`}>
-                {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' :
-                 listing.poster_role === 'landlord' ? '🏠 Landlord' : '🏢 Estate Firm'}
-              </span>
-              {listing.poster_role !== 'estate-firm' && <span className="tag tag-commission">💰 7.5% Commission</span>}
-              {listing.poster_role === 'estate-firm' && <span className="tag tag-estate">🏢 No Commission</span>}
-            </div>
-          </div>
-          <div className="header-status">
-            <span className={`status-badge status-${listing.status === 'rented' ? 'rented' : chat.state}`}>
-              Status: {listing.status === 'rented' ? 'RENTED' : (chat.state?.replace('_', ' ').toUpperCase() || 'ACTIVE')}
-            </span>
-            {chat.monitoring_manager_id && <span className="manager-badge">👨‍💼 Manager Assigned</span>}
-          </div>
-        </header>
+  <div className="header-top">
+    {isProviderChat ? (
+      <h2>Chat with {otherParticipant?.full_name || 'Provider'}</h2>
+    ) : (
+      <h2>{listing?.title}</h2>
+    )}
+    <div className="listing-tags">
+      {!isProviderChat && listing && (
+        <>
+          <span className={`tag tag-${listing.poster_role}`}>
+            {listing.poster_role === 'tenant' ? '👤 Outgoing Tenant' :
+             listing.poster_role === 'landlord' ? '🏠 Landlord' : '🏢 Estate Firm'}
+          </span>
+          {listing.poster_role !== 'estate-firm' && <span className="tag tag-commission">💰 7.5% Commission</span>}
+          {listing.poster_role === 'estate-firm' && <span className="tag tag-estate">🏢 No Commission</span>}
+        </>
+      )}
+      {isProviderChat && (
+        <span className="tag tag-provider">💬 Service Provider</span>
+      )}
+    </div>
+  </div>
+  <div className="header-status">
+    {!isProviderChat && listing && (
+      <span className={`status-badge status-${listing.status === 'rented' ? 'rented' : chat?.state}`}>
+        Status: {listing.status === 'rented' ? 'RENTED' : (chat?.state?.replace('_', ' ').toUpperCase() || 'ACTIVE')}
+      </span>
+    )}
+    {chat?.monitoring_manager_id && <span className="manager-badge">👨‍💼 Manager Assigned</span>}
+  </div>
+</header>
 
         {/* Scrollable Area */}
         <div className="messages-scroll-area" ref={messagesContainerRef}>
           {/* Rental Confirmation Flow */}
-          {showRentalFlow && progress.roles && (
+          {!isProviderChat && showRentalFlow && progress.roles && (
             <div className="rental-confirmation-flow">
               <div className="confirmation-header">
                 <h3>🏠 Rental Confirmation Process</h3>
@@ -1028,7 +1071,7 @@ const Messages = () => {
           )}
 
           {/* Completed State */}
-          {listing.status === 'rented' && (
+          {!isProviderChat && listing?.status === 'rented' && (
             <div className="rental-confirmation-completed">
               <div className="completed-icon">✅</div>
               <h4>Property Successfully Rented</h4>

@@ -379,14 +379,14 @@ export const messagesService = {
     }
 
     // Determine chat_type
-    const chatType = 'direct';
+    const chatType = 'provider';
 
     // Create new chat
     const chatData = {
       participant1_id: userId,
       participant2_id: providerUserId,
       participant1_role: userRole,
-      participant2_role: 'service-provider',
+      participant2_role: 'service-provider || estate-firm',
       chat_type: chatType,
       state: 'active',
       is_active: true,
