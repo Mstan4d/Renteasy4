@@ -19,7 +19,8 @@ const ManagerNotifications = () => {
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [showAudioPermissionBanner, setShowAudioPermissionBanner] = useState(true);
   const [pendingSound, setPendingSound] = useState(false);
-
+  const [showSoundToast, setShowSoundToast] = useState(true);
+  const [toastAutoHideTimeout, setToastAutoHideTimeout] = useState(null);
   // Detect user interaction for audio permission
   useEffect(() => {
     const handleUserInteraction = () => {
@@ -104,6 +105,16 @@ useEffect(() => {
   const interval = setInterval(fetchManagerNotifications, 30000); // every 30 sec
   return () => clearInterval(interval);
 }, [user]);
+
+useEffect(() => {
+  if (showSoundToast && !hasUserInteracted) {
+    const timeout = setTimeout(() => {
+      setShowSoundToast(false);
+    }, 5000);
+    setToastAutoHideTimeout(timeout);
+    return () => clearTimeout(timeout);
+  }
+}, [showSoundToast, hasUserInteracted]);
 
   const fetchManagerSettings = async () => {
     try {
@@ -237,6 +248,9 @@ useEffect(() => {
       }
       
       setNotifications(filtered);
+      if (filtered.length > 0 && !loading) {
+  playNotificationSoundWithInteraction();
+}
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -401,7 +415,7 @@ useEffect(() => {
       <NotificationSound play={playNotificationSound} soundType="notification" />
       <NotificationSound play={playAcceptSound} soundType="accept" />
       
-      {/* Audio Permission Banner */}
+      {/* Audio Permission Banner 
       {showAudioPermissionBanner && !hasUserInteracted && (
         <div className="audio-permission-banner">
           <div className="banner-content">
@@ -427,7 +441,7 @@ useEffect(() => {
           </div>
         </div>
       )}
-      
+      */}
       {/* Audio Toggle Button */}
       <div className="audio-toggle">
         <button 
@@ -438,19 +452,14 @@ useEffect(() => {
           {audioEnabled ? '🔊' : '🔇'}
         </button>
       </div>
-
-      {/* Test Sound Button */}
-      <div className="test-sound-container">
-        <button 
-          className="test-sound-btn"
-          onClick={() => {
-            playNotificationSoundWithInteraction();
-          }}
-          title="Test Sound"
-        >
-          🔊 Test Sound
-        </button>
-      </div>
+      {showSoundToast && !hasUserInteracted && (
+  <div className="sound-toast">
+    <div className="toast-content">
+      <span className="toast-icon">🔊</span>
+      <span>Click anywhere to enable sound alerts</span>
+    </div>
+  </div>
+)}
 
       <div className="page-header">
         <h1>🔔 Notifications Center</h1>

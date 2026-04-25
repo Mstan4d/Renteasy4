@@ -338,7 +338,7 @@ const ManagerProperties = () => {
                   {!property.verified && property.status !== 'rented' && (
                     <button
                       className="btn btn-warning"
-                      onClick={() => verifyProperty(property.id)}
+                      onClick={() => navigate(`/dashboard/manager/verify/${property.id}`)}
                     >
                       Verify Property
                     </button>

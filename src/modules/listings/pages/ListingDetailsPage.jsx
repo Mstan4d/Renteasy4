@@ -22,7 +22,7 @@ const ListingDetailsPage = () => {
   const [IsLoading, setIsLoading] = useState(true);
   const [isNearby, setIsNearby] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
-
+ 
   useEffect(() => {
     loadListing();
   }, [id]);
@@ -114,42 +114,28 @@ const ListingDetailsPage = () => {
   };
 
   // BUSINESS RULE: Verify listing with KYC check (Supabase)
-  const handleVerify = async () => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-
-    // BUSINESS RULE: Managers must have KYC to verify
-    if (user?.role === 'manager') {
-      if (!canManagerVerify(user.id)) {
-        alert('You must complete KYC verification before you can verify listings.');
-        return;
-      }
-      
-      // BUSINESS RULE: Managers can only verify listings they manage
-      if (listing.managedById !== user.id) {
-        alert('You can only verify listings that you are managing.');
-        return;
-      }
-    }
-
-    if (!window.confirm('Are you sure you want to verify this listing?')) return;
-
-    try {
-      setLoadingAction(true);
-      await listingsService.verify(id, user.id);
-      
-      // Refresh listing
-      await loadListing();
-      alert('Listing verified successfully!');
-    } catch (error) {
-      console.error('Error verifying listing:', error);
-      alert(error.message || 'Failed to verify listing');
-    } finally {
-      setLoadingAction(false);
-    }
-  };
+const handleVerify = () => {
+  if (!user) {
+    navigate('/login');
+    return;
+  }
+  if (user.role !== 'manager') {
+    alert('Only managers can verify listings.');
+    return;
+  }
+  // Check if manager has completed KYC
+  if (!canManagerVerify(user.id)) {
+    alert('You must complete KYC verification before you can verify listings.');
+    return;
+  }
+  // Check if this manager is actually assigned to manage this listing
+  if (listing.managedById !== user.id) {
+    alert('You can only verify listings that you are managing.');
+    return;
+  }
+  // Navigate to the manager's verification submission page
+  navigate(`/dashboard/manager/verify/${id}`);
+};
 
   // BUSINESS RULE: Verify user (admin only)
   const handleVerifyUser = async () => {

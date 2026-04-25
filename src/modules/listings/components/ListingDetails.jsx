@@ -29,7 +29,36 @@ const ListingDetails = ({
   const [reviews, setReviews] = useState(listing.reviews || []);
   const [isSaved, setIsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-
+     // Lightbox state
+    const [lightboxOpen, setLightboxOpen] = useState(false);
+    const [lightboxIndex, setLightboxIndex] = useState(0);
+    const [lightboxTouchStart, setLightboxTouchStart] = useState(0);
+    const [lightboxTouchEnd, setLightboxTouchEnd] = useState(0);
+    
+    const openLightbox = (index) => {
+      setLightboxIndex(index);
+      setLightboxOpen(true);
+    };
+    
+    const closeLightbox = () => setLightboxOpen(false);
+    
+    const nextImage = () => {
+      setLightboxIndex((prev) => (prev + 1) % (listing.images?.length || 1));
+    };
+    
+    const prevImage = () => {
+      setLightboxIndex((prev) => (prev - 1 + (listing.images?.length || 1)) % (listing.images?.length || 1));
+    };
+    
+    // Touch events for mobile swipe
+    const handleLightboxTouchStart = (e) => setLightboxTouchStart(e.touches[0].clientX);
+    const handleLightboxTouchMove = (e) => setLightboxTouchEnd(e.touches[0].clientX);
+    const handleLightboxTouchEnd = () => {
+      if (lightboxTouchStart - lightboxTouchEnd > 50) nextImage();
+      else if (lightboxTouchEnd - lightboxTouchStart > 50) prevImage();
+    };
+    
+    
   // ----- Normalise data from Supabase columns (raw) -----
   const isListingVerified = listing.verified === true;
   const listingStatus = listing.status || 'pending';
@@ -173,18 +202,18 @@ const ListingDetails = ({
 
         {/* Images Gallery */}
         <div className="images-section">
-          <h3><ImageIcon size={20} /> Property Images</h3>
-          <div className="images-grid">
-            {listing.images?.map((img, idx) => (
-              <div key={idx} className="image-item">
-                <PropertyImage src={safeImage(img)} alt={`${listing.title} - ${idx+1}`} className="image-preview" />
-              </div>
-            ))}
-            {(!listing.images || listing.images.length === 0) && (
-              <div className="no-images"><ImageIcon size={48} /><p>No images available</p></div>
-            )}
-          </div>
-        </div>
+  <h3><ImageIcon size={20} /> Property Images</h3>
+  <div className="images-grid">
+    {listing.images?.map((img, idx) => (
+      <div key={idx} className="image-item" onClick={() => openLightbox(idx)}>
+        <PropertyImage src={safeImage(img)} alt={`${listing.title} - ${idx+1}`} className="image-preview" />
+      </div>
+    ))}
+    {(!listing.images || listing.images.length === 0) && (
+      <div className="no-images"><ImageIcon size={48} /><p>No images available</p></div>
+    )}
+  </div>
+</div>
 
         {/* Details Grid */}
         <div className="details-grid">
@@ -390,6 +419,39 @@ const ListingDetails = ({
             <Star size={16} /> {saving ? 'Saving...' : (isSaved ? 'Saved' : 'Save to Favorites')}
           </button>
         </div>
+        {lightboxOpen && (
+  <div className="lightbox-overlay" onClick={closeLightbox}>
+    <div 
+      className="lightbox-content" 
+      onClick={(e) => e.stopPropagation()}
+      onTouchStart={handleLightboxTouchStart}
+      onTouchMove={handleLightboxTouchMove}
+      onTouchEnd={handleLightboxTouchEnd}
+    >
+      <button className="lightbox-close" onClick={closeLightbox}>×</button>
+      <img 
+        src={safeImage(listing.images?.[lightboxIndex])} 
+        alt={`${listing.title} - ${lightboxIndex+1}`} 
+        className="lightbox-image" 
+      />
+      {listing.images?.length > 1 && (
+        <>
+          <button className="lightbox-prev" onClick={prevImage}>‹</button>
+          <button className="lightbox-next" onClick={nextImage}>›</button>
+          <div className="lightbox-dots">
+            {listing.images.map((_, idx) => (
+              <span
+                key={idx}
+                className={`dot ${idx === lightboxIndex ? 'active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex(idx); }}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+)}
       </div>
     </div>
   );
