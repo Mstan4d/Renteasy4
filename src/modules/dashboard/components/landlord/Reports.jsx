@@ -33,7 +33,7 @@ import './Reports.css';
 const Reports = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [items, setItems] = useState([]); // Combined feed items
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [selectedItem, setSelectedItem] = useState(null);
@@ -55,72 +55,50 @@ const Reports = () => {
   const loadAllReports = async () => {
     setLoading(true);
     try {
-      // 1. Fetch maintenance requests for this landlord
+      // 1. Maintenance requests
       const { data: maintenance, error: maintError } = await supabase
         .from('maintenance_requests')
-        .select(`
-          *,
-          tenant:tenant_id (full_name, email, phone_number),
-          property:property_id (title, address)
-        `)
+        .select(`*, tenant:tenant_id (full_name, email, phone_number), property:property_id (title, address)`)
         .eq('landlord_id', user.id)
         .order('created_at', { ascending: false });
+      if (maintError) throw new Error(`Maintenance fetch: ${maintError.message}`);
 
-      if (maintError) throw maintError;
-
-      // 2. Fetch properties owned by landlord to get unit IDs for payments
+      // 2. Properties owned by landlord
       const { data: properties, error: propError } = await supabase
         .from('properties')
         .select('id')
         .eq('landlord_id', user.id);
-
-      if (propError) throw propError;
+      if (propError) throw new Error(`Properties fetch: ${propError.message}`);
 
       let payments = [];
-      if (properties && properties.length > 0) {
-        const propertyIds = properties.map(p => p.id);
-        
-        // Get units for these properties
-        const { data: units, error: unitError } = await supabase
+      if (properties?.length) {
+        const unitsRes = await supabase
           .from('units')
           .select('id')
-          .in('property_id', propertyIds);
+          .in('property_id', properties.map(p => p.id));
+        const unitIds = unitsRes.data?.map(u => u.id) || [];
 
-        if (unitError) throw unitError;
-
-        if (units && units.length > 0) {
-          const unitIds = units.map(u => u.id);
-          
-          // Fetch payments for these units
-          // 2. Fetch payments for landlord's properties (includes utility payments)
-const { data: paymentsData, error: payError } = await supabase
-  .from('payments')
-  .select(`
-    *,
-    unit:unit_id (
-      unit_number,
-      property:property_id (title, address),
-      tenant:tenant_id (full_name, email, phone_number)
-    )
-  `)
-  .in('unit_id', unitIds)   // unitIds already fetched from properties
-  .order('payment_date', { ascending: false });
-          if (payError) throw payError;
+        if (unitIds.length) {
+          const { data: paymentsData, error: payError } = await supabase
+            .from('payments')
+            .select(`*, unit:unit_id (unit_number, property:property_id (title, address), tenant:tenant_id (full_name, email, phone_number))`)
+            .in('unit_id', unitIds)
+            .order('payment_date', { ascending: false });
+          if (payError) throw new Error(`Payments fetch: ${payError.message}`);
           payments = paymentsData || [];
         }
       }
 
-      // 3. Fetch documents shared with landlord (estate_documents with client_id = user.id)
+      // 3. Documents
       const { data: documents, error: docError } = await supabase
         .from('estate_documents')
         .select('*')
         .eq('client_id', user.id)
         .order('created_at', { ascending: false });
-
-      if (docError) throw docError;
+      if (docError) throw new Error(`Documents fetch: ${docError.message}`);
 
       // 4. Format maintenance items
-      const maintItems = maintenance.map(item => ({
+      const maintItems = (maintenance || []).map(item => ({
         id: `maint-${item.id}`,
         originalId: item.id,
         type: 'maintenance',
@@ -137,34 +115,39 @@ const { data: paymentsData, error: payError } = await supabase
         actionsTaken: item.actions_taken || [],
         assignedTo: item.assigned_to,
         icon: <Wrench size={18} />,
-        link: `/dashboard/landlord/maintenance/${item.id}`, // optional detail page
+        link: `/dashboard/landlord/maintenance/${item.id}`,
       }));
 
       // 5. Format payment items
-      const paymentItems = (payments || []).map(pay => ({
-  id: `pay-${pay.id}`,
-  originalId: pay.id,
-  type: 'payment',
-  paymentType: pay.payment_type || 'rent',   // <-- new field
-  title: pay.payment_type === 'utility' 
-    ? `Utility Bill - ${pay.unit?.unit_number || 'Unit'}` 
-    : `Rent Payment - ${pay.unit?.unit_number || 'Unit'}`,
-  description: `₦${pay.amount.toLocaleString()} paid on ${new Date(pay.payment_date).toLocaleDateString()}`,
-  date: pay.payment_date,
-  amount: pay.amount,
-  status: 'completed',
-  viewed: true,
-  tenant: pay.unit?.tenant,
-  property: pay.unit?.property,
-  unitNumber: pay.unit?.unit_number,
-  receipt_url: pay.receipt_url,
-  receipt_doc_id: pay.receipt_doc_id,
-  icon: pay.payment_type === 'utility' ? <Zap size={18} /> : <DollarSign size={18} />, // different icon
-  link: pay.receipt_url ? `/dashboard/landlord/documents/${pay.receipt_doc_id}` : null,
-}));
+      const paymentItems = (payments || []).map(pay => {
+        const unit = pay.unit || {};
+        const property = unit.property || {};
+        const tenant = unit.tenant || {};
+        return {
+          id: `pay-${pay.id}`,
+          originalId: pay.id,
+          type: 'payment',
+          paymentType: pay.payment_type || 'rent',
+          title: pay.payment_type === 'utility'
+            ? `Utility Bill - ${unit.unit_number || 'Unit'}`
+            : `Rent Payment - ${unit.unit_number || 'Unit'}`,
+          description: `₦${(pay.amount || 0).toLocaleString()} paid on ${new Date(pay.payment_date).toLocaleDateString()}`,
+          date: pay.payment_date,
+          amount: pay.amount,
+          status: 'completed',
+          viewed: true,
+          tenant: tenant,
+          property: property,
+          unitNumber: unit.unit_number,
+          receipt_url: pay.receipt_url,
+          receipt_doc_id: pay.receipt_doc_id,
+          icon: pay.payment_type === 'utility' ? <Zap size={18} /> : <DollarSign size={18} />,
+          link: pay.receipt_url ? `/dashboard/landlord/documents/${pay.receipt_doc_id}` : null,
+        };
+      });
 
       // 6. Format document items
-      const docItems = documents.map(doc => ({
+      const docItems = (documents || []).map(doc => ({
         id: `doc-${doc.id}`,
         originalId: doc.id,
         type: 'document',
@@ -179,7 +162,7 @@ const { data: paymentsData, error: payError } = await supabase
       }));
 
       // 7. Combine all, sort by date (most recent first)
-      const all = [...maintItems, ...paymentItems, ...docItems].sort((a, b) => 
+      const all = [...maintItems, ...paymentItems, ...docItems].sort((a, b) =>
         new Date(b.date) - new Date(a.date)
       );
 
@@ -194,7 +177,6 @@ const { data: paymentsData, error: payError } = await supabase
         urgent: maintItems.filter(i => i.priority === 'high' || i.emergency).length,
         unread: all.filter(i => !i.viewed).length,
       });
-
     } catch (err) {
       console.error("Error loading reports:", err.message);
     } finally {
@@ -204,7 +186,7 @@ const { data: paymentsData, error: payError } = await supabase
 
   const handleMarkViewed = async (item) => {
     if (item.viewed) return;
-    
+
     try {
       if (item.type === 'maintenance') {
         await supabase
@@ -217,12 +199,9 @@ const { data: paymentsData, error: payError } = await supabase
           .update({ viewed: true })
           .eq('id', item.originalId);
       }
-      // Payments might not have viewed flag, skip
-      
-      // Update local state
-      setItems(prev => prev.map(i => 
-        i.id === item.id ? { ...i, viewed: true } : i
-      ));
+      setItems(prev =>
+        prev.map(i => (i.id === item.id ? { ...i, viewed: true } : i))
+      );
       setStats(prev => ({ ...prev, unread: prev.unread - 1 }));
     } catch (err) {
       console.error("Failed to mark as viewed:", err);
@@ -236,11 +215,13 @@ const { data: paymentsData, error: payError } = await supabase
         .update({ status: newStatus })
         .eq('id', itemId);
 
-      setItems(prev => prev.map(i => 
-        i.originalId === itemId && i.type === 'maintenance' 
-          ? { ...i, status: newStatus } 
-          : i
-      ));
+      setItems(prev =>
+        prev.map(i =>
+          i.originalId === itemId && i.type === 'maintenance'
+            ? { ...i, status: newStatus }
+            : i
+        )
+      );
       if (selectedItem?.originalId === itemId && selectedItem.type === 'maintenance') {
         setSelectedItem({ ...selectedItem, status: newStatus });
       }
@@ -298,9 +279,9 @@ const { data: paymentsData, error: payError } = await supabase
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -329,7 +310,7 @@ const { data: paymentsData, error: payError } = await supabase
         </div>
         <div className="header-right">
           {stats.unread > 0 && (
-            <button 
+            <button
               className="btn btn-warning"
               onClick={() => items.filter(i => !i.viewed).forEach(i => handleMarkViewed(i))}
             >
@@ -392,8 +373,8 @@ const { data: paymentsData, error: payError } = await supabase
           </div>
         ) : (
           filteredItems.map(item => (
-            <div 
-              key={item.id} 
+            <div
+              key={item.id}
               className={`feed-item ${!item.viewed ? 'unread' : ''}`}
               onClick={() => {
                 handleMarkViewed(item);
@@ -485,8 +466,8 @@ const { data: paymentsData, error: payError } = await supabase
                   )}
                   <div className="status-update">
                     <label>Update Status</label>
-                    <select 
-                      value={selectedItem.status} 
+                    <select
+                      value={selectedItem.status}
                       onChange={(e) => handleUpdateMaintenanceStatus(selectedItem.originalId, e.target.value)}
                     >
                       <option value="open">Open</option>

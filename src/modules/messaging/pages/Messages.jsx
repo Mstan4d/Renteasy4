@@ -104,11 +104,13 @@ const Messages = () => {
 
   // Load data based on URL params
   useEffect(() => {
+     console.log('Params:', { listingId, chatId });
     if (!user) {
       navigate('/login');
       return;
     }
     if (chatId) {
+      console.log('Loading existing chat with ID:', chatId);
       loadExistingChat(chatId);
     } else if (listingId) {
       loadOrCreateChat(listingId);
@@ -296,14 +298,19 @@ console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id
   };
 
   const fetchMessages = async (id) => {
+    console.log('🔍 Fetching messages for chat ID:', id);
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .eq('chat_id', id)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
+     if (error) {
+    console.error('❌ Error fetching messages:', error);
+  } else {
+    console.log('✅ Fetched messages count:', data?.length);
     setMessages(data || []);
+  }
 
     const unread = data.filter(m => m.sender_id !== user.id && !m.read_at);
     if (unread.length > 0) {
@@ -458,11 +465,14 @@ console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id
         console.error('Error sending message:', error);
         alert('Failed to send message');
         setMessages((prev) => prev.filter(m => m.created_at !== newMsg.created_at));
-      }
+      }else {
+  console.log('Message inserted successfully');
+}
     } catch (error) {
       console.error('Error sending message with files:', error);
       alert('Failed to send message');
-    } finally {
+    }
+     finally {
       setUploading(false);
     }
   };
@@ -555,7 +565,7 @@ console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id
       
       await supabase.from('messages').insert({
         chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_id: '2253f74f-2dc3-4a87-ad03-e897d1e13353',
         content: `✅ ${role.toUpperCase()} has confirmed that this property has been rented.`,
         is_system_message: true,
         created_at: new Date().toISOString()
@@ -663,7 +673,7 @@ console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id
       
       await supabase.from('messages').insert({
         chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_id: '2253f74f-2dc3-4a87-ad03-e897d1e13353',
         content: `🏠 RENTAL FINALIZED: Property marked as rented. ${commissionText}`,
         is_system_message: true,
         created_at: new Date().toISOString()
@@ -700,7 +710,7 @@ console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id
       
       await supabase.from('messages').insert({
         chat_id: chat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_id: '2253f74f-2dc3-4a87-ad03-e897d1e13353',
         content: `👑 ADMIN OVERRIDE: Rental confirmed by admin. Reason: ${reason}`,
         is_system_message: true,
         created_at: new Date().toISOString()
@@ -807,7 +817,7 @@ console.log('isValidUUID(chatData.listing_id):', isValidUUID(chatData.listing_id
         roles: {
           tenant: { 
             confirmed: tenantConfirmed, 
-            canConfirm: user.role === 'tenant' && user.id === chat?.participant2_id, 
+            canConfirm: user.role === 'tenant' && (user.id === chat.participant1_id || user.id === chat.participant2_id),
             label: 'Incoming Tenant',
             order: 1
           },

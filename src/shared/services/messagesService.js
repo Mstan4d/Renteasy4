@@ -245,7 +245,7 @@ export const messagesService = {
 
       await supabase.from('messages').insert({
         chat_id: newChat.id,
-        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_id: '2253f74f-2dc3-4a87-ad03-e897d1e13353',
         content: initialMessage,
         is_system_message: true,
         created_at: new Date().toISOString()
@@ -406,7 +406,7 @@ export const messagesService = {
     // Add initial system message
     await supabase.from('messages').insert({
       chat_id: newChat.id,
-      sender_id: '00000000-0000-0000-0000-000000000000',
+      sender_id: '2253f74f-2dc3-4a87-ad03-e897d1e13353',
       content: `👋 You have started a conversation with a service provider.`,
       is_system_message: true,
       created_at: new Date().toISOString(),

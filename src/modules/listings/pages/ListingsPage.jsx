@@ -376,11 +376,12 @@ useEffect(() => {
   };
 
   const getListingStatus = (listing) => {
-    if (listing.verified && listing.status === 'approved') return 'verified';
-    if (listing.status === 'pending') return 'pending';
-    if (listing.status === 'rejected') return 'rejected';
-    return 'unknown';
-  };
+  if (!listing) return 'pending';  // ✅ guard against undefined
+  if (listing.rejected || listing.status === 'rejected') return 'rejected';
+  if (listing.verified && listing.status === 'approved') return 'verified';
+  if (listing.status === 'pending' || (!listing.verified && !listing.rejected)) return 'pending';
+  return 'unknown';
+};
 
   // Handlers
   const handleViewDetails = (listing) => setSelectedListing(listing);
@@ -644,6 +645,7 @@ useEffect(() => {
           {selectedListing ? (
             <ListingDetails
               listing={selectedListing}
+              getListingStatus={() => getListingStatus(selectedListing)}
               onBack={handleBackToListings}
               onContact={() => handleContact(selectedListing)}
               onVerify={() => handleVerify(selectedListing.id)}

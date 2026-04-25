@@ -1,29 +1,25 @@
-/* src/shared/components/layout/BottomNav.css */
-
 .bottom-nav {
   position: fixed;
-  bottom: 10px; /* Floating look */
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  width: 95%; /* Don't touch the edges */
-  max-width: 450px;
+  width: 92%;
+  max-width: 420px;
   
   display: flex !important;
   justify-content: space-around;
   align-items: center;
   
-  /* Glassmorphism */
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* Unified background – semi‑transparent dark, works everywhere */
+  background: #667eea;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   
-  padding: 8px 10px;
-  border-radius: 25px; /* Rounded pill shape */
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  padding: 3px 8px;          /* reduced vertical padding → lower height */
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
   z-index: 2000;
-  
-  /* Support for iPhone safe area */
   margin-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -33,28 +29,43 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  color: #94a3b8; /* Soft slate gray */
-  transition: all 0.3s ease;
+  color: #cbd5e1;          /* light gray, readable on dark bg */
+  transition: all 0.2s ease;
   flex: 1;
   position: relative;
+  gap: 2px;
+  r-radius: 12px;               /* optional, makes hover background rounded */
+  transition: background 0.2s, color 0.2s;
+}
+
+/* Remove default focus outline */
+.nav-btn:focus,
+.nav-btn:active {
+  outline: none;
+}
+
+/* Subtle hover effect – transparent background, text color change */
+.nav-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #a78bfa;
 }
 
 .nav-icon {
-  font-size: 1.2rem; /* Smaller icons */
-  margin-bottom: 2px;
+  font-size: 1.1rem;       /* slightly smaller icons */
+  margin-bottom: 0;
 }
 
 .nav-label {
-  font-size: 0.6rem;
-  font-weight: 500;
-  opacity: 0; /* Hide labels by default for modern look */
-  transform: translateY(5px);
-  transition: all 0.3s ease;
+  font-size: 0.55rem;
+  font-weight: 800;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.2s ease;
+  padding-top: 1px;
 }
 
-/* Show label ONLY when active */
 .nav-btn.active {
-  color: #5930e0;
+  color: #a78bfa;          /* soft purple for active state */
 }
 
 .nav-btn.active .nav-label {
@@ -62,45 +73,55 @@
   transform: translateY(0);
 }
 
-/* Modern Primary Action (The + Button) */
+/* Primary Action (floating + button) – reduced size */
 .nav-btn.primary-action {
-  flex: 0 0 55px; /* Fixed width */
+  flex: 0 0 48px;          /* narrower than before (was 55px) */
 }
 
 .nav-btn.primary-action .nav-icon {
-  background: #5930e0;
+  background: #7c3aed;     /* vibrant purple */
   color: white;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px; /* Squircle shape */
+  width: 38px;             /* smaller than 42px */
+  height: 38px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.4rem;
-  box-shadow: 0 4px 15px rgba(89, 48, 224, 0.4);
+  font-size: 1.5rem;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
   margin-bottom: 0;
-  transform: translateY(-5px); /* Slightly raised */
+  transform: translateY(-4px); /* slight raise, but less pronounced */
 }
 
 .nav-btn.primary-action .nav-label {
-    display: none; /* Never show label for the plus button */
+  display: none;
 }
 
-/* Hide active indicator dot - use the label instead */
 .active-indicator {
   display: none;
 }
 
-/* Responsive: Hide on Desktop */
+/* Hide on desktop */
 @media (min-width: 769px) {
-  .bottom-nav { display: none !important; }
+  .bottom-nav {
+    display: none !important;
+  }
 }
 
-/* Dark Mode Adaptation */
-@media (prefers-color-scheme: dark) {
-  .bottom-nav {
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .nav-btn.active { color: #a78bfa; }
+/* Force remove all focus rings and tap highlights from navigation buttons */
+.bottom-nav .nav-btn,
+.bottom-nav .nav-btn:focus,
+.bottom-nav .nav-btn:active,
+.bottom-nav .nav-btn:focus-visible,
+.bottom-nav .nav-btn:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  background: transparent !important; /* optional: prevents any background flash */
+}
+
+/*subtle hover effect (but no blue box), keep the hover styling separate */
+.bottom-nav .nav-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #a78bfa !important;
 }

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../shared/lib/supabaseClient';
 import { useAuth } from '../../../shared/context/AuthContext';
+import VerifiedBadge from '../../../shared/components/VerifiedBadge';
 import './ListingDetails.css';
 
 const ListingDetails = ({ 
@@ -19,7 +20,6 @@ const ListingDetails = ({
   onAcceptToManage, 
   userRole,
   getVerificationType,
-  getListingStatus,
   isNearby,
   canManagerVerify,
   canManagerAccept
@@ -30,25 +30,28 @@ const ListingDetails = ({
   const [isSaved, setIsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Check if listing is already saved when component loads
+  // ----- Normalise data from Supabase columns (raw) -----
+  const isListingVerified = listing.verified === true;
+  const listingStatus = listing.status || 'pending';
+  const isUserVerified = listing.user_verified === true;
+  const coordinates = listing.coordinates || 
+    (listing.lat && listing.lng ? { lat: listing.lat, lng: listing.lng } : null);
+  const postedDate = listing.created_at || listing.posted_date;
+
+  // ----- Saved status (unchanged) -----
   useEffect(() => {
-    if (user && listing?.id) {
-      checkIfSaved();
-    }
+    if (user && listing?.id) checkIfSaved();
   }, [user, listing?.id]);
 
   const checkIfSaved = async () => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('saved_properties')
         .select('id')
         .eq('user_id', user.id)
         .eq('listing_id', listing.id)
         .maybeSingle();
-
-      if (!error && data) {
-        setIsSaved(true);
-      }
+      setIsSaved(!!data);
     } catch (error) {
       console.error('Error checking saved status:', error);
     }
@@ -59,263 +62,177 @@ const ListingDetails = ({
       alert('Please log in to save properties');
       return;
     }
-
     setSaving(true);
     try {
       if (isSaved) {
-        // Remove from saved
-        const { error } = await supabase
+        await supabase
           .from('saved_properties')
           .delete()
           .eq('user_id', user.id)
           .eq('listing_id', listing.id);
-
-        if (error) throw error;
         setIsSaved(false);
         alert('Removed from saved properties');
       } else {
-        // Add to saved
-        const { error } = await supabase
+        await supabase
           .from('saved_properties')
-          .insert({
-            user_id: user.id,
-            listing_id: listing.id,
-            created_at: new Date().toISOString()
-          });
-
-        if (error) throw error;
+          .insert({ user_id: user.id, listing_id: listing.id, created_at: new Date().toISOString() });
         setIsSaved(true);
         alert('Added to saved properties!');
       }
     } catch (error) {
       console.error('Error saving property:', error);
-      alert('Failed to save property. Please try again.');
+      alert('Failed to save property');
     } finally {
       setSaving(false);
     }
   };
 
-  const getSafeImageUrl = (url) => {
-    if (!url) {
+  // ----- Helper functions -----
+  const safeImage = (url) => {
+    if (!url || url.startsWith('blob:')) 
       return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
-    }
-    if (url.startsWith('blob:')) {
-      return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80';
-    }
-    if (url.startsWith('http://')) {
-      return url.replace('http://', 'https://');
-    }
-    return url;
+    return url.replace('http://', 'https://');
   };
 
   const basePrice = parseFloat(listing.price || listing.rent_amount || 0);
   const isEstateFirm = listing.posterRole === 'estate-firm';
   const commission = isEstateFirm ? 0 : basePrice * 0.075;
-
-  // Extra fees – expecting array of { name, amount, description? }
   const extraFees = listing.extra_fees || [];
   const totalExtraFees = extraFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
   const totalPrice = basePrice + commission + totalExtraFees;
-
   const commissionBreakdown = isEstateFirm ? null : {
     rentEasy: commission * (3.5 / 7.5),
     manager: commission * (2.5 / 7.5),
     referral: commission * (1.5 / 7.5),
   };
 
-  const formatPrice = (price) => {
-    return `₦${Math.round(price).toLocaleString()}`;
-  };
-
+  const formatPrice = (price) => `₦${Math.round(price).toLocaleString()}`;
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+    if (!dateString) return 'Not available';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
   };
 
   const openInGoogleMaps = () => {
-    const query = listing.coordinates
-      ? `${listing.coordinates.lat},${listing.coordinates.lng}`
+    const query = coordinates 
+      ? `${coordinates.lat},${coordinates.lng}`
       : encodeURIComponent(`${listing.address}, ${listing.lga}, ${listing.state}`);
-    
     window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
   };
 
-  const handleSubmitReview = async () => {
+  const handleSubmitReview = () => {
     if (newReview.trim()) {
-      try {
-        const updatedReviews = [...reviews, newReview.trim()];
-        setReviews(updatedReviews);
-        alert('Review submitted successfully!');
-        setNewReview('');
-      } catch (error) {
-        console.error('Error submitting review:', error);
-        alert('Failed to submit review');
-      }
+      setReviews([...reviews, newReview.trim()]);
+      alert('Review submitted successfully!');
+      setNewReview('');
     }
   };
 
   const getPosterRoleLabel = () => {
-    switch(listing.posterRole || listing.userRole) {
-      case 'estate-firm': return 'Estate Firm';
-      case 'landlord': return 'Landlord';
-      case 'tenant': return 'Outgoing Tenant';
-      default: return 'Unknown';
-    }
+    const role = listing.posterRole;
+    if (role === 'estate-firm') return 'Estate Firm';
+    if (role === 'landlord') return 'Landlord';
+    if (role === 'tenant') return 'Outgoing Tenant';
+    return 'Unknown';
   };
-
   const getPosterRoleIcon = () => {
-    switch(listing.posterRole || listing.userRole) {
-      case 'estate-firm': return <Building size={16} />;
-      case 'landlord': return <Home size={16} />;
-      default: return <User size={16} />;
-    }
+    const role = listing.posterRole;
+    if (role === 'estate-firm') return <Building size={16} />;
+    if (role === 'landlord') return <Home size={16} />;
+    return <User size={16} />;
   };
 
   return (
     <div className="listing-details">
-      {/* Back Button */}
       <button className="back-button" onClick={onBack}>
-        <ArrowLeft size={18} />
-        Back to Listings
+        <ArrowLeft size={18} /> Back to Listings
       </button>
 
-      {/* Main Content */}
       <div className="details-content">
-        {/* Header */}
         <div className="details-header">
           <div className="header-left">
             <h1>{listing.title}</h1>
             <div className="listing-status">
-              {listing.verified && listing.status === 'approved' ? (
-                <span className="status-badge verified">
-                  <CheckCircle size={16} />
-                  Verified Listing
-                </span>
-              ) : listing.status === 'pending' ? (
-                <span className="status-badge pending">
-                  <Clock size={16} />
-                  Pending Verification
-                </span>
-              ) : listing.status === 'rejected' ? (
-                <span className="status-badge rejected">
-                  <Clock size={16} />
-                  Rejected
-                </span>
+              {isListingVerified ? (
+                <span className="status-badge verified"><CheckCircle size={16} /> Verified Listing</span>
+              ) : listingStatus === 'pending' ? (
+                <span className="status-badge pending"><Clock size={16} /> Pending Verification</span>
+              ) : listingStatus === 'rejected' ? (
+                <span className="status-badge rejected"><Clock size={16} /> Rejected</span>
               ) : null}
             </div>
           </div>
           <div className="header-right">
-            <button className="btn btn-primary contact-btn" onClick={onContact}>
-              Contact Now
-            </button>
-            {(userRole === 'admin' || userRole === 'manager') && 
-             !listing.verified && 
-             listing.status === 'pending' && (
-              <button className="btn btn-success verify-btn" onClick={onVerify}>
-                Verify Listing
-              </button>
+            <button className="btn btn-primary contact-btn" onClick={onContact}>Contact Now</button>
+            {(userRole === 'admin' || userRole === 'manager') && !isListingVerified && listingStatus === 'pending' && (
+              <button className="btn btn-success verify-btn" onClick={onVerify}>Verify Listing</button>
             )}
           </div>
         </div>
 
         {/* Images Gallery */}
         <div className="images-section">
-          <h3>
-            <ImageIcon size={20} />
-            Property Images
-          </h3>
+          <h3><ImageIcon size={20} /> Property Images</h3>
           <div className="images-grid">
-            {listing.images?.map((image, index) => (
-              <div key={index} className="image-item">
-                <PropertyImage 
-                  src={image} 
-                  alt={`${listing.title} - ${index + 1}`}
-                  className="image-preview"
-                />
+            {listing.images?.map((img, idx) => (
+              <div key={idx} className="image-item">
+                <PropertyImage src={safeImage(img)} alt={`${listing.title} - ${idx+1}`} className="image-preview" />
               </div>
             ))}
             {(!listing.images || listing.images.length === 0) && (
-              <div className="no-images">
-                <ImageIcon size={48} />
-                <p>No images available for this property</p>
-              </div>
+              <div className="no-images"><ImageIcon size={48} /><p>No images available</p></div>
             )}
           </div>
         </div>
 
-        {/* Property Details Grid */}
+        {/* Details Grid */}
         <div className="details-grid">
-          {/* Left Column */}
+          {/* Left column */}
           <div className="details-column">
             <div className="detail-card">
-              <h3>
-                <Home size={18} />
-                Property Information
-              </h3>
+              <h3><Home size={18} /> Property Information</h3>
               <div className="detail-item">
                 <span className="detail-label">Type:</span>
-                <span className="detail-value">{listing.propertyType}</span>
+                <span className="detail-value">{listing.property_type || listing.propertyType}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Location:</span>
-                <span className="detail-value">
-                  <MapPin size={14} />
-                  {listing.address}, {listing.lga}, {listing.state}
-                </span>
+                <span className="detail-value"><MapPin size={14} /> {listing.address}, {listing.lga}, {listing.state}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Coordinates:</span>
-                <span className="detail-value">
-                  {listing.coordinates?.lat?.toFixed(6)}, {listing.coordinates?.lng?.toFixed(6)}
-                </span>
+                <span className="detail-value">{coordinates ? `${coordinates.lat?.toFixed(6)}, ${coordinates.lng?.toFixed(6)}` : 'Not available'}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Amenities:</span>
-                <span className="detail-value">
-                  {Array.isArray(listing.amenities) 
-                    ? listing.amenities.join(', ') 
-                    : (typeof listing.amenities === 'string' ? listing.amenities : 'No amenities listed')}
-                </span>
+                <span className="detail-value">{Array.isArray(listing.amenities) ? listing.amenities.join(', ') : (listing.amenities || 'No amenities listed')}</span>
               </div>
               <div className="detail-item">
-                <span className="detail-label">Status:</span>
-                <span className={`detail-value status-${listing.status}`}>
-                  {listing.status === 'approved' ? '✓ Approved' : 
-                   listing.status === 'pending' ? '⏳ Pending' : 
-                   listing.status === 'rejected' ? '✗ Rejected' : 'Unknown'}
+               <span className="detail-label">Status:</span>
+                <span className={`detail-value status-${isListingVerified ? 'approved' : listingStatus}`}>
+                  {isListingVerified ? '✓ Verified' : listingStatus === 'pending' ? '⏳ Pending' : listingStatus === 'rejected' ? '✗ Rejected' : 'Unknown'}
                 </span>
               </div>
             </div>
 
             <div className="detail-card">
-              <h3>
-                {getPosterRoleIcon()}
-                Poster Information
-              </h3>
+              <h3>{getPosterRoleIcon()} Poster Information</h3>
               <div className="detail-item">
                 <span className="detail-label">Posted by:</span>
-                <span className="detail-value">{listing.posterName || listing.postedBy?.fullName || 'Anonymous'}</span>
+                <span className="detail-value">{listing.posterName || 'Anonymous'}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Role:</span>
-                <span className="detail-value">
-                  {getPosterRoleLabel()}
-                </span>
+                <span className="detail-value">{getPosterRoleLabel()}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Verified:</span>
-                <span className="detail-value">
-                  {listing.postedBy?.isVerified || listing.userVerified ? '✓ Yes' : '✗ No'}
-                </span>
+                <span className="detail-value">{isUserVerified ? '✓ Yes' : '✗ No'}</span>
               </div>
               <div className="detail-item">
                 <span className="detail-label">Posted on:</span>
-                <span className="detail-value">{formatDate(listing.timestamp || listing.createdAt)}</span>
+                <span className="detail-value">{formatDate(postedDate)}</span>
               </div>
               {listing.isManaged && (
                 <div className="detail-item">
@@ -326,13 +243,10 @@ const ListingDetails = ({
             </div>
           </div>
 
-          {/* Right Column */}
+          {/* Right column */}
           <div className="details-column">
             <div className="detail-card price-card">
-              <h3>
-                <DollarSign size={18} />
-                Pricing Details
-              </h3>
+              <h3><DollarSign size={18} /> Pricing Details</h3>
               <div className="price-details">
                 <div className="price-item">
                   <span className="price-label">Annual Rent:</span>
@@ -341,45 +255,30 @@ const ListingDetails = ({
 
                 {!isEstateFirm && (
                   <div className="commission-section">
-                    <h4>
-                      <Shield size={16} />
-                      Commission Breakdown (7.5%)
-                    </h4>
+                    <h4><Shield size={16} /> Commission Breakdown (7.5%)</h4>
                     <div className="commission-item">
                       <span>RentEasy Commission (3.5%):</span>
-                      <span className="commission-renteasy">
-                        + {formatPrice(commissionBreakdown.rentEasy)}
-                      </span>
+                      <span className="commission-renteasy">+ {formatPrice(commissionBreakdown.rentEasy)}</span>
                     </div>
                     <div className="commission-item">
                       <span>Manager Commission (2.5%):</span>
-                      <span className="commission-manager">
-                        + {formatPrice(commissionBreakdown.manager)}
-                      </span>
+                      <span className="commission-manager">+ {formatPrice(commissionBreakdown.manager)}</span>
                     </div>
                     <div className="commission-item">
                       <span>Referral Commission (1.5%):</span>
-                      <span className="commission-referral">
-                        + {formatPrice(commissionBreakdown.referral)}
-                      </span>
+                      <span className="commission-referral">+ {formatPrice(commissionBreakdown.referral)}</span>
                     </div>
                   </div>
                 )}
 
-                {/* Extra Fees Section */}
                 {extraFees.length > 0 && (
                   <div className="extra-fees-section">
-                    <h4>
-                      <Receipt size={16} />
-                      Additional Fees
-                    </h4>
-                    {extraFees.map((fee, index) => (
-                      <div key={index} className="fee-item">
+                    <h4><Receipt size={16} /> Additional Fees</h4>
+                    {extraFees.map((fee, idx) => (
+                      <div key={idx} className="fee-item">
                         <span className="fee-name">{fee.name}:</span>
                         <span className="fee-amount">+ {formatPrice(fee.amount)}</span>
-                        {fee.description && (
-                          <small className="fee-description">({fee.description})</small>
-                        )}
+                        {fee.description && <small className="fee-description">({fee.description})</small>}
                       </div>
                     ))}
                     <div className="fee-total">
@@ -391,17 +290,12 @@ const ListingDetails = ({
 
                 {isEstateFirm && (
                   <div className="commission-section">
-                    <h4>
-                      <Building size={16} />
-                      Estate Firm Listing
-                    </h4>
+                    <h4><Building size={16} /> Estate Firm Listing</h4>
                     <div className="commission-item">
                       <span>No Commission Charged:</span>
                       <span className="commission-free">0%</span>
                     </div>
-                    <div className="commission-note">
-                      <small>Direct contact with estate firm</small>
-                    </div>
+                    <div className="commission-note"><small>Direct contact with estate firm</small></div>
                   </div>
                 )}
 
@@ -412,13 +306,9 @@ const ListingDetails = ({
               </div>
             </div>
 
-            {/* Manager Actions (if applicable) */}
             {userRole === 'manager' && !isEstateFirm && !listing.isManaged && (
               <div className="detail-card manager-actions">
-                <h3>
-                  <User size={18} />
-                  Manager Actions
-                </h3>
+                <h3><User size={18} /> Manager Actions</h3>
                 <div className="action-buttons">
                   <button 
                     className={`btn ${canManagerAccept ? 'btn-primary' : 'btn-disabled'}`}
@@ -446,32 +336,24 @@ const ListingDetails = ({
         {/* Description */}
         <div className="description-section">
           <h3>Property Description</h3>
-          <div className="description-content">
-            {listing.description || 'No description available.'}
-          </div>
+          <div className="description-content">{listing.description || 'No description available.'}</div>
         </div>
 
-        {/* Reviews Section */}
+        {/* Reviews */}
         <div className="reviews-section">
-          <h3>
-            <Star size={18} />
-            Reviews ({reviews.length})
-          </h3>
-          
+          <h3><Star size={18} /> Reviews ({reviews.length})</h3>
           <div className="reviews-list">
             {reviews.length > 0 ? (
-              reviews.map((review, index) => (
-                <div key={index} className="review-item">
+              reviews.map((review, i) => (
+                <div key={i} className="review-item">
                   <p>{review}</p>
-                  <span className="review-date">Review #{index + 1}</span>
+                  <span className="review-date">Review #{i+1}</span>
                 </div>
               ))
             ) : (
               <p className="no-reviews">No reviews yet. Be the first to review!</p>
             )}
           </div>
-
-          {/* Add Review */}
           <div className="add-review">
             <textarea
               value={newReview}
@@ -492,12 +374,10 @@ const ListingDetails = ({
         {/* Action Buttons */}
         <div className="details-actions">
           <button className="btn btn-outline" onClick={onBack}>
-            <ArrowLeft size={16} />
-            Back to Listings
+            <ArrowLeft size={16} /> Back
           </button>
           <button className="btn btn-primary" onClick={onContact}>
-            <Phone size={16} />
-            Contact Now
+            <Phone size={16} /> Contact Now
           </button>
           <button className="btn btn-outline map-btn" onClick={openInGoogleMaps}>
             📍 View on Map
@@ -507,8 +387,7 @@ const ListingDetails = ({
             onClick={handleSaveToFavorites}
             disabled={saving}
           >
-            <Star size={16} />
-            {saving ? 'Saving...' : (isSaved ? 'Saved' : 'Save to Favorites')}
+            <Star size={16} /> {saving ? 'Saving...' : (isSaved ? 'Saved' : 'Save to Favorites')}
           </button>
         </div>
       </div>

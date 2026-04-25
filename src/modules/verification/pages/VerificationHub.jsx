@@ -199,7 +199,7 @@ const VerificationHub = () => {
     return [];
   };
 
-  const startVerification = () => navigate('/verify/submit');
+  const startVerification = () => navigate('/verify/form');
 
   if (loading) {
     return (

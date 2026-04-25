@@ -947,3 +947,135 @@
 .tab-content {
   margin-top: 24px;
 }
+
+/* Document display in cards and modals */
+.document-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 1rem;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+}
+
+.document-item:hover {
+  background: #f1f5f9;
+}
+
+.doc-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  color: #475569;
+}
+
+.doc-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.doc-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #1e293b;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.doc-name:hover {
+  text-decoration: underline;
+  color: #3b82f6;
+}
+
+.doc-thumbnail img {
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  object-fit: cover;
+}
+
+.doc-download {
+  color: #64748b;
+  transition: color 0.2s;
+}
+
+.doc-download:hover {
+  color: #3b82f6;
+}
+
+/* Card document toggle button */
+.card-docs-toggle {
+  margin-top: 12px;
+}
+
+.docs-toggle-btn {
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #3b82f6;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.docs-toggle-btn:hover {
+  text-decoration: underline;
+}
+
+.card-documents-preview {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* Modal document list improvements */
+.modal-body .document-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.modal-body .document-item {
+  background: #fff;
+}
+
+/* Dark mode adjustments (if needed) */
+@media (prefers-color-scheme: dark) {
+  .document-item {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .document-item:hover {
+    background: #334155;
+  }
+  .doc-icon {
+    background: #334155;
+    color: #94a3b8;
+  }
+  .doc-name {
+    color: #e2e8f0;
+  }
+  .docs-toggle-btn {
+    color: #60a5fa;
+  }
+  .card-documents-preview {
+    border-top-color: #334155;
+  }
+}

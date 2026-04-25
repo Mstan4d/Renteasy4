@@ -1,15 +1,16 @@
-// src/modules/verification/pages/VerificationStatus.jsx - MODERN DESIGN
+// src/modules/verification/pages/VerificationStatus.jsx
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../../shared/context/AuthContext'
+import { useAuth } from '../../../shared/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../../shared/lib/supabaseClient';
 import './VerificationStatus.css';
 
 const VerificationStatus = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
   const [verificationData, setVerificationData] = useState({
-    status: 'pending', // 'pending', 'verified', 'rejected'
+    status: 'pending',
     submittedAt: null,
     reviewedAt: null,
     estimatedCompletion: null,
@@ -18,79 +19,104 @@ const VerificationStatus = () => {
     trustScore: 0,
     level: 'basic'
   });
-  
   const [loading, setLoading] = useState(true);
   const [timeRemaining, setTimeRemaining] = useState('');
+  const [role, setRole] = useState(user?.role || 'tenant');
 
   useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     loadVerificationStatus();
-    startCountdown();
-  }, []);
+  }, [user]);
 
-  const loadVerificationStatus = () => {
+  const loadVerificationStatus = async () => {
     setLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      // Load from localStorage
-      const verifications = JSON.parse(localStorage.getItem('verifications') || '[]');
-      const userVerification = verifications.find(v => v.userId === user?.id);
-      
-      const kycVerifications = JSON.parse(localStorage.getItem('kycVerifications') || '[]');
-      const userKYC = kycVerifications.find(k => k.userId === user?.id);
-      
-      if (userVerification || userKYC) {
-        const data = userVerification || userKYC;
-        
+    try {
+      // Determine which table to query
+      let table = 'profiles';
+      let userColumn = 'id';
+      let statusField = 'kyc_status';
+      let submittedField = 'kyc_submitted_at';
+      let reviewedField = 'kyc_verified_at';
+      let reviewerField = 'kyc_verified_by'; // optional
+      let notesField = 'kyc_rejection_reason';
+      let trustField = 'trust_score';
+      let levelField = 'verification_level';
+
+      if (user.role === 'estate-firm') {
+        table = 'estate_firm_profiles';
+        userColumn = 'user_id';
+        statusField = 'verification_status';
+        submittedField = 'verification_submitted_at';
+        reviewedField = 'verification_verified_at';
+        reviewerField = 'verified_by';
+        notesField = 'rejection_reason';
+        trustField = 'rating'; // or similar; fallback
+        levelField = 'verification_level';
+      }
+
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq(userColumn, user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        const status = data[statusField] || 'not_started';
+        const submitted = data[submittedField];
+        const reviewed = data[reviewedField];
+        const reviewer = data[reviewerField];
+        const notes = data[notesField] || '';
+        const trustScore = data[trustField] || 50;
+        const level = data[levelField] || 'basic';
+
         setVerificationData({
-          status: data.status || 'pending',
-          submittedAt: data.submittedAt || data.createdAt || new Date().toISOString(),
-          reviewedAt: data.reviewedAt || data.verifiedAt || null,
-          estimatedCompletion: data.estimatedCompletion || 
-            new Date(new Date().getTime() + 48 * 60 * 60 * 1000).toISOString(),
-          reviewer: data.reviewedBy || data.verifiedBy || null,
-          notes: data.feedback || data.notes || '',
-          trustScore: data.trustScore || 50,
-          level: data.level || 'basic'
+          status,
+          submittedAt: submitted,
+          reviewedAt: reviewed,
+          estimatedCompletion: submitted ? new Date(new Date(submitted).getTime() + 48 * 3600000).toISOString() : null,
+          reviewer,
+          notes,
+          trustScore,
+          level
         });
       } else {
-        // Default data for demonstration
-        setVerificationData({
-          status: 'pending',
-          submittedAt: new Date().toISOString(),
-          reviewedAt: null,
-          estimatedCompletion: new Date(new Date().getTime() + 48 * 60 * 60 * 1000).toISOString(),
-          reviewer: null,
-          notes: '',
-          trustScore: 50,
-          level: 'basic'
-        });
+        // No verification submitted yet
+        setVerificationData(prev => ({ ...prev, status: 'not_started' }));
       }
-      
+    } catch (error) {
+      console.error('Error loading verification status:', error);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
-  const startCountdown = () => {
+  // Countdown timer (same as before)
+  useEffect(() => {
     const interval = setInterval(() => {
+      const estimated = verificationData.estimatedCompletion;
+      if (!estimated) {
+        setTimeRemaining('');
+        return;
+      }
       const now = new Date();
-      const estimated = new Date(verificationData.estimatedCompletion || now.getTime() + 48 * 60 * 60 * 1000);
-      const diff = estimated.getTime() - now.getTime();
-      
+      const est = new Date(estimated);
+      const diff = est - now;
       if (diff <= 0) {
         setTimeRemaining('Ready for review');
         clearInterval(interval);
         return;
       }
-      
       const hours = Math.floor(diff / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      
       setTimeRemaining(`${hours}h ${minutes}m`);
     }, 60000);
-    
     return () => clearInterval(interval);
-  };
+  }, [verificationData.estimatedCompletion]);
 
   const getStatusConfig = (status) => {
     const configs = {
@@ -105,6 +131,17 @@ const VerificationStatus = () => {
         buttonAction: () => navigate('/profile'),
         showCountdown: false
       },
+      approved: { // for estate firms
+        title: 'Verified! 🎉',
+        subtitle: 'Your business has been successfully verified',
+        icon: '✅',
+        color: '#10b981',
+        bgColor: '#d1fae5',
+        badge: 'VERIFIED',
+        buttonText: 'Go to Dashboard',
+        buttonAction: () => navigate('/dashboard'),
+        showCountdown: false
+      },
       pending: {
         title: 'Under Review',
         subtitle: 'Your verification is being processed',
@@ -113,10 +150,7 @@ const VerificationStatus = () => {
         bgColor: '#fef3c7',
         badge: 'PENDING',
         buttonText: 'Check for Updates',
-        buttonAction: () => {
-          loadVerificationStatus();
-          alert('Checking for updates...');
-        },
+        buttonAction: () => loadVerificationStatus(),
         showCountdown: true
       },
       rejected: {
@@ -129,9 +163,19 @@ const VerificationStatus = () => {
         buttonText: 'Resubmit Documents',
         buttonAction: () => navigate('/verify/submit'),
         showCountdown: false
+      },
+      not_started: {
+        title: 'Verification Not Started',
+        subtitle: 'Please submit your documents to get verified',
+        icon: '📝',
+        color: '#6b7280',
+        bgColor: '#f3f4f6',
+        badge: 'NOT STARTED',
+        buttonText: 'Start Verification',
+        buttonAction: () => navigate('/verify/submit'),
+        showCountdown: false
       }
     };
-    
     return configs[status] || configs.pending;
   };
 

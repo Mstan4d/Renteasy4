@@ -130,7 +130,7 @@ const LandlordSettings = lazy(() => import('../modules/dashboard/components/land
 const LandlordProfile = lazy(() => import('../modules/profile/pages/LandlordProfile'));
 const LandlordRentTracking = lazy(() => import('../modules/dashboard/components/landlord/LandlordRentTracking'));
 const LandlordNotifications = lazy(() => import('../modules/dashboard/components/landlord/LandlordNotifications'));
-
+const LandlordReports = lazy(() => import('../modules/dashboard/components/landlord/Reports'));
 
 // Estate Firm Components
 const EstateDashboard = lazy(() => import('../modules/estate-firm/pages/EstateDashboard'));
@@ -381,6 +381,7 @@ const AppRoutes = () => {
   <Route path="settings" element={<LandlordSettings />} />
   <Route path="notifications" element={<LandlordNotifications />} />
   <Route path="rent-tracking" element={<LandlordRentTracking />} />
+  <Route path="reports" element={<LandlordReports />} />
 </Route>
 
       {/* ========== MANAGER ROUTES ========== */}

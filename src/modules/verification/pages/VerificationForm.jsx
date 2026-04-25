@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
 import { supabase } from '../../../shared/lib/supabaseClient';
-import { nigerianStates, getLGAsForState } from '../../../shared/data/nigerianLocations';
 import './VerificationForm.css';
 
 const VerificationForm = () => {
@@ -12,6 +11,8 @@ const VerificationForm = () => {
 
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [states, setStates] = useState([]);
+  const [lgas, setLgas] = useState([]);
   const [uploading, setUploading] = useState({});
   const [formData, setFormData] = useState({
     fullName: user?.name || '',
@@ -51,11 +52,70 @@ const VerificationForm = () => {
     }
   };
 
-  const getLGAsForState = (state) => {
-    if (!state) return [];
-    const stateData = nigerianStates.find(s => s.value === state);
-    return stateData ? stateData.lgas : [];
-  };
+  useEffect(() => {
+  fetchStates();
+}, []);
+
+const fetchStates = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('states')
+      .select('id, name')
+      .eq('active', true)
+      .order('name');
+    if (error) throw error;
+    setStates(data || []);
+  } catch (error) {
+    console.error('Error fetching states:', error);
+    // Fallback static states
+    setStates([
+      { id: 1, name: 'Lagos' },
+      { id: 2, name: 'Abuja' },
+      { id: 3, name: 'Rivers' },
+      { id: 4, name: 'Oyo' },
+      { id: 5, name: 'Kano' }
+    ]);
+  }
+};
+
+  useEffect(() => {
+  if (formData.state) {
+    fetchLGAs(formData.state);
+  } else {
+    setLgas([]);
+  }
+}, [formData.state]);
+
+const fetchLGAs = async (stateName) => {
+  try {
+    // Get state id from name
+    const { data: stateData, error: stateError } = await supabase
+      .from('states')
+      .select('id')
+      .eq('name', stateName)
+      .single();
+    if (stateError) throw stateError;
+    if (!stateData) return;
+
+    const { data, error } = await supabase
+      .from('lgas')
+      .select('name')
+      .eq('state_id', stateData.id)
+      .eq('active', true)
+      .order('name');
+    if (error) throw error;
+    setLgas(data || []);
+  } catch (error) {
+    console.error('Error fetching LGAs:', error);
+    // Fallback static LGAs for common states
+    const fallback = {
+      'Lagos': ['Ikeja', 'Agege', 'Alimosho', 'Surulere'],
+      'Abuja': ['Abuja Municipal', 'Bwari', 'Gwagwalada'],
+      'Rivers': ['Port Harcourt', 'Obio-Akpor', 'Ikwerre']
+    };
+    setLgas(fallback[stateName]?.map(name => ({ name })) || []);
+  }
+};
 
   const steps = user?.role === 'landlord' ? [
     { number: 1, title: 'Personal Info', icon: '👤' },
@@ -102,14 +162,18 @@ const VerificationForm = () => {
   };
 
   const removeFile = (field) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: null,
-      [`${field}Preview`]: null
-    }));
-    setUploading(prev => ({ ...prev, [field]: 0 }));
-  };
-
+  // Revoke the blob URL to avoid memory leaks
+  const preview = formData[`${field}Preview`];
+  if (preview && preview.startsWith('blob:')) {
+    URL.revokeObjectURL(preview);
+  }
+  setFormData(prev => ({
+    ...prev,
+    [field]: null,
+    [`${field}Preview`]: null
+  }));
+  setUploading(prev => ({ ...prev, [field]: 0 }));
+};
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -124,14 +188,16 @@ const VerificationForm = () => {
         return formData.fullName && formData.phone && formData.dateOfBirth &&
                formData.nationality && formData.state && formData.lga && formData.address;
       case 2:
-        return formData.idType && formData.idNumber && formData.idFrontFile &&
-               formData.selfieFile && formData.proofOfAddressFile;
+  return formData.idType && formData.idNumber && 
+         formData.idFront &&       // ✅ changed from idFrontFile
+         formData.selfie &&        // ✅ changed from selfieFile
+         formData.proofOfAddress;  // ✅ changed from proofOfAddressFile
       case 3:
-        if (user?.role === 'landlord') {
-          return formData.propertyDocumentFile;
-        } else {
-          return formData.employmentStatus && formData.monthlyIncome;
-        }
+  if (user?.role === 'landlord') {
+    return formData.propertyDocument;      // ✅ changed from propertyDocumentFile
+  } else {
+    return formData.employmentStatus && formData.monthlyIncome;
+  }
       default:
         return true;
     }
@@ -298,20 +364,18 @@ const VerificationForm = () => {
               <div className="form-group">
   <label>State *</label>
   <select
-    name="state"
-    value={formData.state}
-    onChange={(e) => {
-      setFormData({...formData, state: e.target.value, lga: ''});
-    }}
-    required
-  >
-    <option value="">Select State</option>
-    {nigerianStates.map(state => (
-      <option key={state.value} value={state.value}>
-        {state.label}
-      </option>
-    ))}
-  </select>
+  name="state"
+  value={formData.state}
+  onChange={(e) => {
+    setFormData({...formData, state: e.target.value, lga: ''});
+  }}
+  required
+>
+  <option value="">Select State</option>
+  {states.map(state => (
+    <option key={state.id} value={state.name}>{state.name}</option>
+  ))}
+</select>
 </div>
 {formData.state && (
   <div className="form-group">
@@ -323,8 +387,8 @@ const VerificationForm = () => {
       required
     >
       <option value="">Select LGA</option>
-      {getLGAsForState(formData.state).map(lga => (
-        <option key={lga} value={lga}>{lga}</option>
+      {lgas.map((lga, idx) => (
+        <option key={idx} value={lga.name}>{lga.name}</option>
       ))}
     </select>
   </div>
@@ -414,11 +478,11 @@ const VerificationForm = () => {
                       </label>
                     </>
                   )}
-                  {uploadProgress.idFront !== undefined && uploadProgress.idFront < 100 && (
+                  {uploading.idFront !== undefined && uploading.idFront < 100 && (
                     <div className="upload-progress">
                       <div 
                         className="progress-bar" 
-                        style={{ width: `${uploadProgress.idFront}%` }}
+                        style={{ width: `${uploading.idFront}%` }}
                       ></div>
                     </div>
                   )}
@@ -459,11 +523,11 @@ const VerificationForm = () => {
                       </label>
                     </>
                   )}
-                  {uploadProgress.idBack !== undefined && uploadProgress.idBack < 100 && (
+                  {uploading.idBack !== undefined && uploading.idBack < 100 && (
                     <div className="upload-progress">
                       <div 
                         className="progress-bar" 
-                        style={{ width: `${uploadProgress.idBack}%` }}
+                        style={{ width: `${uploading.idBack}%` }}
                       ></div>
                     </div>
                   )}
@@ -471,46 +535,46 @@ const VerificationForm = () => {
               </div>
               
               <div className="upload-group">
-                <label>Selfie with ID *</label>
-                <div className="upload-area">
-                  {formData.selfie ? (
-                    <div className="upload-preview">
-                      <img src={formData.selfie} alt="Selfie with ID" />
-                      <button 
-                        type="button"
-                        className="btn-remove"
-                        onClick={() => removeFile('selfie')}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <input
-                        type="file"
-                        id="selfie"
-                        accept="image/*"
-                        capture="user"
-                        onChange={(e) => handleFileUpload(e, 'selfie')}
-                        className="file-input"
-                      />
-                      <label htmlFor="selfie" className="upload-label">
-                        <div className="upload-icon">📱</div>
-                        <p>Take or Upload Selfie</p>
-                        <small>Hold your ID next to your face</small>
-                      </label>
-                    </>
-                  )}
-                  {uploadProgress.selfie !== undefined && uploadProgress.selfie < 100 && (
-                    <div className="upload-progress">
-                      <div 
-                        className="progress-bar" 
-                        style={{ width: `${uploadProgress.selfie}%` }}
-                      ></div>
-                    </div>
-                  )}
-                </div>
-              </div>
+  <label>Selfie with ID *</label>
+  <div className="upload-area">
+    {formData.selfiePreview ? (
+      <div className="upload-preview">
+        <img src={formData.selfiePreview} alt="Selfie with ID" />
+        <button 
+          type="button"
+          className="btn-remove"
+          onClick={() => removeFile('selfie')}
+        >
+          Remove
+        </button>
+      </div>
+    ) : (
+      <>
+        <input
+          type="file"
+          id="selfie"
+          accept="image/*"
+          capture="user"
+          onChange={(e) => handleFileUpload(e, 'selfie')}
+          className="file-input"
+        />
+        <label htmlFor="selfie" className="upload-label">
+          <div className="upload-icon">📱</div>
+          <p>Take or Upload Selfie</p>
+          <small>Hold your ID next to your face</small>
+        </label>
+      </>
+    )}
+    {uploading.selfie !== undefined && uploading.selfie < 100 && (
+      <div className="upload-progress">
+        <div 
+          className="progress-bar" 
+          style={{ width: `${uploading.selfie}% `}}
+        ></div>
+      </div>
+    )}
+  </div>
+</div>
               
               <div className="upload-group">
                 <label>Proof of Address *</label>
@@ -546,11 +610,11 @@ const VerificationForm = () => {
                       </label>
                     </>
                   )}
-                  {uploadProgress.proofOfAddress !== undefined && uploadProgress.proofOfAddress < 100 && (
+                  {uploading.proofOfAddress !== undefined && uploading.proofOfAddress < 100 && (
                     <div className="upload-progress">
                       <div 
                         className="progress-bar" 
-                        style={{ width: `${uploadProgress.proofOfAddress}%` }}
+                        style={{ width: `${uploading.proofOfAddress}%` }}
                       ></div>
                     </div>
                   )}
@@ -624,11 +688,11 @@ const VerificationForm = () => {
                         </label>
                       </>
                     )}
-                    {uploadProgress.propertyDocument !== undefined && uploadProgress.propertyDocument < 100 && (
+                    {uploading.propertyDocument !== undefined && uploading.propertyDocument < 100 && (
                       <div className="upload-progress">
                         <div 
                           className="progress-bar" 
-                          style={{ width: `${uploadProgress.propertyDocument}%` }}
+                          style={{ width: `${uploading.propertyDocument}%` }}
                         ></div>
                       </div>
                     )}

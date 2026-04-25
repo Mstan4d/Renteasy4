@@ -8,6 +8,7 @@ import { messagesService } from '../../../shared/services/messagesService';
 import Header from '../../../shared/components/Header';
 import RentEasyLoader from '../../../shared/components/RentEasyLoader';
 import ListingDetails from '../components/ListingDetails';
+import VerifiedBadge from '../../../shared/components/VerifiedBadge';
 import './ListingDetailsPage.css';
 
 const ListingDetailsPage = () => {
@@ -33,32 +34,35 @@ const ListingDetailsPage = () => {
   }, [listing, user]);
 
   const loadListing = async () => {
-    try {
-      setIsLoading(true);
-      
-      // Try to get from location state first
-      if (location.state?.listing) {
-        setListing(location.state.listing);
-        setIsLoading(false);
-        return;
-      }
+  try {
+    setIsLoading(true);
+    // Fetch listing from Supabase
+    const { data: listingData, error: listingError } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (listingError) throw listingError;
 
-      // Fetch from Supabase
-      const fetchedListing = await listingsService.getById(id);
-      
-      if (fetchedListing) {
-        setListing(fetchedListing);
-      } else {
-        console.error('Listing not found');
-        // Could redirect to 404 page
-      }
-    } catch (error) {
-      console.error('Error loading listing:', error);
-      // Handle error appropriately
-    } finally {
-      setIsLoading(false);
+    // Fetch poster's KYC status from profiles (using user_id or poster_id)
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('kyc_status, is_kyc_verified')
+      .eq('id', listingData.user_id) // adjust column name if needed (e.g., poster_id)
+      .single();
+    if (!profileError && profileData) {
+      listingData.poster_kyc_approved = profileData.kyc_status === 'approved' || profileData.is_kyc_verified === true;
+    } else {
+      listingData.poster_kyc_approved = false;
     }
-  };
+
+    setListing(listingData);
+  } catch (error) {
+    console.error('Error loading listing:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const checkProximity = () => {
     if (!listing?.coordinates) {

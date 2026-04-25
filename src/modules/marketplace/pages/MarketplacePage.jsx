@@ -411,12 +411,13 @@ if (estateFirmProfiles && estateFirmProfiles.length > 0) {
 };
 
   const handleContactEstateFirm = (item) => {
-    if (item.verificationState !== 'verified') {
-      alert(`${item.name} is not yet verified. Please check back later.`);
-      return;
-    }
-    handleContactServiceProvider({ providerId: item.id });
-  };
+  if (item.verificationState !== 'verified') {
+    alert(`${item.name} is not yet verified. Please check back later.`);
+    return;
+  }
+  // Pass the original item directly – it already has type and id
+  handleContactServiceProvider(item);
+};
 
   const resetFilters = () => {
   setFilters({
@@ -711,12 +712,12 @@ if (estateFirmProfiles && estateFirmProfiles.length > 0) {
                       <span>Contact</span>
                     </button>
                     <button 
-  className="btn btn-outline"
-  onClick={() => navigate(`/marketplace/details?id=${item.id}&type=${item.type}`)}
->
-  <Eye size={16} />
-  <span>View Details</span>
-</button>
+                      className="btn btn-outline"
+                      onClick={() => navigate(`/marketplace/details?id=${item.id}&type=${item.type}`)}
+                    >
+                      <Eye size={16} />
+                       <span>View Details</span>
+                    </button>
                   </div>
                 </div>
               </div>

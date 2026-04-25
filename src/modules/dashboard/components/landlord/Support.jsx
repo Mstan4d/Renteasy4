@@ -81,13 +81,13 @@ const Support = () => {
       {/* Modern Tab Bar */}
       <nav className="support-nav">
         <button className={activeTab === 'help' ? 'active' : ''} onClick={() => setActiveTab('help')}>
-          <MessageSquare size={18}/> Help Desk
+          <MessageSquare size={18} /> Help Desk
         </button>
         <button className={activeTab === 'faq' ? 'active' : ''} onClick={() => setActiveTab('faq')}>
-          <HelpCircle size={18}/> FAQs
+          <HelpCircle size={18} /> FAQs
         </button>
         <button className={activeTab === 'tickets' ? 'active' : ''} onClick={() => setActiveTab('tickets')}>
-          <LifeBuoy size={18}/> My Tickets
+          <LifeBuoy size={18} /> My Tickets
         </button>
       </nav>
 
@@ -124,48 +124,49 @@ const Support = () => {
                 <textarea name="message" value={formData.message} onChange={handleInputChange} rows="5" placeholder="Describe your problem..." required />
               </div>
               <button type="submit" className="submit-ticket-btn" disabled={isSubmitting}>
-                {isSubmitting ? 'Sending...' : 'Send Request'} <Send size={16}/>
+                {isSubmitting ? 'Sending...' : 'Send Request'} <Send size={16} />
               </button>
             </form>
 
-          <div className="quick-contact">
-  <div className="contact-box whatsapp">
-    <div className="icon">💬</div>
-    <h4>WhatsApp Support</h4>
-    <p>Chat with an agent instantly.</p>
-    <a 
-      href="https://chat.whatsapp.com/BpDxhPPDvri5kkSJCeuXFT" 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="btn-chat"
-    >
-      Start Chat
-    </a>
-  </div>
-  <div className="contact-box email">
-    <div className="icon">📧</div>
-    <h4>Email Us</h4>
-    <p>renteasyapartmentsearch@gmail.com</p>
-    <a 
-      href="mailto:renteasyapartmentsearch@gmail.com" 
-      className="btn-email"
-    >
-      Send Email
-    </a>
-  </div>
-</div>
+            <div className="quick-contact">
+              <div className="contact-box whatsapp">
+                <div className="icon">💬</div>
+                <h4>WhatsApp Support</h4>
+                <p>Chat with an agent instantly.</p>
+                <a 
+                  href="https://chat.whatsapp.com/BpDxhPPDvri5kkSJCeuXFT" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="btn-chat"
+                >
+                  Start Chat
+                </a>
+              </div>
+              <div className="contact-box email">
+                <div className="icon">📧</div>
+                <h4>Email Us</h4>
+                <p>renteasyapartmentsearch@gmail.com</p>
+                <a 
+                  href="mailto:renteasyapartmentsearch@gmail.com" 
+                  className="btn-email"
+                >
+                  Send Email
+                </a>
+              </div>
+            </div>
+          </div>
         )}
 
         {activeTab === 'faq' && (
           <div className="faq-wrapper">
-             <div className="faq-card">
-               <h4>How is the commission calculated?</h4>
-               <p>Our commission rate is a flat <strong>1.5%</strong> of the monthly rent for any property you post that gets rented through the platform. This is credited to your wallet once the admin verifies the rental.</p>
-             </div>
-             <div className="faq-card">
-               <h4>How long does payout take?</h4>
-               <p>Once you mark a property as rented, it enters 'Admin Review'. Manual payouts are typically processed within 24-48 business hours.</p>
-             </div>
+            <div className="faq-card">
+              <h4>How is the commission calculated?</h4>
+              <p>Our commission rate is a flat <strong>1.5%</strong> of the monthly rent for any property you post that gets rented through the platform. This is credited to your wallet once the admin verifies the rental.</p>
+            </div>
+            <div className="faq-card">
+              <h4>How long does payout take?</h4>
+              <p>Once you mark a property as rented, it enters 'Admin Review'. Manual payouts are typically processed within 24-48 business hours.</p>
+            </div>
           </div>
         )}
 
