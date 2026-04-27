@@ -1,8 +1,11 @@
-/* EstateHeader.css - Fixed with visible buttons */
+/* EstateHeader.css – Clean, stable, mobile‑optimized */
 
+/* Header base – fixed at top */
 .estate-header {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 1000;
   background: white;
   border-bottom: 1px solid #e2e8f0;
@@ -11,6 +14,7 @@
   overflow-x: hidden;
 }
 
+/* Container – centered with max width */
 .header-container {
   display: flex;
   align-items: center;
@@ -24,7 +28,7 @@
   box-sizing: border-box;
 }
 
-/* Left */
+/* Left section */
 .header-left {
   display: flex;
   align-items: center;
@@ -67,7 +71,19 @@
   white-space: nowrap;
 }
 
-/* Center: Desktop Nav */
+.role-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 12px;
+  margin-left: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Desktop navigation */
 .desktop-nav {
   display: flex;
   gap: 4px;
@@ -77,10 +93,9 @@
   overflow-x: auto;
   padding: 0 8px;
   margin: 0 8px;
-  -ms-overflow-style: none;
   scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-
 .desktop-nav::-webkit-scrollbar {
   display: none;
 }
@@ -98,6 +113,7 @@
   transition: background 0.2s, color 0.2s;
   white-space: nowrap;
   flex-shrink: 0;
+  margin-bottom: 10px;
 }
 
 .nav-link:hover {
@@ -110,7 +126,7 @@
   color: #2563eb;
 }
 
-/* Right - Action Buttons */
+/* Right section – only notification bell */
 .header-right {
   display: flex;
   align-items: center;
@@ -118,11 +134,11 @@
   flex-shrink: 0;
 }
 
+/* Notification bell – always visible, with color */
 .action-btn {
   position: relative;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  color: #475569;
   cursor: pointer;
   width: 40px;
   height: 40px;
@@ -130,22 +146,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
   flex-shrink: 0;
+  color: #2563eb; /* visible blue */
 }
 
 .action-btn:hover {
   background: #2563eb;
   border-color: #2563eb;
   color: white;
-  transform: translateY(-2px);
 }
 
-.action-btn:active {
-  transform: translateY(0);
-}
-
-/* Specific styles for notification bell */
+/* Badge on the bell */
 .notification-bell {
   position: relative;
 }
@@ -165,75 +177,14 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* User Profile Button */
-.user-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 30px;
-  padding: 6px 12px;
-  color: #1e293b;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
+/* Icons – consistent stroke */
+.action-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
 }
 
-.user-btn:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-}
-
-.user-name {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-/* Dropdowns */
-.dropdown-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-  min-width: 260px;
-  z-index: 100;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.user-menu {
-  padding: 8px 0;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  width: 100%;
-  text-decoration: none;
-  color: #1e293b;
-  font-size: 0.9rem;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-
-.menu-item:hover {
-  background: #f1f5f9;
-}
-
-/* Mobile Navigation */
+/* Mobile navigation (slide‑in) */
 .mobile-nav {
   position: fixed;
   top: 0;
@@ -253,6 +204,7 @@
   left: 0;
 }
 
+/* Mobile header – close button correctly positioned */
 .mobile-nav-header {
   display: flex;
   justify-content: space-between;
@@ -277,12 +229,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  line-height: 1;
 }
 
 .mobile-nav-header button:hover {
   background: #e2e8f0;
 }
 
+/* Mobile navigation links */
 .mobile-nav-links {
   display: flex;
   flex-direction: column;
@@ -309,57 +263,7 @@
   color: #2563eb;
 }
 
-.mobile-actions {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid #e2e8f0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.mobile-actions .btn {
-  width: 100%;
-  justify-content: center;
-  padding: 12px;
-  font-size: 0.9rem;
-}
-
-.btn-primary {
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover {
-  background: #1d4ed8;
-  transform: translateY(-1px);
-}
-
-.btn-outline {
-  background: white;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-outline:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-/* Overlay */
+/* Overlay when mobile menu is open */
 .mobile-nav-overlay {
   position: fixed;
   top: 0;
@@ -369,179 +273,172 @@
   background: rgba(0, 0, 0, 0.5);
   z-index: 1050;
 }
-
-/* Role Badge */
-.role-badge {
-  display: inline-block;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 12px;
-  margin-left: 8px;
-  background: #e0f2fe;
-  color: #0369a1;
-  font-weight: 500;
-  white-space: nowrap;
+/* Mobile menu button – ensure X and Menu icons are visible and centered */
+.mobile-menu-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.2s;
 }
 
-/* Responsive Design */
+/* Consistent icon size */
+.mobile-menu-btn svg {
+  width: 24px;
+  height: 24px;
+  color: #1e293b;
+  display: block;
+}
+
+.mobile-menu-btn:hover {
+  background: #f1f5f9;
+}
+
+/* Responsive adjustments */
+
+/* For tablets – hide nav link text, keep icons */
 @media (max-width: 1200px) {
   .nav-link span {
     display: none;
   }
-  
   .nav-link {
     padding: 8px 10px;
   }
 }
 
+/* For smaller screens – adjust paddings, container */
 @media (max-width: 992px) {
   .header-container {
     padding: 0 16px;
   }
-  
   .logo-text {
     font-size: 1.1rem;
   }
-  
-  .user-name {
-    display: none;
-  }
-  
-  .user-btn {
-    padding: 6px 10px;
-  }
-  
   .action-btn {
     width: 36px;
     height: 36px;
   }
 }
 
+/* For mobile – hide desktop nav, adjust header height */
 @media (max-width: 768px) {
   .desktop-nav {
     display: none;
   }
-  
-  .header-right .action-btn:nth-child(2),
-  .header-right .action-btn:nth-child(3) {
-    display: none;
+  .header-container {
+    min-height: 60px;
   }
-  
-  .header-right {
-    gap: 6px;
-  }
-  
   .action-btn {
     width: 38px;
     height: 38px;
-    background: #f1f5f9;
   }
-  
-  .user-btn {
-    padding: 6px 10px;
-    background: #f1f5f9;
-  }
-  
   .logo-text {
     font-size: 1rem;
   }
-  
   .role-badge {
     font-size: 8px;
-    margin-left: 4px;
   }
 }
 
+/* For very small screens */
 @media (max-width: 480px) {
   .header-container {
     padding: 0 12px;
   }
-  
   .logo-text {
     font-size: 0.9rem;
   }
-  
   .action-btn {
     width: 34px;
     height: 34px;
   }
-  
-  .user-btn {
-    padding: 4px 8px;
-  }
-  
-  .header-right {
-    gap: 4px;
+}
+
+/* Make sure main content doesn't hide behind fixed header */
+body {
+  padding-top: 70px;
+}
+
+@media (max-width: 768px) {
+  body {
+    padding-top: 60px;
   }
 }
 
-/* Ensure buttons are visible on all screens */
-.action-btn svg {
-  width: 18px;
-  height: 18px;
+/* Fix notification bell display */
+.header-right .action-btn.notification-bell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 }
 
-.user-btn svg {
-  width: 18px;
-  height: 18px;
+/* Bell icon styling */
+.header-right .action-btn.notification-bell svg {
+  width: 20px;
+  height: 20px;
+  stroke: #2563eb;          /* blue bell */
+  stroke-width: 1.8;
+  fill: none;               /* ensure it's not filled */
+  display: block;
 }
 
-/* Dark mode support - optional */
-@media (prefers-color-scheme: dark) {
-  .estate-header {
-    background: #1e293b;
-    border-bottom-color: #334155;
+/* Badge (unread count) */
+.header-right .action-btn.notification-bell .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;      /* red */
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 20px;
+  min-width: 18px;
+  text-align: center;
+  line-height: 1;
+  z-index: 2;
+  border: 1px solid white;
+}
+
+/* Hover effect */
+.header-right .action-btn.notification-bell:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.header-right .action-btn.notification-bell:hover svg {
+  stroke: white;
+}
+
+/* Ensure mobile nav content doesn't get hidden behind bottom navigation */
+.mobile-nav-links {
+  padding-bottom: 80px; /* enough space for typical bottom nav + safe area */
+}
+
+/* For devices with a bottom safe area (e.g., iPhone X and later) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .mobile-nav-links {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
-  
-  .action-btn {
-    background: #334155;
-    border-color: #475569;
-    color: #e2e8f0;
-  }
-  
-  .action-btn:hover {
-    background: #2563eb;
-    color: white;
-  }
-  
-  .user-btn {
-    background: #334155;
-    border-color: #475569;
-    color: #e2e8f0;
-  }
-  
-  .user-btn:hover {
-    background: #475569;
-  }
-  
-  .nav-link {
-    color: #94a3b8;
-  }
-  
-  .nav-link:hover {
-    background: #334155;
-    color: #f1f5f9;
-  }
-  
-  .nav-link.active {
-    background: #1e3a8a;
-    color: #60a5fa;
-  }
-  
-  .logo-text {
-    color: #60a5fa;
-  }
-  
-  .dropdown-menu {
-    background: #1e293b;
-    border-color: #334155;
-  }
-  
-  .menu-item {
-    color: #e2e8f0;
-  }
-  
-  .menu-item:hover {
-    background: #334155;
+}
+
+/* Adjust for smaller screens if bottom nav is not present – optional */
+@media (max-height: 700px) {
+  .mobile-nav-links {
+    padding-bottom: 60px;
   }
 }

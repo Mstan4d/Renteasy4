@@ -1,209 +1,177 @@
 // src/modules/auth/pages/AcceptInvite.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../../../shared/lib/supabaseClient';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/context/AuthContext';
+import { supabase } from '../../../shared/lib/supabaseClient';
+import RentEasyLoader from '../../../shared/components/RentEasyLoader';
+import './AcceptInvite.css';
 
 const AcceptInvite = () => {
-  const { token } = useParams();
+  const { inviteId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [invite, setInvite] = useState(null);
-  const [error, setError] = useState(null);
-  const [showSignup, setShowSignup] = useState(false);
-  const [signupData, setSignupData] = useState({
-    email: '',
-    password: '',
-    full_name: ''
-  });
+  const [status, setStatus] = useState('loading'); // loading, error, success
+  const [message, setMessage] = useState('');
+  const [inviteData, setInviteData] = useState(null);
 
   useEffect(() => {
-    verifyInvite();
-  }, [token]);
+    if (!inviteId) {
+      setStatus('error');
+      setMessage('Invalid invitation link.');
+      return;
+    }
+    checkInvite();
+  }, [inviteId]);
 
-  const verifyInvite = async () => {
+  const checkInvite = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch the invitation
+      const { data: invite, error } = await supabase
         .from('staff_invites')
         .select('*')
-        .eq('id', token)
-        .eq('status', 'pending')
+        .eq('id', inviteId)
         .single();
 
-      if (error || !data) {
-        setError('Invalid or expired invitation');
-        setLoading(false);
+      if (error || !invite) {
+        setStatus('error');
+        setMessage('Invitation not found or has been removed.');
         return;
       }
 
-      if (new Date(data.expires_at) < new Date()) {
-        setError('This invitation has expired');
-        setLoading(false);
+      if (invite.status !== 'pending') {
+        setStatus('error');
+        setMessage(`This invitation has already been ${invite.status}.`);
         return;
       }
 
-      setInvite(data);
-      setSignupData(prev => ({ ...prev, email: data.email }));
+      if (new Date(invite.expires_at) < new Date()) {
+        setStatus('error');
+        setMessage('This invitation has expired. Please ask the firm to send a new one.');
+        return;
+      }
 
+      setInviteData(invite);
+
+      // If user is already logged in, accept immediately
       if (user) {
-        await linkStaffAccount(data);
+        await acceptInvite(invite);
       } else {
-        setLoading(false);
+        setStatus('needs_login');
+        setMessage('Please log in or sign up to accept this invitation.');
       }
-
     } catch (err) {
-      setError('Invalid invitation link');
-      setLoading(false);
+      console.error(err);
+      setStatus('error');
+      setMessage('An error occurred. Please try again.');
     }
   };
 
-  const linkStaffAccount = async (inviteData) => {
-    setLoading(true);
+  const acceptInvite = async (invite) => {
     try {
-      const { data: existingProfile } = await supabase
+      // Check if the user already has an estate_firm_profiles row
+      const { data: existing, error: checkError } = await supabase
         .from('estate_firm_profiles')
         .select('id')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (existingProfile) {
-        await supabase
+      if (checkError) throw checkError;
+
+      if (existing) {
+        // Update existing row: set parent and role
+        const { error: updateError } = await supabase
           .from('estate_firm_profiles')
           .update({
-            parent_estate_firm_id: inviteData.estate_firm_id,
-            staff_role: inviteData.role,
+            parent_estate_firm_id: invite.estate_firm_id,
+            staff_role: invite.role,
             is_staff_account: true
           })
           .eq('user_id', user.id);
+        if (updateError) throw updateError;
       } else {
-        await supabase
+        // Create new row
+        const { error: insertError } = await supabase
           .from('estate_firm_profiles')
           .insert({
             user_id: user.id,
-            parent_estate_firm_id: inviteData.estate_firm_id,
-            staff_role: inviteData.role,
+            parent_estate_firm_id: invite.estate_firm_id,
+            staff_role: invite.role,
             is_staff_account: true,
-            firm_name: 'Team Member',
-            is_active: true
+            verification_status: 'pending'
           });
+        if (insertError) throw insertError;
       }
 
-      await supabase
+      // Mark invitation as accepted
+      const { error: inviteError } = await supabase
         .from('staff_invites')
-        .update({ status: 'accepted' })
-        .eq('id', inviteData.id);
+        .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+        .eq('id', invite.id);
+      if (inviteError) throw inviteError;
 
-      alert('Success! You have been added to the team.');
-      navigate('/dashboard/estate-firm');
-
+      setStatus('success');
+      setMessage(`You have been added as ${invite.role} to the estate firm. Redirecting...`);
+      setTimeout(() => {
+        navigate('/dashboard/estate-firm');
+      }, 3000);
     } catch (err) {
-      console.error('Error:', err);
-      setError('Failed to link your account. Please try again.');
-    } finally {
-      setLoading(false);
+      console.error(err);
+      setStatus('error');
+      setMessage('Failed to accept invitation. Please try again.');
     }
   };
 
-  const handleSignup = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: signupData.email,
-        password: signupData.password,
-        options: {
-          data: {
-            full_name: signupData.full_name,
-            role: 'estate-firm'
-          }
-        }
-      });
-      
-      if (error) throw error;
-      
-      setTimeout(async () => {
-        await linkStaffAccount(invite);
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Error:', error);
-      setError(error.message);
-      setLoading(false);
-    }
+  const handleLoginRedirect = () => {
+    // Store the invite ID in sessionStorage to use after login
+    sessionStorage.setItem('pendingInviteId', inviteId);
+    navigate('/login', { state: { from: `/accept-invite/${inviteId}` } });
   };
 
-  if (loading) {
-    return <div style={{ textAlign: 'center', padding: '50px' }}>Loading...</div>;
+  // After login, the AuthCallback or login page should check for pendingInviteId
+  // and redirect back to this page. Simpler: Just use the `from` state.
+
+  if (status === 'loading') {
+    return <RentEasyLoader message="Verifying invitation..." fullScreen />;
   }
 
-  if (error) {
+  if (status === 'needs_login') {
     return (
-      <div style={{ textAlign: 'center', padding: '50px' }}>
-        <h2>Invalid Invitation</h2>
-        <p>{error}</p>
-        <button onClick={() => navigate('/')}>Go Home</button>
+      <div className="accept-invite-container">
+        <div className="accept-invite-card">
+          <h2>Join the team</h2>
+          <p>{message}</p>
+          <div className="button-group">
+            <button className="btn-primary" onClick={handleLoginRedirect}>Log in / Sign up</button>
+          </div>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div style={{ maxWidth: '500px', margin: '50px auto', padding: '30px', textAlign: 'center', border: '1px solid #ddd', borderRadius: '10px' }}>
-      <h2>You've been invited!</h2>
-      <p>Join as a <strong>{invite?.role}</strong></p>
-      
-      {!user ? (
-        <div>
-          {!showSignup ? (
-            <div>
-              <p>Already have an account?</p>
-              <button onClick={() => navigate(`/login?redirect=/accept-invite/${token}`)} style={{ margin: '10px', padding: '10px 20px', cursor: 'pointer' }}>
-                Log In
-              </button>
-              <button onClick={() => setShowSignup(true)} style={{ margin: '10px', padding: '10px 20px', cursor: 'pointer' }}>
-                Create New Account
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSignup}>
-              <input
-                type="text"
-                placeholder="Full Name"
-                value={signupData.full_name}
-                onChange={(e) => setSignupData({...signupData, full_name: e.target.value})}
-                required
-                style={{ width: '100%', padding: '10px', margin: '10px 0' }}
-              />
-              <input
-                type="email"
-                placeholder="Email"
-                value={signupData.email}
-                disabled
-                style={{ width: '100%', padding: '10px', margin: '10px 0' }}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={signupData.password}
-                onChange={(e) => setSignupData({...signupData, password: e.target.value})}
-                required
-                style={{ width: '100%', padding: '10px', margin: '10px 0' }}
-              />
-              <button type="submit" disabled={loading} style={{ padding: '10px 20px', cursor: 'pointer' }}>
-                {loading ? 'Creating Account...' : 'Create Account & Accept Invite'}
-              </button>
-            </form>
-          )}
+  if (status === 'error') {
+    return (
+      <div className="accept-invite-container">
+        <div className="accept-invite-card error">
+          <h2>Invitation Error</h2>
+          <p>{message}</p>
+          <button className="btn-secondary" onClick={() => navigate('/')}>Go Home</button>
         </div>
-      ) : (
-        <div>
-          <p>Accept invitation as {user.email}?</p>
-          <button onClick={() => linkStaffAccount(invite)} style={{ padding: '10px 20px', cursor: 'pointer' }}>Accept Invitation</button>
+      </div>
+    );
+  }
+
+  if (status === 'success') {
+    return (
+      <div className="accept-invite-container">
+        <div className="accept-invite-card success">
+          <h2>Invitation Accepted!</h2>
+          <p>{message}</p>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  return null;
 };
 
 export default AcceptInvite;

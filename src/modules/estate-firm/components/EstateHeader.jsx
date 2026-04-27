@@ -1,3 +1,4 @@
+// src/modules/estate-firm/components/EstateHeader.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -16,12 +17,9 @@ const EstateHeader = () => {
   const { user, logout } = useAuth();
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [userRole, setUserRole] = useState('principal');
   
-  const userMenuRef = useRef(null);
-
   // Fetch user role
   useEffect(() => {
     const getUserRole = async () => {
@@ -43,7 +41,7 @@ const EstateHeader = () => {
     getUserRole();
   }, [user]);
 
-  // Fetch initial unread count and subscribe to new notifications
+  // Fetch unread notifications
   useEffect(() => {
     if (!user) return;
     
@@ -64,7 +62,6 @@ const EstateHeader = () => {
     };
     fetchUnreadCount();
 
-    // Subscribe to new notifications
     const subscription = supabase
       .channel('notifications')
       .on('postgres_changes', {
@@ -77,55 +74,15 @@ const EstateHeader = () => {
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(subscription);
-    };
+    return () => supabase.removeChannel(subscription);
   }, [user]);
-
-  // Close user menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-        setUserMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  const handlePostProperty = () => {
-    navigate('/post-property?type=estate-firm');
-    setMobileMenuOpen(false);
-  };
-
-  const handlePostService = () => {
-    // Only Principal and Executive can post services
-    if (userRole === 'associate') {
-      alert('Associates cannot post services. Please contact your firm principal.');
-      return;
-    }
-    navigate('/dashboard/estate-firm/post-service');
-    setMobileMenuOpen(false);
-  };
-
-  const handleBulkUpload = () => {
-    // Only Principal and Executive can bulk upload
-    if (userRole === 'associate') {
-      alert('Associates cannot use bulk upload. Please contact your firm principal.');
-      return;
-    }
-    navigate('/dashboard/estate-firm/bulk-upload');
-    setMobileMenuOpen(false);
-  };
-
-  // Define navigation items based on role
   const getNavItems = () => {
-    // Base items - everyone sees
     const baseItems = [
       { path: '/dashboard/estate-firm', icon: Home, label: 'Overview' },
       { path: '/dashboard/estate-firm/profile', icon: UserCircle, label: 'Profile' },
@@ -137,31 +94,23 @@ const EstateHeader = () => {
       { path: '/dashboard/estate-firm/rent-tracking', icon: Receipt, label: 'Rents' },
     ];
     
-    // Items for Principal and Executive (not for Associate)
     const principalExecutiveItems = [
       { path: '/dashboard/estate-firm/services', icon: Briefcase, label: 'Services' },
       { path: '/dashboard/estate-firm/verification', icon: Shield, label: 'Verification' },
       { path: '/dashboard/estate-firm/settings', icon: Settings, label: 'Settings' },
     ];
     
-    // Items only for Principal
     const principalOnlyItems = [
       { path: '/dashboard/estate-firm/staff-manager', icon: UserPlus, label: 'Team' },
     ];
     
-    if (userRole === 'associate') {
-      return baseItems;
-    } else if (userRole === 'executive') {
-      return [...baseItems, ...principalExecutiveItems];
-    } else {
-      // Principal
-      return [...baseItems, ...principalExecutiveItems, ...principalOnlyItems];
-    }
+    if (userRole === 'associate') return baseItems;
+    if (userRole === 'executive') return [...baseItems, ...principalExecutiveItems];
+    return [...baseItems, ...principalExecutiveItems, ...principalOnlyItems];
   };
 
   const navItems = getNavItems();
 
-  // Get role badge text
   const getRoleBadge = () => {
     switch(userRole) {
       case 'principal': return '👑 Principal';
@@ -206,59 +155,18 @@ const EstateHeader = () => {
           })}
         </nav>
 
-        {/* Right: Actions & Profile */}
+        {/* Right: Notifications Bell Only */}
         <div className="header-right">
-          <button className="action-btn" onClick={handlePostProperty} title="Post Property">
-            <Building size={20} />
-          </button>
-          
-          {/* Only show Post Service for Principal and Executive */}
-          {userRole !== 'associate' && (
-            <button className="action-btn" onClick={handlePostService} title="Post Service">
-              <Briefcase size={20} />
-            </button>
-          )}
-          
-          {/* Only show Bulk Upload for Principal and Executive */}
-          {userRole !== 'associate' && (
-            <button className="action-btn" onClick={handleBulkUpload} title="Bulk Upload">
-              <Upload size={20} />
-            </button>
-          )}
-
-          {/* Notifications Bell - navigates to notifications page */}
           <Link 
             to="/dashboard/estate-firm/notifications" 
             className="action-btn notification-bell"
             title="Notifications"
           >
-            <Bell size={20} />
+            <Bell size={20}  />
             {unreadCount > 0 && (
               <span className="badge">{unreadCount}</span>
             )}
           </Link>
-
-          {/* User Profile */}
-          <div className="user-dropdown" ref={userMenuRef}>
-            <button 
-              className="user-btn" 
-              onClick={() => setUserMenuOpen(!userMenuOpen)}
-            >
-              <User size={20} />
-              <span className="user-name">{user?.name || 'Profile'}</span>
-              <ChevronDown size={16} />
-            </button>
-            {userMenuOpen && (
-              <div className="dropdown-menu user-menu">
-                <Link to="/dashboard/estate-firm/settings" className="menu-item">
-                  <Settings size={16} /> Settings
-                </Link>
-                <button onClick={handleLogout} className="menu-item">
-                  <LogOut size={16} /> Logout
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -286,21 +194,6 @@ const EstateHeader = () => {
               </Link>
             );
           })}
-          <div className="mobile-actions">
-            <button className="btn btn-primary" onClick={handlePostProperty}>
-              <Building size={18} /> Post Property
-            </button>
-            {userRole !== 'associate' && (
-              <>
-                <button className="btn btn-outline" onClick={handlePostService}>
-                  <Briefcase size={18} /> Post Service
-                </button>
-                <button className="btn btn-outline" onClick={handleBulkUpload}>
-                  <Upload size={18} /> Bulk Upload
-                </button>
-              </>
-            )}
-          </div>
         </nav>
       </div>
 

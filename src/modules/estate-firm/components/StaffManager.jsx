@@ -130,7 +130,8 @@ const StaffManager = () => {
     }
   };
 
-  // In StaffManager.jsx - Replace the sendInvite function
+ // In StaffManager.jsx – replace the sendInvite function with this:
+
 const sendInvite = async () => {
   if (!inviteEmail) {
     alert('Please enter an email address');
@@ -139,7 +140,7 @@ const sendInvite = async () => {
 
   setSending(true);
   try {
-    // Create invite record in database
+    // Insert into staff_invites table
     const { data: invite, error } = await supabase
       .from('staff_invites')
       .insert({
@@ -155,25 +156,22 @@ const sendInvite = async () => {
 
     if (error) throw error;
 
-    // Create the invitation link
+    // Production link – replace with your actual domain
     const inviteLink = `${window.location.origin}/accept-invite/${invite.id}`;
     
     // Copy to clipboard
     await navigator.clipboard.writeText(inviteLink);
     
-    // Show the link
     alert(`✅ Invitation created for ${inviteEmail}!\n\nLink copied to clipboard.\n\nShare this link with them:\n${inviteLink}`);
     
-    // Reset form
+    // Reset form and refresh pending invites
     setInviteEmail('');
     setShowInviteModal(false);
-    
-    // Refresh the list
     await loadPendingInvites(estateFirmId);
 
   } catch (err) {
-    console.error('Error:', err);
-    alert('Failed to create invitation');
+    console.error('Error creating invitation:', err);
+    alert('Failed to create invitation. Please try again.');
   } finally {
     setSending(false);
   }

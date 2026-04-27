@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }) => {
   // Helper: Fetches profile and sets state with staff detection
   const fetchAndSetUser = async (userid) => {
     try {
-      const { data: profile, error } = await supabase
+      let { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userid)
