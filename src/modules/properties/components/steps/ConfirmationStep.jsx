@@ -121,13 +121,7 @@ const ConfirmationStep = ({ formData, commission, userRole, onSubmit, isSubmitti
         <button className="btn-secondary" onClick={onBack} disabled={isSubmitting}>
           Back to Edit
         </button>
-        <button 
-          className="btn-success submit-btn" 
-          onClick={onSubmit} 
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? "Posting..." : "Confirm & Post Property"}
-        </button>
+        
       </div>
     </div>
   );

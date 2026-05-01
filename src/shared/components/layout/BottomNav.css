@@ -1,3 +1,29 @@
+/* ================= BOTTOM NAVIGATION ================= */
+/* CSS variables – light mode defaults */
+.bottom-nav {
+  --bottom-nav-bg: #fdfdfd;
+  --bottom-nav-border: rgba(0, 0, 0, 0.1);
+  --bottom-nav-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  --nav-btn-color: #64748b;
+  --nav-btn-active-color: #a78bfa;
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --primary-btn-bg: #7c3aed;
+  --primary-btn-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+  transition: background 0.2s, border 0.2s, box-shadow 0.2s;
+}
+
+/* Dark mode overrides – matches header's .dark class */
+.dark .bottom-nav {
+  --bottom-nav-bg: #1e293b;
+  --bottom-nav-border: rgba(255, 255, 255, 0.12);
+  --bottom-nav-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  --nav-btn-color: #94a3b8;
+  --nav-btn-active-color: #c4b5fd;
+  --hover-bg: rgba(255, 255, 255, 0.1);
+  --primary-btn-bg: #8b5cf6;
+  --primary-btn-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
 .bottom-nav {
   position: fixed;
   bottom: 10px;
@@ -5,20 +31,16 @@
   transform: translateX(-50%);
   width: 92%;
   max-width: 420px;
-  
   display: flex !important;
   justify-content: space-around;
   align-items: center;
-  
-  /* Unified background – semi‑transparent dark, works everywhere */
-  background: #fdfdfd;
+  background: var(--bottom-nav-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  
-  padding: 1px 8px;          /* reduced vertical padding → lower height */
+  padding: 1px 8px;
   border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--bottom-nav-border);
+  box-shadow: var(--bottom-nav-shadow);
   z-index: 2000;
   margin-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -29,29 +51,26 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  color: #cbd5e1;          /* light gray, readable on dark bg */
+  color: var(--nav-btn-color);
   transition: all 0.2s ease;
   flex: 1;
   position: relative;
   gap: 2px;
-  r-radius: 12px;               /* optional, makes hover background rounded */
-  transition: background 0.2s, color 0.2s;
+  border-radius: 12px;
 }
 
-/* Remove default focus outline */
 .nav-btn:focus,
 .nav-btn:active {
   outline: none;
 }
 
-/* Subtle hover effect – transparent background, text color change */
 .nav-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #a78bfa;
+  background: var(--hover-bg);
+  color: var(--nav-btn-active-color);
 }
 
 .nav-icon {
-  font-size: 1.1rem;       /* slightly smaller icons */
+  font-size: 1.1rem;
   margin-bottom: 0;
 }
 
@@ -65,7 +84,7 @@
 }
 
 .nav-btn.active {
-  color: #a78bfa;          /* soft purple for active state */
+  color: var(--nav-btn-active-color);
 }
 
 .nav-btn.active .nav-label {
@@ -73,24 +92,23 @@
   transform: translateY(0);
 }
 
-/* Primary Action (floating + button) – reduced size */
 .nav-btn.primary-action {
-  flex: 0 0 48px;          /* narrower than before (was 55px) */
+  flex: 0 0 48px;
 }
 
 .nav-btn.primary-action .nav-icon {
-  background: #7c3aed;     /* vibrant purple */
+  background: var(--primary-btn-bg);
   color: white;
-  width: 38px;             /* smaller than 42px */
+  width: 38px;
   height: 38px;
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+  box-shadow: var(--primary-btn-shadow);
   margin-bottom: 0;
-  transform: translateY(-4px); /* slight raise, but less pronounced */
+  transform: translateY(-4px);
 }
 
 .nav-btn.primary-action .nav-label {
@@ -101,14 +119,12 @@
   display: none;
 }
 
-/* Hide on desktop */
 @media (min-width: 769px) {
   .bottom-nav {
     display: none !important;
   }
 }
 
-/* Force remove all focus rings and tap highlights from navigation buttons */
 .bottom-nav .nav-btn,
 .bottom-nav .nav-btn:focus,
 .bottom-nav .nav-btn:active,
@@ -117,11 +133,10 @@
   outline: none !important;
   box-shadow: none !important;
   -webkit-tap-highlight-color: transparent !important;
-  background: transparent !important; /* optional: prevents any background flash */
+  background: transparent !important;
 }
 
-/*subtle hover effect (but no blue box), keep the hover styling separate */
 .bottom-nav .nav-btn:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: #a78bfa !important;
+  background: var(--hover-bg) !important;
+  color: var(--nav-btn-active-color) !important;
 }

@@ -1,0 +1,247 @@
+/* SuperAdminWebsiteStats.css – Mobile responsive */
+
+.website-stats {
+  padding: 1rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* Header */
+.website-stats h1 {
+  font-size: 1.5rem;
+  color: #1e293b;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+/* Stats cards */
+.stats-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 1rem;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  flex: 1 1 200px;
+  text-align: center;
+  font-weight: 600;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+/* Filter bar */
+.filter-bar {
+  background: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border: 1px solid #e2e8f0;
+}
+
+.filter-bar label {
+  font-weight: 500;
+  color: #334155;
+}
+
+.filter-bar select {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  background: white;
+  font-size: 0.9rem;
+  min-width: 140px;
+}
+
+/* Two‑column grid for stats panels */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.stats-panel {
+  background: white;
+  border-radius: 1rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.stats-panel h3 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  color: #1e293b;
+}
+
+.stats-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.stats-panel li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.stats-panel li:last-child {
+  border-bottom: none;
+}
+
+/* Recent visits table */
+.recent-visits {
+  background: white;
+  border-radius: 1rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  overflow-x: auto;
+}
+
+.recent-visits h3 {
+  font-size: 1.1rem;
+  margin: 0 0 1rem 0;
+  color: #1e293b;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #334155;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .website-stats {
+    padding: 0.75rem;
+  }
+  
+  .website-stats h1 {
+    font-size: 1.25rem;
+  }
+  
+  .stat-card {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .filter-bar select {
+    width: 100%;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  table, thead, tbody, th, td, tr {
+    display: block;
+  }
+  
+  /* Make table cards on mobile */
+  thead {
+    display: none;
+  }
+  
+  tr {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: white;
+  }
+  
+  td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0.5rem 0;
+  }
+  
+  td:last-child {
+    border-bottom: none;
+  }
+  
+  td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #475569;
+    width: 40%;
+  }
+}
+
+/* Dark mode support (if needed) */
+@media (prefers-color-scheme: dark) {
+  .website-stats h1 {
+    color: #f1f5f9;
+    border-bottom-color: #334155;
+  }
+  
+  .stat-card, .stats-panel, .recent-visits {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+  
+  .filter-bar {
+    background: #0f172a;
+    border-color: #334155;
+  }
+  
+  .filter-bar label {
+    color: #cbd5e1;
+  }
+  
+  .filter-bar select {
+    background: #1e293b;
+    border-color: #475569;
+    color: #f1f5f9;
+  }
+  
+  th {
+    background: #0f172a;
+    color: #cbd5e1;
+  }
+  
+  td {
+    border-bottom-color: #334155;
+  }
+  
+  .stats-panel li {
+    border-bottom-color: #334155;
+  }
+}

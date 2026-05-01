@@ -169,6 +169,8 @@ const sendInvite = async () => {
     setShowInviteModal(false);
     await loadPendingInvites(estateFirmId);
 
+    
+
   } catch (err) {
     console.error('Error creating invitation:', err);
     alert('Failed to create invitation. Please try again.');

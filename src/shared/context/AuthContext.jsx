@@ -120,6 +120,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshUser =async () => {
+    if (!user?.id)return null;
+    const userData = await fetchAndSetUser(user.id);
+    return userData;
+  }
+
   const login = async (email, password) => {
     setLoading(true);
     try {
@@ -160,6 +166,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     logout,
+    refreshUser,
     isAuthenticated: !!user,
     userRole: user?.role || null,
     isTenant: user?.role === 'tenant',

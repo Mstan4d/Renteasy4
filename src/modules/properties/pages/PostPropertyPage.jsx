@@ -24,7 +24,8 @@ const PostPropertyPage = () => {
   const [estateFirmId, setEstateFirmId] = useState(null);
   const [freePostsRemaining, setFreePostsRemaining] = useState(0);
   const [hasSubscription, setHasSubscription] = useState(false);
-  
+  const [isFirmVerified, setIsFirmVerified] = useState(false);
+
   // Check if this is an estate firm post
   const isEstateFirm = searchParams.get('type') === 'estate-firm';
   const FirmId = searchParams.get('estateFirmId');
@@ -70,68 +71,90 @@ const PostPropertyPage = () => {
       if (activeProfile) {
         setLocalProfile(activeProfile);
         // SYNC FORM DATA IMMEDIATELY
-        setFormData(prev => ({
-          ...prev,
-          user_id: user.id,
-          user_role: activeProfile.role,
-          contact_email: activeProfile.email,
-          posted_by: activeProfile.role,
-          commission_rate: activeProfile.role === 'estate-firm' ? 0 : 7.5
-        }));
+        const normalizedRole = activeProfile.role?.replace('_', '-') || 'tenant';
+setFormData(prev => ({
+  ...prev,
+  user_id: user.id,
+  user_role: normalizedRole,
+  contact_email: activeProfile.email,
+  posted_by: normalizedRole,
+  commission_rate: activeProfile.role === 'estate-firm' || activeProfile.role === 'estate_firm' ? 0 : 7.5
+}));
       }
     };
 
     loadOrCreateProfile();
   }, [user, profile]);
 
-  // In the useEffect that loads profile, also fetch estate firm data
   useEffect(() => {
-    const loadEstateFirmData = async () => {
-      if (profile?.role !== 'estate-firm') {
-        // Not an estate firm, no need to load
+  const loadEstateFirmData = async () => {
+    if (profile?.role !== 'estate-firm') return;
+
+    try {
+      // 1. Check if there's an estateFirmId in the URL (e.g., from a shared link)
+      const firmIdParam = searchParams.get('estateFirmId');
+      if (firmIdParam) {
+        // Fetch the firm directly by its ID
+        const { data, error } = await supabase
+          .from('estate_firm_profiles')
+          .select('id, free_posts_remaining, subscription_status, verification_status')
+          .eq('id', firmIdParam)
+          .single();
+        if (!error && data) {
+          setEstateFirmId(data.id);
+          setFreePostsRemaining(data.free_posts_remaining);
+          setHasSubscription(data.subscription_status === 'active');
+          setIsFirmVerified(data.verification_status === 'verified');
+          console.log('Estate firm loaded via URL param:', data);
+          return;
+        } else if (error) {
+          console.error('Error fetching estate firm by URL param:', error);
+          // Fall through to user-based lookup
+        }
+      }
+
+      // 2. No URL param or param failed: use the logged‑in user's own estate firm profile
+      const { data: staffProfile, error: staffError } = await supabase
+        .from('estate_firm_profiles')
+        .select('id, parent_estate_firm_id, free_posts_remaining, subscription_status, is_staff_account')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (staffError) throw staffError;
+
+      if (!staffProfile) {
+        console.warn('No estate_firm_profiles row for user', user.id);
         return;
       }
 
-      try {
-        // Use either the URL param or fetch by user_id
-        const firmIdParam = searchParams.get('estateFirmId');
-        if (firmIdParam) {
-          // Fetch by firm ID
-          const { data, error } = await supabase
-            .from('estate_firm_profiles')
-            .select('id, free_posts_remaining, subscription_status')
-            .eq('id', firmIdParam)
-            .single();
-          if (!error && data) {
-            setEstateFirmId(data.id);
-            setFreePostsRemaining(data.free_posts_remaining);
-            setHasSubscription(data.subscription_status === 'active');
-          }
-        } else {
-          // Fallback: fetch by user_id
-          const { data, error } = await supabase
-            .from('estate_firm_profiles')
-            .select('id, free_posts_remaining, subscription_status')
-            .eq('user_id', user.id)
-            .single();
-            console.log('Estate firm fetch result:', data, error);
-          if (!error && data) {
-            setEstateFirmId(data.id);
-            setFreePostsRemaining(data.free_posts_remaining);
-            setHasSubscription(data.subscription_status === 'active');
-          } else if (error && error.code !== 'PGRST116') {
-            console.error('Error fetching estate firm profile:', error);
-          }
-        }
-      } catch (err) {
-        console.error('Error loading estate firm data:', err);
-      }
-    };
+      // Determine the actual firm ID (parent if staff, otherwise own)
+      const actualFirmId = staffProfile.parent_estate_firm_id || staffProfile.id;
+      setEstateFirmId(actualFirmId);
 
-    if (profile?.role === 'estate-firm') {
-      loadEstateFirmData();
+      // Fetch the actual firm's free posts and subscription (not the staff's own row)
+      const { data: firmData, error: firmError } = await supabase
+        .from('estate_firm_profiles')
+        .select('free_posts_remaining, subscription_status, verification_status')
+        .eq('id', actualFirmId)
+        .single();
+
+      if (firmError) throw firmError;
+
+      setFreePostsRemaining(firmData.free_posts_remaining || 0);
+      setHasSubscription(firmData.subscription_status === 'active');
+      setIsFirmVerified(firmData.verification_status === 'verified');
+
+      console.log('Estate firm data loaded from user profile:', { actualFirmId, firmData });
+    } catch (err) {
+      console.error('Error loading estate firm data:', err);
     }
-  }, [profile, user, searchParams]);
+  };
+
+
+  if (profile?.role === 'estate-firm') {
+    loadEstateFirmData();
+  }
+}, [profile, user, searchParams]);
 
   // Add this state for prefill data
   const [prefillData, setPrefillData] = useState(null);
@@ -201,8 +224,8 @@ const PostPropertyPage = () => {
     coordinates: { lat: null, lng: null },
     
     // Property Details
-    bedrooms: 1,
-    bathrooms: 1,
+    bedrooms: 0,
+    bathrooms: 0,
     area: '',
     amenities: [],
     
@@ -225,40 +248,43 @@ const PostPropertyPage = () => {
   // Load user data
   useEffect(() => {
     if (profile) {
-      setFormData(prev => ({
-        ...prev,
-        user_id: user.id,
-        user_role: profile.role,
-        contact_email: profile.email,
-        contact_phone: profile.phone || '',
-        posted_by: profile.role,
-        // Estate firms pay 0% commission
-        commission_rate: profile.role === 'estate-firm' ? 0 : 7.5
-      }));
+      const normalizedRole = profile.role?.replace('_', '-') || 'tenant';
+setFormData(prev => ({
+  ...prev,
+  user_id: user.id,
+  user_role: normalizedRole,
+  contact_email: profile.email,
+  contact_phone: profile.phone || '',
+  posted_by: normalizedRole,
+  commission_rate: profile.role === 'estate-firm' || profile.role === 'estate_firm' ? 0 : 7.5
+}));
     }
   }, [user, profile]);
 
   // Add this useEffect in PostPropertyPage.jsx
   useEffect(() => {
-    const checkVerification = async () => {
-      if (profile?.role === 'estate-firm') {
-        const { data } = await supabase
-          .from('profiles')
-          .select('kyc_status, is_kyc_verified')
-          .eq('id', user.id)
-          .single();
-        
-        if (data?.kyc_status !== 'approved' && !data?.is_kyc_verified) {
-          alert('Please complete business verification to post properties.');
-          navigate('/dashboard/estate-firm/verification');
-        }
+  const checkVerification = async () => {
+    if (profile?.role === 'estate-firm') {
+      // Check the firm's verification status from estate_firm_profiles
+      const { data: firmProfile, error } = await supabase
+        .from('estate_firm_profiles')
+        .select('verification_status')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (!error && firmProfile && firmProfile.verification_status !== 'verified') {
+        alert('Your estate firm must be verified before you can post properties. Please complete the verification process.');
+        navigate('/dashboard/estate-firm/verification');
       }
-    };
-    
-    if (user && profile) {
-      checkVerification();
     }
-  }, [user, profile]);
+  };
+  
+  if (user && profile) {
+    checkVerification();
+  }
+}, [user, profile, navigate]);
+    
+   
   
   // Step navigation
   const nextStep = () => {
@@ -448,18 +474,48 @@ const PostPropertyPage = () => {
 
     // SECOND: Check if estate firm is verified
     if (currentProfile.role === 'estate-firm') {
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('kyc_status, is_kyc_verified')
-        .eq('id', user.id)
-        .single();
-      
-      if (profileData?.kyc_status !== 'approved' && !profileData?.is_kyc_verified) {
-        alert('Your estate firm must be verified before you can post properties. Please complete the verification process.');
-        navigate('/dashboard/estate-firm/verification');
-        return;
-      }
+  try {
+    // First, get the user's own estate_firm_profiles row (to check if staff)
+    const { data: staffData, error: staffError } = await supabase
+      .from('estate_firm_profiles')
+      .select('id, parent_estate_firm_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (staffError) throw staffError;
+
+    // Determine the actual firm ID: parent_estate_firm_id if staff, else own id
+    let actualFirmId = staffData?.parent_estate_firm_id || staffData?.id;
+    
+    // If URL parameter estateFirmId exists and overrides, use that
+    const urlFirmId = searchParams.get('estateFirmId');
+    if (urlFirmId) {
+      actualFirmId = urlFirmId;
     }
+
+    if (!actualFirmId) throw new Error('No firm ID found');
+
+    // Fetch the actual firm's free posts and subscription status
+    const { data: firmData, error: firmError } = await supabase
+      .from('estate_firm_profiles')
+      .select('id, free_posts_remaining, subscription_status')
+      .eq('id', actualFirmId)
+      .single();
+
+    if (firmError) throw firmError;
+
+    finalEstateFirmId = firmData.id;
+    currentFreePosts = firmData.free_posts_remaining;
+    currentHasSubscription = firmData.subscription_status === 'active';
+    setEstateFirmId(finalEstateFirmId);
+    setFreePostsRemaining(currentFreePosts);
+    setHasSubscription(currentHasSubscription);
+  } catch (err) {
+    console.error('Error fetching estate firm data:', err);
+    alert('Failed to load estate firm profile. Please try again.');
+    return;
+  }
+}
     
     // THIRD: Validate current step
     if (!validateCurrentStep()) return;
@@ -522,6 +578,11 @@ const PostPropertyPage = () => {
         navigate('/dashboard/estate-firm');
         return;
       }
+      if (currentProfile.role === 'estate-firm' && !isFirmVerified) {
+  alert('Your estate firm is not verified. Please complete verification first.');
+  navigate('/dashboard/estate-firm/verification');
+  return;
+}
     }
     
     let coordinates = null;
@@ -684,6 +745,10 @@ if (formData.coordinates?.lat && formData.coordinates?.lng) {
         if (videoError) console.error('⚠️ Could not save video URLs:', videoError);
         else console.log(`✅ ${videoUrls.length} videos uploaded`);
       }
+
+      let finalEstateFirmId = null;
+      let currentFreePosts = 0;
+      let currentHasSubscription = false;
 
       // Decrement free posts
       if (currentProfile.role === 'estate-firm' && !currentHasSubscription && currentFreePosts > 0) {
@@ -938,13 +1003,20 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
                   <button 
                     className="btn btn-success" 
                     onClick={submitListing}
-                    disabled={isSubmitting}
+                    disabled={
+    isSubmitting || 
+    (profile?.role === 'estate-firm' && !isFirmVerified)
+  }
                   >
                     {isSubmitting ? 'Posting...' : 'Post Property'}
                   </button>
+                  
                 )
               )}
             </div>
+            {profile?.role === 'estate-firm' && !isFirmVerified && (
+  <p className="disabled-hint">Complete business verification to post properties.</p>
+)}
           </div>
           
           {/* Help */}

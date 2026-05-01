@@ -177,6 +177,7 @@ const SuperAdminLogin = lazy(() => import('../modules/super-admin/pages/SuperAdm
 const TestPage = lazy(() => import('../modules/super-admin/pages/TestPage'));
 const AdminProviderFreeBookings = lazy(() => import('../modules/super-admin//pages/AdminProviderFreeBookings'));
 const AdminStates = lazy(() => import('../modules/super-admin/pages/AdminStates'));
+const SuperAdminWebsiteStats = lazy(() => import('../modules/super-admin/pages/SuperAdminWebsiteStats'));
 
 // ========== PROVIDER IMPORTS ==========
 const ProviderDashboard = lazy(() => import('../modules/providers/pages/ProviderDashboard'));
@@ -249,7 +250,7 @@ const AppRoutes = () => {
 
 {/* Add AcceptInvite as a public route */}
 <Route 
-  path="/accept-invite/:token" 
+  path="/accept-invite/:inviteId" 
   element={
     <Suspense fallback={<RentEasyLoader message= "Loading.." fullScreen />}>
       <AcceptInvite />
@@ -293,6 +294,7 @@ const AppRoutes = () => {
         <Route path="provider-free-bookings" element={<AdminProviderFreeBookings />} />
         <Route path="test" element={<TestPage />} />
         <Route path="admin-states" element={<AdminStates />} />
+        <Route path="admin-website-stats" element={<SuperAdminWebsiteStats />} />
       </Route>
 
       {/* =================== ADMIN ROUTES =================== */}

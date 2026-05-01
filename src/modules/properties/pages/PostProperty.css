@@ -300,3 +300,14 @@
   padding: 10px;
   border-radius: 8px;
 }
+
+.disabled-hint {
+  font-size: 0.75rem;
+  color: #f59e0b;      /* amber warning color */
+  text-align: center;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
